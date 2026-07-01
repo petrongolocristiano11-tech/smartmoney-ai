@@ -5,11 +5,11 @@ from sqlalchemy.orm import Session
 from backend.app.database.session import engine, get_db
 from backend.app.models.wallet import Wallet
 from backend.app.schemas.wallet import WalletCreate, WalletResponse
-from backend.app.services.solana_rpc import get_solana_health
+from backend.app.services.solana_rpc import get_solana_health, get_wallet_balance
 
 app = FastAPI(
     title="SmartMoney AI",
-    version="0.3.0",
+    version="0.4.0",
 )
 
 
@@ -88,4 +88,9 @@ def delete_wallet(
 
 @app.get("/solana/health")
 def solana_health():
-    return get_solana_health() 
+    return get_solana_health()
+
+
+@app.get("/solana/balance/{address}")
+def solana_balance(address: str):
+    return get_wallet_balance(address) 

@@ -22,4 +22,17 @@ def solana_rpc_call(method: str, params: list | None = None):
 
 
 def get_solana_health():
-    return solana_rpc_call("getHealth") 
+    return solana_rpc_call("getHealth")
+
+
+def get_wallet_balance(address: str):
+    response = solana_rpc_call("getBalance", [address])
+
+    lamports = response["result"]["value"]
+    sol = lamports / 1_000_000_000
+
+    return {
+        "address": address,
+        "lamports": lamports,
+        "sol": sol,
+    } 
