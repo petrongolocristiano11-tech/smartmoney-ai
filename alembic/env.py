@@ -5,6 +5,7 @@ from alembic import context
 
 from backend.app.database.base import Base
 from backend.app.core.config import settings
+from backend.app import models
 
 config = context.config
 
