@@ -6,4 +6,5 @@ class Base(DeclarativeBase):
 
 
 # Import dei modelli per permettere ad Alembic di rilevarli
-from backend.app.models import Wallet
+from backend.app.models import Wallet, Token, Trade
+
