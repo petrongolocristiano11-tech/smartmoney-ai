@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from backend.app.services.solana_rpc import (
+    classify_transaction,
     get_solana_health,
     get_wallet_balance,
     get_wallet_transactions,
@@ -30,4 +31,9 @@ def solana_transactions(address: str):
 
 @router.get("/transaction/{signature}")
 def solana_transaction(signature: str):
-    return get_transaction_detail(signature) 
+    return get_transaction_detail(signature)
+
+
+@router.get("/classify/{signature}")
+def solana_classify_transaction(signature: str):
+    return classify_transaction(signature) 

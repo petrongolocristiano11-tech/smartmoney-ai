@@ -27,7 +27,6 @@ def get_solana_health():
 
 def get_wallet_balance(address: str):
     response = solana_rpc_call("getBalance", [address])
-
     lamports = response["result"]["value"]
 
     return {
@@ -64,6 +63,8 @@ def get_transaction_detail(signature: str):
     )
 
     return response["result"]
+
+
 def analyze_wallet(address: str):
     transactions = get_wallet_transactions(address, limit=10)
 
@@ -84,4 +85,42 @@ def analyze_wallet(address: str):
         "wallet": address,
         "transactions_found": len(analyzed),
         "transactions": analyzed,
+    }
+
+
+def classify_transaction(signature: str):
+    tx_detail = get_transaction_detail(signature)
+
+    if tx_detail is None:
+        return {
+            "signature": signature,
+            "type": "unknown",
+            "programs": [],
+            "success": False,
+        }
+
+    instructions = tx_detail["transaction"]["message"]["instructions"]
+
+    programs = []
+
+    for instruction in instructions:
+        program = instruction.get("program", "unknown")
+        programs.append(program)
+
+    if "vote" in programs:
+        tx_type = "vote"
+    elif "system" in programs:
+        tx_type = "system_transfer"
+    elif "spl-token" in programs:
+        tx_type = "token_operation"
+    else:
+        tx_type = "unknown"
+
+    return {
+        "signature": signature,
+        "type": tx_type,
+        "programs": programs,
+        "success": tx_detail["meta"]["err"] is None,
+        "slot": tx_detail["slot"],
+        "block_time": tx_detail["blockTime"],
     } 
