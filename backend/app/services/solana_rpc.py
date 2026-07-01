@@ -63,4 +63,25 @@ def get_transaction_detail(signature: str):
         ],
     )
 
-    return response["result"] 
+    return response["result"]
+def analyze_wallet(address: str):
+    transactions = get_wallet_transactions(address, limit=10)
+
+    analyzed = []
+
+    for tx in transactions:
+        analyzed.append(
+            {
+                "signature": tx["signature"],
+                "slot": tx["slot"],
+                "status": tx["confirmationStatus"],
+                "success": tx["err"] is None,
+                "block_time": tx["blockTime"],
+            }
+        )
+
+    return {
+        "wallet": address,
+        "transactions_found": len(analyzed),
+        "transactions": analyzed,
+    } 
