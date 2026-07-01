@@ -5,11 +5,15 @@ from sqlalchemy.orm import Session
 from backend.app.database.session import engine, get_db
 from backend.app.models.wallet import Wallet
 from backend.app.schemas.wallet import WalletCreate, WalletResponse
-from backend.app.services.solana_rpc import get_solana_health, get_wallet_balance
+from backend.app.services.solana_rpc import (
+    get_solana_health,
+    get_wallet_balance,
+    get_wallet_transactions,
+)
 
 app = FastAPI(
     title="SmartMoney AI",
-    version="0.4.0",
+    version="0.5.0",
 )
 
 
@@ -93,4 +97,9 @@ def solana_health():
 
 @app.get("/solana/balance/{address}")
 def solana_balance(address: str):
-    return get_wallet_balance(address) 
+    return get_wallet_balance(address)
+
+
+@app.get("/solana/transactions/{address}")
+def solana_transactions(address: str):
+    return get_wallet_transactions(address) 

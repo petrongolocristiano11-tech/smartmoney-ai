@@ -29,10 +29,23 @@ def get_wallet_balance(address: str):
     response = solana_rpc_call("getBalance", [address])
 
     lamports = response["result"]["value"]
-    sol = lamports / 1_000_000_000
 
     return {
         "address": address,
         "lamports": lamports,
-        "sol": sol,
-    } 
+        "sol": lamports / 1_000_000_000,
+    }
+
+
+def get_wallet_transactions(address: str, limit: int = 10):
+    response = solana_rpc_call(
+        "getSignaturesForAddress",
+        [
+            address,
+            {
+                "limit": limit,
+            },
+        ],
+    )
+
+    return response["result"] 
