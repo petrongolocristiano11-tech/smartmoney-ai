@@ -14,7 +14,7 @@ def solana_rpc_call(method: str, params: list | None = None):
     response = httpx.post(
         settings.SOLANA_RPC_URL,
         json=payload,
-        timeout=10,
+        timeout=20,
     )
 
     response.raise_for_status()
@@ -44,6 +44,21 @@ def get_wallet_transactions(address: str, limit: int = 10):
             address,
             {
                 "limit": limit,
+            },
+        ],
+    )
+
+    return response["result"]
+
+
+def get_transaction_detail(signature: str):
+    response = solana_rpc_call(
+        "getTransaction",
+        [
+            signature,
+            {
+                "encoding": "jsonParsed",
+                "maxSupportedTransactionVersion": 0,
             },
         ],
     )
