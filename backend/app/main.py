@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.database.session import engine, get_db
 from backend.app.models.wallet import Wallet
-from backend.app.schemas.wallet import WalletCreate
+from backend.app.schemas.wallet import WalletCreate, WalletResponse
 
 app = FastAPI(
     title="SmartMoney AI",
@@ -36,9 +36,7 @@ def create_wallet(
     wallet: WalletCreate,
     db: Session = Depends(get_db),
 ):
-    new_wallet = Wallet(
-        address=wallet.address,
-    )
+    new_wallet = Wallet(address=wallet.address)
 
     db.add(new_wallet)
     db.commit()
@@ -49,4 +47,39 @@ def create_wallet(
         "address": new_wallet.address,
         "message": "Wallet creato con successo",
     }
-    
+
+
+@app.get("/wallets", response_model=list[WalletResponse])
+def get_wallets(
+    db: Session = Depends(get_db),
+):
+    return db.query(Wallet).all()
+
+
+@app.get("/wallets/{wallet_id}", response_model=WalletResponse | None)
+def get_wallet(
+    wallet_id: int,
+    db: Session = Depends(get_db),
+):
+    return db.query(Wallet).filter(Wallet.id == wallet_id).first()
+
+
+@app.delete("/wallets/{wallet_id}")
+def delete_wallet(
+    wallet_id: int,
+    db: Session = Depends(get_db),
+):
+    wallet = db.query(Wallet).filter(Wallet.id == wallet_id).first()
+
+    if wallet is None:
+        return {
+            "message": "Wallet non trovato",
+        }
+
+    db.delete(wallet)
+    db.commit()
+
+    return {
+        "message": "Wallet eliminato con successo",
+        "id": wallet_id,
+    } 
