@@ -1,7 +1,7 @@
 from backend.app.services.portfolio_engine import build_wallet_portfolio
 
 
-MIN_SOL_SPENT_FOR_ROI = 0.001
+from backend.app.core.constants import MIN_SOL_SPENT_FOR_ROI 
 
 
 def calculate_wallet_roi(db, wallet_address: str):

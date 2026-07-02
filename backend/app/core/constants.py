@@ -1,0 +1,10 @@
+MIN_SOL_SPENT_FOR_ROI = 0.001
+
+SOL_MINT = "So11111111111111111111111111111111111111112"
+
+SMART_SCORE_WEIGHTS = {
+    "roi": 0.35,
+    "win_rate": 0.30,
+    "profit": 0.20,
+    "activity": 0.15,
+} 

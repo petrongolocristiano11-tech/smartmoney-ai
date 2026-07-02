@@ -1,3 +1,5 @@
+from backend.app.core.constants import SOL_MINT 
+
 def normalize_swap(swap: dict):
     token_transfers = swap.get("tokenTransfers", [])
     native_transfers = swap.get("nativeTransfers", [])
@@ -38,7 +40,7 @@ def identify_swap_side(normalized_swap: dict):
     wallet = normalized_swap.get("fee_payer")
     token_transfers = normalized_swap["token_transfers"]
 
-    sol_mint = "So11111111111111111111111111111111111111112"
+    SOL_MINT
 
     sent_sol = False
     received_sol = False
@@ -72,7 +74,7 @@ def extract_trade_amounts(normalized_swap: dict):
     token_transfers = normalized_swap["token_transfers"]
     native_transfers = normalized_swap["native_transfers"]
 
-    sol_mint = "So11111111111111111111111111111111111111112"
+    SOL_MINT
 
     token_mint = None
     token_amount = None
