@@ -132,12 +132,48 @@ def identify_swap_side(normalized_swap: dict):
         "side": side,
         "token_transfers": token_transfers,
         "native_transfers": normalized_swap["native_transfers"],
-    }  
+    }
+def extract_trade_amounts(normalized_swap: dict):
+    wallet = normalized_swap.get("fee_payer")
+    token_transfers = normalized_swap["token_transfers"]
+
+    sol_mint = "So11111111111111111111111111111111111111112"
+
+    token_mint = None
+    token_amount = None
+    sol_amount = None
+
+    for transfer in token_transfers:
+        mint = transfer.get("mint")
+        amount = transfer.get("tokenAmount")
+        from_wallet = transfer.get("fromUserAccount")
+        to_wallet = transfer.get("toUserAccount")
+
+        if mint == sol_mint and from_wallet == wallet:
+            sol_amount = amount
+
+        if mint == sol_mint and to_wallet == wallet:
+            sol_amount = amount
+
+        if mint != sol_mint and to_wallet == wallet:
+            token_mint = mint
+            token_amount = amount
+
+        if mint != sol_mint and from_wallet == wallet:
+            token_mint = mint
+            token_amount = amount
+
+    return {
+        "token_mint": token_mint,
+        "token_amount": token_amount,
+        "sol_amount": sol_amount,
+    }   
 
 
 def build_trade(normalized_swap: dict):
     summary = summarize_swap(normalized_swap)
     side = identify_swap_side(normalized_swap)
+    amounts = extract_trade_amounts(normalized_swap) 
 
     return {
         "signature": summary["signature"],
@@ -148,7 +184,10 @@ def build_trade(normalized_swap: dict):
         "tokens": summary["tokens"],
         "token_count": summary["token_count"],
         "fee": normalized_swap["fee"],
-    }
+        "token_mint": amounts["token_mint"],
+"token_amount": amounts["token_amount"],
+"sol_amount": amounts["sol_amount"],
+    } 
 
 
 def build_trade_data(wallet: str, trade: dict):
@@ -157,14 +196,14 @@ def build_trade_data(wallet: str, trade: dict):
         "wallet_address": wallet,
         "side": trade["side"],
         "source": trade["source"],
-        "token_mint": None,
-        "token_amount": None,
-        "sol_amount": None,
+        "token_mint": trade["token_mint"],
+        "token_amount": trade["token_amount"],
+        "sol_amount": trade["sol_amount"],
         "fee": trade["fee"],
         "success": True,
         "block_time": None,
         "raw_json": str(trade),
-    }
+    } 
 
 
 def get_wallet_swaps(address: str):
