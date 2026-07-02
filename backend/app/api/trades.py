@@ -4,6 +4,7 @@ from backend.app.services.portfolio_engine import build_wallet_portfolio
 from backend.app.database.session import get_db
 from backend.app.models.trade import Trade
 from backend.app.services.roi_engine import calculate_wallet_roi
+from backend.app.services.win_rate_engine import calculate_wallet_win_rate
 
 router = APIRouter(
     prefix="/trades",
@@ -60,4 +61,10 @@ def get_wallet_roi(
     wallet_address: str,
     db: Session = Depends(get_db),
 ):
-    return calculate_wallet_roi(db, wallet_address) 
+    return calculate_wallet_roi(db, wallet_address)
+@router.get("/win-rate/{wallet_address}")
+def get_wallet_win_rate(
+    wallet_address: str,
+    db: Session = Depends(get_db),
+):
+    return calculate_wallet_win_rate(db, wallet_address)  
