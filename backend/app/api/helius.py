@@ -3,14 +3,13 @@ from sqlalchemy.orm import Session
 
 from backend.app.database.session import get_db
 from backend.app.services.helius import (
-    build_trade,
-    build_trade_data,
     get_enhanced_transaction,
     get_helius_health,
     get_wallet_history,
     get_wallet_swaps,
 )
-from backend.app.services.trade_service import create_trade_if_not_exists
+from backend.app.services.trade_engine import build_trade, build_trade_data
+from backend.app.services.trade_service import create_trade_if_not_exists 
 
 router = APIRouter(
     prefix="/helius",
