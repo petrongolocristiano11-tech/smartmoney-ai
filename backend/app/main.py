@@ -2,6 +2,7 @@ from fastapi import Depends, FastAPI
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from backend.app.api.trades import router as trades_router 
 from backend.app.api.helius import router as helius_router 
 from backend.app.api.scanner import router as scanner_router 
 from backend.app.api.wallets import router as wallet_router 
@@ -25,6 +26,7 @@ app.include_router(scanner_router)
 app.include_router(wallet_router) 
 app.include_router(solana_router)
 app.include_router(helius_router)
+app.include_router(trades_router)
 
 @app.get("/")
 def home():
