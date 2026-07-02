@@ -27,3 +27,16 @@ def helius_rpc_call(method: str, params: list | None = None):
 
 def get_helius_health():
     return helius_rpc_call("getHealth") 
+def get_enhanced_transaction(signature: str):
+    url = f"https://api.helius.xyz/v0/transactions/?api-key={settings.HELIUS_API_KEY}"
+
+    response = httpx.post(
+        url,
+        json={
+            "transactions": [signature],
+        },
+        timeout=20,
+    )
+
+    response.raise_for_status()
+    return response.json() 
