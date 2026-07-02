@@ -77,24 +77,46 @@ def extract_trade_amounts(normalized_swap: dict):
     token_amount = None
     sol_amount = None
 
+    sol_candidates = []
+    token_candidates = []
+
     for transfer in token_transfers:
         mint = transfer.get("mint")
         amount = transfer.get("tokenAmount")
         from_wallet = transfer.get("fromUserAccount")
         to_wallet = transfer.get("toUserAccount")
 
+        if amount is None:
+            continue
+
         if mint == sol_mint and (from_wallet == wallet or to_wallet == wallet):
-            sol_amount = amount
+            sol_candidates.append(amount)
 
         if mint != sol_mint and (from_wallet == wallet or to_wallet == wallet):
-            token_mint = mint
-            token_amount = amount
+            token_candidates.append(
+                {
+                    "mint": mint,
+                    "amount": amount,
+                }
+            )
+
+    if sol_candidates:
+        sol_amount = max(sol_candidates)
+
+    if token_candidates:
+        biggest_token = max(
+            token_candidates,
+            key=lambda item: item["amount"],
+        )
+
+        token_mint = biggest_token["mint"]
+        token_amount = biggest_token["amount"]
 
     return {
         "token_mint": token_mint,
         "token_amount": token_amount,
         "sol_amount": sol_amount,
-    }
+    } 
 
 
 def summarize_swap(normalized_swap: dict):

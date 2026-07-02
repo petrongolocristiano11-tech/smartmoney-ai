@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-
+from backend.app.services.portfolio_engine import build_wallet_portfolio 
 from backend.app.database.session import get_db
 from backend.app.models.trade import Trade
 
@@ -32,4 +32,25 @@ def create_test_trade(db: Session = Depends(get_db)):
     db.refresh(trade)
 
     return trade 
-    
+
+@router.get("/stats")
+def get_trade_stats(db: Session = Depends(get_db)):
+    total_trades = db.query(Trade).count()
+    unique_wallets = db.query(Trade.wallet_address).distinct().count()
+    unique_tokens = db.query(Trade.token_mint).distinct().count()
+    buy_trades = db.query(Trade).filter(Trade.side == "BUY").count()
+    sell_trades = db.query(Trade).filter(Trade.side == "SELL").count()
+
+    return {
+        "total_trades": total_trades,
+        "unique_wallets": unique_wallets,
+        "unique_tokens": unique_tokens,
+        "buy_trades": buy_trades,
+        "sell_trades": sell_trades,
+    } 
+@router.get("/portfolio/{wallet_address}")
+def get_wallet_portfolio(
+    wallet_address: str,
+    db: Session = Depends(get_db),
+):
+    return build_wallet_portfolio(db, wallet_address) 
