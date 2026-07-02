@@ -15,12 +15,7 @@ def helius_rpc_call(method: str, params: list | None = None):
         "params": params or [],
     }
 
-    response = httpx.post(
-        get_helius_rpc_url(),
-        json=payload,
-        timeout=20,
-    )
-
+    response = httpx.post(get_helius_rpc_url(), json=payload, timeout=20)
     response.raise_for_status()
     return response.json()
 
@@ -50,7 +45,6 @@ def get_wallet_history(address: str):
     )
 
     response = httpx.get(url, timeout=20)
-
     response.raise_for_status()
     return response.json()
 
@@ -66,13 +60,13 @@ def normalize_swap(swap: dict):
         "fee": swap.get("fee"),
         "type": swap.get("type"),
         "description": swap.get("description"),
-
         "token_transfers": token_transfers,
         "native_transfers": native_transfers,
-
         "token_transfer_count": len(token_transfers),
         "native_transfer_count": len(native_transfers),
-    } 
+    }
+
+
 def extract_swap_tokens(normalized_swap: dict):
     tokens = []
 
@@ -86,7 +80,9 @@ def extract_swap_tokens(normalized_swap: dict):
             }
         )
 
-    return tokens 
+    return tokens
+
+
 def summarize_swap(normalized_swap: dict):
     tokens = extract_swap_tokens(normalized_swap)
 
@@ -96,7 +92,9 @@ def summarize_swap(normalized_swap: dict):
         "source": normalized_swap["source"],
         "token_count": len(tokens),
         "tokens": tokens,
-    } 
+    }
+
+
 def identify_swap_side(normalized_swap: dict):
     token_transfers = normalized_swap["token_transfers"]
     native_transfers = normalized_swap["native_transfers"]
@@ -116,7 +114,9 @@ def identify_swap_side(normalized_swap: dict):
         "side": side,
         "token_transfers": token_transfers,
         "native_transfers": native_transfers,
-    } 
+    }
+
+
 def build_trade(normalized_swap: dict):
     summary = summarize_swap(normalized_swap)
     side = identify_swap_side(normalized_swap)
@@ -128,7 +128,25 @@ def build_trade(normalized_swap: dict):
         "side": side["side"],
         "tokens": summary["tokens"],
         "token_count": summary["token_count"],
-    } 
+        "fee": normalized_swap["fee"],
+    }
+
+
+def build_trade_data(wallet: str, trade: dict):
+    return {
+        "signature": trade["signature"],
+        "wallet_address": wallet,
+        "side": trade["side"],
+        "source": trade["source"],
+        "token_mint": None,
+        "token_amount": None,
+        "sol_amount": None,
+        "fee": trade["fee"],
+        "success": True,
+        "block_time": None,
+        "raw_json": str(trade),
+    }
+
 
 def get_wallet_swaps(address: str):
     transactions = get_wallet_history(address)
