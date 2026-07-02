@@ -70,6 +70,7 @@ def identify_swap_side(normalized_swap: dict):
 def extract_trade_amounts(normalized_swap: dict):
     wallet = normalized_swap.get("fee_payer")
     token_transfers = normalized_swap["token_transfers"]
+    native_transfers = normalized_swap["native_transfers"]
 
     sol_mint = "So11111111111111111111111111111111111111112"
 
@@ -99,6 +100,17 @@ def extract_trade_amounts(normalized_swap: dict):
                     "amount": amount,
                 }
             )
+
+    for transfer in native_transfers:
+        amount = transfer.get("amount")
+        from_wallet = transfer.get("fromUserAccount")
+        to_wallet = transfer.get("toUserAccount")
+
+        if amount is None:
+            continue
+
+        if from_wallet == wallet or to_wallet == wallet:
+            sol_candidates.append(amount / 1_000_000_000)
 
     if sol_candidates:
         sol_amount = max(sol_candidates)
