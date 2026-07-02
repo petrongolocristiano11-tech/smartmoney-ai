@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from backend.app.services.portfolio_engine import build_wallet_portfolio 
 from backend.app.database.session import get_db
 from backend.app.models.trade import Trade
+from backend.app.services.roi_engine import calculate_wallet_roi
 
 router = APIRouter(
     prefix="/trades",
@@ -54,3 +55,9 @@ def get_wallet_portfolio(
     db: Session = Depends(get_db),
 ):
     return build_wallet_portfolio(db, wallet_address) 
+@router.get("/roi/{wallet_address}")
+def get_wallet_roi(
+    wallet_address: str,
+    db: Session = Depends(get_db),
+):
+    return calculate_wallet_roi(db, wallet_address) 
