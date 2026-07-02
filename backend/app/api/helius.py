@@ -38,6 +38,22 @@ def helius_wallet_swaps(address: str):
     return get_wallet_swaps(address)
 
 
+@router.get("/wallet/{address}/parsed-swaps")
+def helius_wallet_parsed_swaps(address: str):
+    swaps = get_wallet_swaps(address)
+
+    parsed = []
+
+    for swap in swaps["swaps"]:
+        parsed.append(build_trade(swap))
+
+    return {
+        "wallet": address,
+        "found": swaps["swaps_found"],
+        "parsed": parsed,
+    }
+
+
 @router.post("/wallet/{address}/import-swaps")
 def import_wallet_swaps(
     address: str,
