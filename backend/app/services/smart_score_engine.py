@@ -1,3 +1,4 @@
+from backend.app.core.constants import SMART_SCORE_WEIGHTS
 from backend.app.services.wallet_analytics_engine import calculate_wallet_analytics
 
 
@@ -14,10 +15,10 @@ def calculate_smart_score(db, wallet_address: str):
     activity_score = clamp(analytics["reliable_positions"] * 2)
 
     smart_score = (
-        roi_score * 0.35
-        + win_rate_score * 0.30
-        + profit_score * 0.20
-        + activity_score * 0.15
+        roi_score * SMART_SCORE_WEIGHTS["roi"]
+        + win_rate_score * SMART_SCORE_WEIGHTS["win_rate"]
+        + profit_score * SMART_SCORE_WEIGHTS["profit"]
+        + activity_score * SMART_SCORE_WEIGHTS["activity"]
     )
 
     return {
@@ -29,5 +30,6 @@ def calculate_smart_score(db, wallet_address: str):
             "profit_score": round(profit_score, 2),
             "activity_score": round(activity_score, 2),
         },
+        "weights": SMART_SCORE_WEIGHTS,
         "analytics": analytics,
     } 
