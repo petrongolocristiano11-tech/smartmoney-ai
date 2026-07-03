@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from backend.app.schemas.portfolio import WalletPortfolioResponse
+from backend.app.schemas.trade import TradeResponse, TradeStatsResponse 
 from backend.app.schemas.trade import TradeResponse, TradeStatsResponse 
 from backend.app.schemas.trade import TradeResponse 
 from backend.app.database.session import get_db
@@ -40,7 +42,7 @@ def get_trade_stats(db: Session = Depends(get_db)):
     }
 
 
-@router.get("/portfolio/{wallet_address}")
+@router.get("/portfolio/{wallet_address}", response_model=WalletPortfolioResponse) 
 def get_wallet_portfolio(
     wallet_address: str,
     db: Session = Depends(get_db),
