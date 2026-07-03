@@ -1,6 +1,9 @@
 from backend.app.models.trade import Trade
 from backend.app.services.helius import get_wallet_history
-
+from backend.app.services.helius import get_wallet_swaps
+from backend.app.services.smart_score_engine import calculate_smart_score
+from backend.app.services.trade_engine import build_trade, build_trade_data
+from backend.app.services.trade_service import create_trade_if_not_exists 
 
 def get_traded_tokens_by_wallet(db, wallet_address: str):
     rows = (
@@ -53,4 +56,53 @@ def discover_wallets_from_token_onchain(token_mint: str):
         "token_mint": token_mint,
         "wallets_found": len(wallets),
         "wallets": list(wallets),
+    } 
+
+def discover_import_and_score_wallets_from_token(
+    db,
+    token_mint: str,
+    limit: int = 10,
+):
+    discovery = discover_wallets_from_token_onchain(token_mint)
+
+    wallets = discovery["wallets"][:limit]
+
+    results = []
+
+    for wallet in wallets:
+        swaps = get_wallet_swaps(wallet)
+
+        imported = 0
+
+        for swap in swaps["swaps"]:
+            trade = build_trade(swap)
+            trade_data = build_trade_data(wallet, trade)
+            create_trade_if_not_exists(db, trade_data)
+            imported += 1
+
+        score = calculate_smart_score(db, wallet)
+
+        results.append(
+            {
+                "wallet": wallet,
+                "swaps_found": swaps["swaps_found"],
+                "imported": imported,
+                "smart_score": score["smart_score"],
+                "roi_percent": score["analytics"]["total_roi_percent"],
+                "win_rate_percent": score["analytics"]["win_rate_percent"],
+                "profit_loss_sol": score["analytics"]["total_profit_loss_sol"],
+                "reliable_positions": score["analytics"]["reliable_positions"],
+            }
+        )
+
+    results.sort(
+        key=lambda item: item["smart_score"],
+        reverse=True,
+    )
+
+    return {
+        "token_mint": token_mint,
+        "wallets_discovered": discovery["wallets_found"],
+        "wallets_analyzed": len(results),
+        "ranking": results,
     } 

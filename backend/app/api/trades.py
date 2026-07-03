@@ -2,6 +2,12 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from backend.app.services.discovery_engine import (
+    discover_import_and_score_wallets_from_token,
+    discover_wallets_from_token_onchain,
+    get_traded_tokens_by_wallet,
+    get_wallets_by_token,
+) 
+from backend.app.services.discovery_engine import (
     discover_wallets_from_token_onchain,
     get_traded_tokens_by_wallet,
     get_wallets_by_token,
@@ -121,3 +127,15 @@ def discover_wallets_from_token(
 @router.get("/discovery/onchain/wallets/{token_mint}")
 def discover_wallets_from_token_onchain_endpoint(token_mint: str):
     return discover_wallets_from_token_onchain(token_mint) 
+
+@router.post("/discovery/onchain/score/{token_mint}")
+def discover_import_and_score_wallets_endpoint(
+    token_mint: str,
+    limit: int = 10,
+    db: Session = Depends(get_db),
+):
+    return discover_import_and_score_wallets_from_token(
+        db=db,
+        token_mint=token_mint,
+        limit=limit,
+    ) 
