@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from backend.app.schemas.roi import WalletRoiResponse 
 from backend.app.schemas.portfolio import WalletPortfolioResponse
 from backend.app.schemas.trade import TradeResponse, TradeStatsResponse 
 from backend.app.schemas.trade import TradeResponse, TradeStatsResponse 
@@ -50,7 +51,7 @@ def get_wallet_portfolio(
     return build_wallet_portfolio(db, wallet_address)
 
 
-@router.get("/roi/{wallet_address}")
+@router.get("/roi/{wallet_address}", response_model=WalletRoiResponse) 
 def get_wallet_roi(
     wallet_address: str,
     db: Session = Depends(get_db),
