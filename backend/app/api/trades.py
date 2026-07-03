@@ -1,14 +1,13 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from backend.app.schemas.analytics import WalletAnalyticsResponse 
-from backend.app.schemas.roi import WalletRoiResponse 
-from backend.app.schemas.portfolio import WalletPortfolioResponse
-from backend.app.schemas.trade import TradeResponse, TradeStatsResponse 
-from backend.app.schemas.trade import TradeResponse, TradeStatsResponse 
-from backend.app.schemas.trade import TradeResponse 
 from backend.app.database.session import get_db
 from backend.app.models.trade import Trade
+from backend.app.schemas.analytics import WalletAnalyticsResponse
+from backend.app.schemas.portfolio import WalletPortfolioResponse
+from backend.app.schemas.roi import WalletRoiResponse
+from backend.app.schemas.smart_score import SmartScoreResponse
+from backend.app.schemas.trade import TradeResponse, TradeStatsResponse
 from backend.app.services.portfolio_engine import build_wallet_portfolio
 from backend.app.services.ranking_engine import get_ranked_wallets
 from backend.app.services.roi_engine import calculate_wallet_roi
@@ -44,7 +43,7 @@ def get_trade_stats(db: Session = Depends(get_db)):
     }
 
 
-@router.get("/portfolio/{wallet_address}", response_model=WalletPortfolioResponse) 
+@router.get("/portfolio/{wallet_address}", response_model=WalletPortfolioResponse)
 def get_wallet_portfolio(
     wallet_address: str,
     db: Session = Depends(get_db),
@@ -52,7 +51,7 @@ def get_wallet_portfolio(
     return build_wallet_portfolio(db, wallet_address)
 
 
-@router.get("/roi/{wallet_address}", response_model=WalletRoiResponse) 
+@router.get("/roi/{wallet_address}", response_model=WalletRoiResponse)
 def get_wallet_roi(
     wallet_address: str,
     db: Session = Depends(get_db),
@@ -71,7 +70,7 @@ def get_wallet_win_rate(
 @router.get(
     "/analytics/{wallet_address}",
     response_model=WalletAnalyticsResponse,
-) 
+)
 def get_wallet_analytics(
     wallet_address: str,
     db: Session = Depends(get_db),
@@ -79,7 +78,10 @@ def get_wallet_analytics(
     return calculate_wallet_analytics(db, wallet_address)
 
 
-@router.get("/smart-score/{wallet_address}")
+@router.get(
+    "/smart-score/{wallet_address}",
+    response_model=SmartScoreResponse,
+)
 def get_wallet_smart_score(
     wallet_address: str,
     db: Session = Depends(get_db),
