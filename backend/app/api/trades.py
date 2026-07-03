@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from backend.app.schemas.ranking import WalletRankingResponse 
 from backend.app.database.session import get_db
 from backend.app.models.trade import Trade
 from backend.app.schemas.analytics import WalletAnalyticsResponse
@@ -89,6 +90,6 @@ def get_wallet_smart_score(
     return calculate_smart_score(db, wallet_address)
 
 
-@router.get("/ranking")
+@router.get("/ranking", response_model=WalletRankingResponse)
 def get_wallet_ranking(db: Session = Depends(get_db)):
-    return get_ranked_wallets(db) 
+    return get_ranked_wallets(db)  
