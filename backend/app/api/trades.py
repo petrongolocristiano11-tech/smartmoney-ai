@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from backend.app.schemas.trade import TradeResponse 
 from backend.app.database.session import get_db
 from backend.app.models.trade import Trade
 from backend.app.services.portfolio_engine import build_wallet_portfolio
@@ -16,7 +17,7 @@ router = APIRouter(
 )
 
 
-@router.get("")
+@router.get("", response_model=list[TradeResponse])
 def get_trades(db: Session = Depends(get_db)):
     return db.query(Trade).all()
 
