@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from backend.app.services.discovery_engine import get_traded_tokens_by_wallet 
 from backend.app.schemas.ranking import WalletRankingResponse 
 from backend.app.database.session import get_db
 from backend.app.models.trade import Trade
@@ -92,4 +93,11 @@ def get_wallet_smart_score(
 
 @router.get("/ranking", response_model=WalletRankingResponse)
 def get_wallet_ranking(db: Session = Depends(get_db)):
-    return get_ranked_wallets(db)  
+    return get_ranked_wallets(db)
+
+@router.get("/discovery/tokens/{wallet_address}")
+def discover_tokens_from_wallet(
+    wallet_address: str,
+    db: Session = Depends(get_db),
+):
+    return get_traded_tokens_by_wallet(db, wallet_address)   
