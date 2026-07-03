@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from backend.app.schemas.analytics import WalletAnalyticsResponse 
 from backend.app.schemas.roi import WalletRoiResponse 
 from backend.app.schemas.portfolio import WalletPortfolioResponse
 from backend.app.schemas.trade import TradeResponse, TradeStatsResponse 
@@ -67,7 +68,10 @@ def get_wallet_win_rate(
     return calculate_wallet_win_rate(db, wallet_address)
 
 
-@router.get("/analytics/{wallet_address}")
+@router.get(
+    "/analytics/{wallet_address}",
+    response_model=WalletAnalyticsResponse,
+) 
 def get_wallet_analytics(
     wallet_address: str,
     db: Session = Depends(get_db),
