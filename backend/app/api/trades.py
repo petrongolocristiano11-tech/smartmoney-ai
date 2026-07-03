@@ -2,6 +2,11 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from backend.app.services.discovery_engine import (
+    discover_wallets_from_token_onchain,
+    get_traded_tokens_by_wallet,
+    get_wallets_by_token,
+) 
+from backend.app.services.discovery_engine import (
     get_traded_tokens_by_wallet,
     get_wallets_by_token,
 ) 
@@ -112,3 +117,7 @@ def discover_wallets_from_token(
     db: Session = Depends(get_db),
 ):
     return get_wallets_by_token(db, token_mint)  
+
+@router.get("/discovery/onchain/wallets/{token_mint}")
+def discover_wallets_from_token_onchain_endpoint(token_mint: str):
+    return discover_wallets_from_token_onchain(token_mint) 

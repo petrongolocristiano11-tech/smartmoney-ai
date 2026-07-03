@@ -1,4 +1,5 @@
 from backend.app.models.trade import Trade
+from backend.app.services.helius import get_wallet_history
 
 
 def get_traded_tokens_by_wallet(db, wallet_address: str):
@@ -32,4 +33,24 @@ def get_wallets_by_token(db, token_mint: str):
         "token_mint": token_mint,
         "wallets_found": len(wallets),
         "wallets": wallets,
+    } 
+
+def discover_wallets_from_token_onchain(token_mint: str):
+    transactions = get_wallet_history(token_mint)
+
+    wallets = set()
+
+    for tx in transactions:
+        if tx.get("type") != "SWAP":
+            continue
+
+        fee_payer = tx.get("feePayer")
+
+        if fee_payer:
+            wallets.add(fee_payer)
+
+    return {
+        "token_mint": token_mint,
+        "wallets_found": len(wallets),
+        "wallets": list(wallets),
     } 
