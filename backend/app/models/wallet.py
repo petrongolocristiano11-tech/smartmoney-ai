@@ -1,6 +1,8 @@
 from sqlalchemy import Boolean, DateTime, Float, Integer, String
 from sqlalchemy.sql import func
 
+from sqlalchemy import DateTime
+from sqlalchemy.sql import func 
 from backend.app.database.base import Base
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -9,6 +11,11 @@ class Wallet(Base):
     __tablename__ = "wallets"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    last_sync: Mapped[DateTime | None] = mapped_column(
+    DateTime(timezone=True),
+    nullable=True,
+)  
 
     address: Mapped[str] = mapped_column(String(64), unique=True, index=True)
 

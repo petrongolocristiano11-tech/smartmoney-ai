@@ -1,9 +1,7 @@
 from backend.app.models.trade import Trade
 from backend.app.services.discovered_wallet_service import save_discovered_wallet
-from backend.app.services.helius import get_wallet_history, get_wallet_swaps
-from backend.app.services.smart_score_engine import calculate_smart_score
-from backend.app.services.trade_engine import build_trade, build_trade_data
-from backend.app.services.trade_service import create_trade_if_not_exists
+from backend.app.services.helius import get_wallet_history
+from backend.app.services.wallet_sync_service import sync_wallet
 
 
 def get_traded_tokens_by_wallet(db, wallet_address: str):
@@ -69,22 +67,11 @@ def discover_import_and_score_wallets_from_token(
 ):
     discovery = discover_wallets_from_token_onchain(token_mint)
 
-    wallets = discovery["wallets"][:limit]
-
     results = []
 
-    for wallet in wallets:
-        swaps = get_wallet_swaps(wallet)
+    for wallet in discovery["wallets"][:limit]:
 
-        imported = 0
-
-        for swap in swaps["swaps"]:
-            trade = build_trade(swap)
-            trade_data = build_trade_data(wallet, trade)
-            create_trade_if_not_exists(db, trade_data)
-            imported += 1
-
-        score = calculate_smart_score(db, wallet)
+        score = sync_wallet(db, wallet)
 
         save_discovered_wallet(
             db=db,
@@ -100,8 +87,6 @@ def discover_import_and_score_wallets_from_token(
         results.append(
             {
                 "wallet": wallet,
-                "swaps_found": swaps["swaps_found"],
-                "imported": imported,
                 "smart_score": score["smart_score"],
                 "roi_percent": score["analytics"]["total_roi_percent"],
                 "win_rate_percent": score["analytics"]["win_rate_percent"],
@@ -119,5 +104,62 @@ def discover_import_and_score_wallets_from_token(
         "token_mint": token_mint,
         "wallets_discovered": discovery["wallets_found"],
         "wallets_analyzed": len(results),
+        "ranking": results,
+    }
+
+
+def discover_full_from_wallet(
+    db,
+    wallet_address: str,
+    max_tokens: int = 5,
+    max_wallets_per_token: int = 5,
+):
+    token_data = get_traded_tokens_by_wallet(db, wallet_address)
+
+    discovered_wallets = set()
+
+    for token in token_data["tokens"][:max_tokens]:
+        discovery = discover_wallets_from_token_onchain(token)
+
+        for wallet in discovery["wallets"][:max_wallets_per_token]:
+            if wallet != wallet_address:
+                discovered_wallets.add(wallet)
+
+    results = []
+
+    for wallet in discovered_wallets:
+
+        score = sync_wallet(db, wallet)
+
+        save_discovered_wallet(
+            db=db,
+            wallet_address=wallet,
+            discovered_from_token="MULTI_TOKEN",
+            smart_score=score["smart_score"],
+            roi_percent=score["analytics"]["total_roi_percent"],
+            win_rate_percent=score["analytics"]["win_rate_percent"],
+            profit_loss_sol=score["analytics"]["total_profit_loss_sol"],
+            reliable_positions=score["analytics"]["reliable_positions"],
+        )
+
+        results.append(
+            {
+                "wallet": wallet,
+                "smart_score": score["smart_score"],
+            }
+        )
+
+    results.sort(
+        key=lambda item: item["smart_score"],
+        reverse=True,
+    )
+
+    return {
+        "seed_wallet": wallet_address,
+        "tokens_processed": min(
+            max_tokens,
+            token_data["tokens_found"],
+        ),
+        "wallets_discovered": len(discovered_wallets),
         "ranking": results,
     } 

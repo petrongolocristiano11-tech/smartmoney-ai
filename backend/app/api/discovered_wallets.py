@@ -12,9 +12,15 @@ router = APIRouter(
 
 
 @router.get("", response_model=list[DiscoveredWalletResponse])
-def get_discovered_wallets(db: Session = Depends(get_db)):
+def get_discovered_wallets(
+    min_score: float = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+):
     return (
         db.query(DiscoveredWallet)
+        .filter(DiscoveredWallet.smart_score >= min_score)
         .order_by(DiscoveredWallet.smart_score.desc())
+        .limit(limit)
         .all()
     ) 

@@ -1,16 +1,21 @@
 from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from backend.app.api.discovered_wallets import router as discovered_wallets_router 
-from backend.app.api.trades import router as trades_router 
-from backend.app.api.helius import router as helius_router 
-from backend.app.api.scanner import router as scanner_router 
-from backend.app.api.wallets import router as wallet_router 
+from backend.app.api.discovered_wallets import router as discovered_wallets_router
+from backend.app.api.trades import router as trades_router
+from backend.app.api.helius import router as helius_router
+from backend.app.api.scanner import router as scanner_router
+from backend.app.api.wallets import router as wallet_router
 from backend.app.api.solana import router as solana_router
+
 from backend.app.database.session import engine, get_db
+
 from backend.app.models.wallet import Wallet
+
 from backend.app.schemas.wallet import WalletCreate, WalletResponse
+
 from backend.app.services.solana_rpc import (
     get_solana_health,
     get_wallet_balance,
@@ -23,12 +28,24 @@ app = FastAPI(
     version="0.6.0",
 )
 
-app.include_router(scanner_router) 
-app.include_router(wallet_router) 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(scanner_router)
+app.include_router(wallet_router)
 app.include_router(solana_router)
 app.include_router(helius_router)
 app.include_router(trades_router)
 app.include_router(discovered_wallets_router)
+
 
 @app.get("/")
 def home():
@@ -46,5 +63,4 @@ def health():
     return {
         "status": "ok",
         "database": "connected",
-    }
-
+    } 
