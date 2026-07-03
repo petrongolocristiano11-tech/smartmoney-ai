@@ -1,6 +1,10 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from backend.app.services.discovery_engine import (
+    get_traded_tokens_by_wallet,
+    get_wallets_by_token,
+) 
 from backend.app.services.discovery_engine import get_traded_tokens_by_wallet 
 from backend.app.schemas.ranking import WalletRankingResponse 
 from backend.app.database.session import get_db
@@ -100,4 +104,11 @@ def discover_tokens_from_wallet(
     wallet_address: str,
     db: Session = Depends(get_db),
 ):
-    return get_traded_tokens_by_wallet(db, wallet_address)   
+    return get_traded_tokens_by_wallet(db, wallet_address)  
+
+@router.get("/discovery/wallets/{token_mint}")
+def discover_wallets_from_token(
+    token_mint: str,
+    db: Session = Depends(get_db),
+):
+    return get_wallets_by_token(db, token_mint)  

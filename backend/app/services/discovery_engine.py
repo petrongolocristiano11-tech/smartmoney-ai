@@ -17,3 +17,19 @@ def get_traded_tokens_by_wallet(db, wallet_address: str):
         "tokens_found": len(tokens),
         "tokens": tokens,
     } 
+    
+def get_wallets_by_token(db, token_mint: str):
+    rows = (
+        db.query(Trade.wallet_address)
+        .filter(Trade.token_mint == token_mint)
+        .distinct()
+        .all()
+    )
+
+    wallets = [row[0] for row in rows]
+
+    return {
+        "token_mint": token_mint,
+        "wallets_found": len(wallets),
+        "wallets": wallets,
+    } 
