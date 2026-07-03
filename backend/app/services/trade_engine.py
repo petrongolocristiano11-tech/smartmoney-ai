@@ -1,4 +1,5 @@
-from backend.app.core.constants import SOL_MINT 
+from backend.app.core.constants import SOL_MINT
+
 
 def normalize_swap(swap: dict):
     token_transfers = swap.get("tokenTransfers", [])
@@ -40,8 +41,6 @@ def identify_swap_side(normalized_swap: dict):
     wallet = normalized_swap.get("fee_payer")
     token_transfers = normalized_swap["token_transfers"]
 
-    SOL_MINT
-
     sent_sol = False
     received_sol = False
 
@@ -50,7 +49,7 @@ def identify_swap_side(normalized_swap: dict):
         from_wallet = transfer.get("fromUserAccount")
         to_wallet = transfer.get("toUserAccount")
 
-        if mint != sol_mint:
+        if mint != SOL_MINT:
             continue
 
         if from_wallet == wallet:
@@ -60,21 +59,18 @@ def identify_swap_side(normalized_swap: dict):
             received_sol = True
 
     if sent_sol:
-        side = "BUY"
-    elif received_sol:
-        side = "SELL"
-    else:
-        side = "UNKNOWN"
+        return "BUY"
 
-    return side
+    if received_sol:
+        return "SELL"
+
+    return "UNKNOWN"
 
 
 def extract_trade_amounts(normalized_swap: dict):
     wallet = normalized_swap.get("fee_payer")
     token_transfers = normalized_swap["token_transfers"]
     native_transfers = normalized_swap["native_transfers"]
-
-    SOL_MINT
 
     token_mint = None
     token_amount = None
@@ -92,10 +88,10 @@ def extract_trade_amounts(normalized_swap: dict):
         if amount is None:
             continue
 
-        if mint == sol_mint and (from_wallet == wallet or to_wallet == wallet):
+        if mint == SOL_MINT and (from_wallet == wallet or to_wallet == wallet):
             sol_candidates.append(amount)
 
-        if mint != sol_mint and (from_wallet == wallet or to_wallet == wallet):
+        if mint != SOL_MINT and (from_wallet == wallet or to_wallet == wallet):
             token_candidates.append(
                 {
                     "mint": mint,
@@ -130,7 +126,7 @@ def extract_trade_amounts(normalized_swap: dict):
         "token_mint": token_mint,
         "token_amount": token_amount,
         "sol_amount": sol_amount,
-    } 
+    }
 
 
 def summarize_swap(normalized_swap: dict):
