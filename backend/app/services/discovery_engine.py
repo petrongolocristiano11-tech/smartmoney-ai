@@ -1,9 +1,10 @@
 from backend.app.models.trade import Trade
-from backend.app.services.helius import get_wallet_history
-from backend.app.services.helius import get_wallet_swaps
+from backend.app.services.discovered_wallet_service import save_discovered_wallet
+from backend.app.services.helius import get_wallet_history, get_wallet_swaps
 from backend.app.services.smart_score_engine import calculate_smart_score
 from backend.app.services.trade_engine import build_trade, build_trade_data
-from backend.app.services.trade_service import create_trade_if_not_exists 
+from backend.app.services.trade_service import create_trade_if_not_exists
+
 
 def get_traded_tokens_by_wallet(db, wallet_address: str):
     rows = (
@@ -20,8 +21,9 @@ def get_traded_tokens_by_wallet(db, wallet_address: str):
         "wallet": wallet_address,
         "tokens_found": len(tokens),
         "tokens": tokens,
-    } 
-    
+    }
+
+
 def get_wallets_by_token(db, token_mint: str):
     rows = (
         db.query(Trade.wallet_address)
@@ -36,7 +38,8 @@ def get_wallets_by_token(db, token_mint: str):
         "token_mint": token_mint,
         "wallets_found": len(wallets),
         "wallets": wallets,
-    } 
+    }
+
 
 def discover_wallets_from_token_onchain(token_mint: str):
     transactions = get_wallet_history(token_mint)
@@ -56,7 +59,8 @@ def discover_wallets_from_token_onchain(token_mint: str):
         "token_mint": token_mint,
         "wallets_found": len(wallets),
         "wallets": list(wallets),
-    } 
+    }
+
 
 def discover_import_and_score_wallets_from_token(
     db,
@@ -81,6 +85,17 @@ def discover_import_and_score_wallets_from_token(
             imported += 1
 
         score = calculate_smart_score(db, wallet)
+
+        save_discovered_wallet(
+            db=db,
+            wallet_address=wallet,
+            discovered_from_token=token_mint,
+            smart_score=score["smart_score"],
+            roi_percent=score["analytics"]["total_roi_percent"],
+            win_rate_percent=score["analytics"]["win_rate_percent"],
+            profit_loss_sol=score["analytics"]["total_profit_loss_sol"],
+            reliable_positions=score["analytics"]["reliable_positions"],
+        )
 
         results.append(
             {
