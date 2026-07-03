@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from backend.app.schemas.trade import TradeResponse, TradeStatsResponse 
 from backend.app.schemas.trade import TradeResponse 
 from backend.app.database.session import get_db
 from backend.app.models.trade import Trade
@@ -22,7 +23,7 @@ def get_trades(db: Session = Depends(get_db)):
     return db.query(Trade).all()
 
 
-@router.get("/stats")
+@router.get("/stats", response_model=TradeStatsResponse)
 def get_trade_stats(db: Session = Depends(get_db)):
     total_trades = db.query(Trade).count()
     unique_wallets = db.query(Trade.wallet_address).distinct().count()

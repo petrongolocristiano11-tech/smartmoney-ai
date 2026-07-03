@@ -18,4 +18,12 @@ class TradeResponse(BaseModel):
     raw_json: str | None
     created_at: datetime
 
-    model_config = ConfigDict(from_attributes=True) 
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TradeStatsResponse(BaseModel):
+    total_trades: int
+    unique_wallets: int
+    unique_tokens: int
+    buy_trades: int
+    sell_trades: int 
