@@ -6,6 +6,14 @@ export function getDiscoveredWallets() {
   return axios.get(`${API_URL}/discovered-wallets`);
 }
 
+export function getWallet(walletAddress) {
+  return axios.get(`${API_URL}/discovered-wallets/${walletAddress}`);
+}
+
+export function getWalletTrades(walletAddress) {
+  return axios.get(`${API_URL}/trades/wallet/${walletAddress}`);
+}
+
 export function runDiscovery(walletAddress) {
   return axios.post(
     `${API_URL}/trades/discovery/full/${walletAddress}`,

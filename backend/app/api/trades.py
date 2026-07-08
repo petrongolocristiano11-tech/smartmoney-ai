@@ -43,6 +43,17 @@ router = APIRouter(
 def get_trades(db: Session = Depends(get_db)):
     return db.query(Trade).all()
 
+@router.get("/wallet/{wallet_address}", response_model=list[TradeResponse])
+def get_trades_by_wallet(
+    wallet_address: str,
+    db: Session = Depends(get_db),
+):
+    return (
+        db.query(Trade)
+        .filter(Trade.wallet_address == wallet_address)
+        .order_by(Trade.created_at.desc())
+        .all()
+    ) 
 
 @router.get("/stats", response_model=TradeStatsResponse)
 def get_trade_stats(db: Session = Depends(get_db)):
