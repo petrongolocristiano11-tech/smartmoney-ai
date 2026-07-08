@@ -1,13 +1,16 @@
+from backend.app.services.early_buyer_engine import calculate_early_buyer_score
 from backend.app.services.wallet_analytics_engine import calculate_wallet_analytics
 
 
-SMART_SCORE_V2_WEIGHTS = {
-    "roi": 0.25,
-    "win_rate": 0.25,
-    "profit": 0.15,
-    "activity": 0.10,
-    "avg_trade_size": 0.10,
+SMART_SCORE_V21_WEIGHTS = {
+    "roi": 0.18,
+    "win_rate": 0.18,
+    "profit": 0.12,
+    "activity": 0.08,
+    "avg_trade_size": 0.07,
     "profit_per_token": 0.10,
+    "early_buyer": 0.17,
+    "buy_sell_balance": 0.05,
     "risk": 0.05,
 }
 
@@ -26,8 +29,18 @@ def calculate_risk_score(risk_level: str):
     return 0
 
 
+def calculate_buy_sell_balance_score(buy_sell_ratio: float):
+    if buy_sell_ratio <= 0:
+        return 0
+
+    distance_from_balance = abs(1 - buy_sell_ratio)
+
+    return clamp(100 - distance_from_balance * 50)
+
+
 def calculate_smart_score(db, wallet_address: str):
     analytics = calculate_wallet_analytics(db, wallet_address)
+    early_buyer = calculate_early_buyer_score(db, wallet_address)
 
     roi_score = clamp((analytics["total_roi_percent"] + 100) / 2)
     win_rate_score = clamp(analytics["win_rate_percent"])
@@ -35,22 +48,28 @@ def calculate_smart_score(db, wallet_address: str):
     activity_score = clamp(analytics["reliable_positions"] * 2)
     avg_trade_size_score = clamp(analytics["average_trade_size_sol"] * 100)
     profit_per_token_score = clamp(analytics["profit_per_token"] * 100 + 50)
+    early_buyer_score = clamp(early_buyer["early_buyer_score"])
+    buy_sell_balance_score = calculate_buy_sell_balance_score(
+        analytics["buy_sell_ratio"]
+    )
     risk_score = calculate_risk_score(analytics["risk_level"])
 
     smart_score = (
-        roi_score * SMART_SCORE_V2_WEIGHTS["roi"]
-        + win_rate_score * SMART_SCORE_V2_WEIGHTS["win_rate"]
-        + profit_score * SMART_SCORE_V2_WEIGHTS["profit"]
-        + activity_score * SMART_SCORE_V2_WEIGHTS["activity"]
-        + avg_trade_size_score * SMART_SCORE_V2_WEIGHTS["avg_trade_size"]
-        + profit_per_token_score * SMART_SCORE_V2_WEIGHTS["profit_per_token"]
-        + risk_score * SMART_SCORE_V2_WEIGHTS["risk"]
+        roi_score * SMART_SCORE_V21_WEIGHTS["roi"]
+        + win_rate_score * SMART_SCORE_V21_WEIGHTS["win_rate"]
+        + profit_score * SMART_SCORE_V21_WEIGHTS["profit"]
+        + activity_score * SMART_SCORE_V21_WEIGHTS["activity"]
+        + avg_trade_size_score * SMART_SCORE_V21_WEIGHTS["avg_trade_size"]
+        + profit_per_token_score * SMART_SCORE_V21_WEIGHTS["profit_per_token"]
+        + early_buyer_score * SMART_SCORE_V21_WEIGHTS["early_buyer"]
+        + buy_sell_balance_score * SMART_SCORE_V21_WEIGHTS["buy_sell_balance"]
+        + risk_score * SMART_SCORE_V21_WEIGHTS["risk"]
     )
 
     return {
         "wallet": wallet_address,
         "smart_score": round(smart_score, 2),
-        "version": "2.0",
+        "version": "2.1",
         "components": {
             "roi_score": round(roi_score, 2),
             "win_rate_score": round(win_rate_score, 2),
@@ -58,8 +77,11 @@ def calculate_smart_score(db, wallet_address: str):
             "activity_score": round(activity_score, 2),
             "avg_trade_size_score": round(avg_trade_size_score, 2),
             "profit_per_token_score": round(profit_per_token_score, 2),
+            "early_buyer_score": round(early_buyer_score, 2),
+            "buy_sell_balance_score": round(buy_sell_balance_score, 2),
             "risk_score": round(risk_score, 2),
         },
-        "weights": SMART_SCORE_V2_WEIGHTS,
+        "weights": SMART_SCORE_V21_WEIGHTS,
         "analytics": analytics,
+        "early_buyer": early_buyer,
     } 

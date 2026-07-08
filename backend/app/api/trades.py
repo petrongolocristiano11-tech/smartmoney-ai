@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from backend.app.services.network_engine import build_wallet_network
+from backend.app.services.early_buyer_engine import calculate_early_buyer_score
 
 from backend.app.services.discovery_engine import (
     discover_full_from_wallet, 
@@ -177,4 +178,15 @@ def get_wallet_network(
         db=db,
         wallet_address=wallet_address,
         limit=limit,
+    ) 
+@router.get("/early-buyer/{wallet_address}")
+def get_early_buyer_score(
+    wallet_address: str,
+    early_rank_threshold: int = 10,
+    db: Session = Depends(get_db),
+):
+    return calculate_early_buyer_score(
+        db=db,
+        wallet_address=wallet_address,
+        early_rank_threshold=early_rank_threshold,
     ) 
