@@ -11,4 +11,14 @@ class WalletAnalyticsResponse(BaseModel):
     total_roi_percent: float
     win_rate_percent: float
     winning_positions: int
-    losing_positions: int 
+    losing_positions: int
+
+    total_trades: int
+    buy_trades: int
+    sell_trades: int
+    unique_tokens: int
+    total_sol_volume: float
+    average_trade_size_sol: float
+    buy_sell_ratio: float
+    profit_per_token: float
+    risk_level: str 

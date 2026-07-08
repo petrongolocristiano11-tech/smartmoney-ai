@@ -11,6 +11,8 @@ function App() {
   const [lastDiscovery, setLastDiscovery] = useState(null);
   const [maxTokens, setMaxTokens] = useState(3);
   const [maxWalletsPerToken, setMaxWalletsPerToken] = useState(3);
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("smart_score");
 
   const averageScore =
     wallets.length > 0
@@ -19,6 +21,23 @@ function App() {
           wallets.length
         ).toFixed(2)
       : "-";
+
+  const filteredWallets = wallets
+    .filter((wallet) =>
+      wallet.wallet_address.toLowerCase().includes(search.toLowerCase())
+    )
+    .sort((a, b) => {
+      switch (sortBy) {
+        case "roi":
+          return b.roi_percent - a.roi_percent;
+        case "winrate":
+          return b.win_rate_percent - a.win_rate_percent;
+        case "profit":
+          return b.profit_loss_sol - a.profit_loss_sol;
+        default:
+          return b.smart_score - a.smart_score;
+      }
+    });
 
   function loadWallets() {
     getDiscoveredWallets()
@@ -66,6 +85,7 @@ function App() {
               Discover the smartest wallets on Solana
             </p>
           </div>
+
           <div className="rounded-full bg-green-900/40 border border-green-700 px-4 py-2 text-green-300 text-sm">
             Backend Online
           </div>
@@ -73,7 +93,7 @@ function App() {
       </header>
 
       <main className="max-w-7xl mx-auto p-8">
-        <div className="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="mb-6 grid grid-cols-1 md:grid-cols-6 gap-4">
           <input
             type="text"
             value={walletAddress}
@@ -104,10 +124,29 @@ function App() {
             placeholder="Wallets/token"
           />
 
+          <input
+            type="text"
+            placeholder="Search wallet..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="rounded-lg bg-slate-800 border border-slate-700 px-4 py-3 outline-none focus:border-blue-500"
+          />
+
+          <select
+            value={sortBy}
+            onChange={(event) => setSortBy(event.target.value)}
+            className="rounded-lg bg-slate-800 border border-slate-700 px-4 py-3 outline-none focus:border-blue-500"
+          >
+            <option value="smart_score">Smart Score</option>
+            <option value="roi">ROI</option>
+            <option value="winrate">Win Rate</option>
+            <option value="profit">Profit</option>
+          </select>
+
           <button
             onClick={handleDiscover}
             disabled={loading}
-            className="md:col-span-4 rounded-lg bg-blue-600 px-6 py-3 font-semibold hover:bg-blue-700 disabled:opacity-50"
+            className="md:col-span-6 rounded-lg bg-blue-600 px-6 py-3 font-semibold hover:bg-blue-700 disabled:opacity-50"
           >
             {loading ? "Discovering..." : "Discover"}
           </button>
@@ -185,8 +224,10 @@ function App() {
           </div>
 
           <div className="rounded-xl bg-slate-800 p-6">
-            <h3 className="text-slate-400">Discovery</h3>
-            <p className="text-3xl font-bold text-green-400">Ready</p>
+            <h3 className="text-slate-400">Showing</h3>
+            <p className="text-3xl font-bold text-green-400">
+              {filteredWallets.length}
+            </p>
           </div>
         </div>
 
@@ -202,12 +243,13 @@ function App() {
                 <th className="p-4">Score</th>
                 <th className="p-4">ROI</th>
                 <th className="p-4">Win Rate</th>
+                <th className="p-4">Profit</th>
                 <th className="p-4">Status</th>
               </tr>
             </thead>
 
             <tbody>
-              {wallets.map((wallet) => (
+              {filteredWallets.map((wallet) => (
                 <tr
                   key={wallet.id}
                   className="border-t border-slate-700 hover:bg-slate-700"
@@ -229,6 +271,10 @@ function App() {
 
                   <td className="text-center">
                     {wallet.win_rate_percent}%
+                  </td>
+
+                  <td className="text-center">
+                    {wallet.profit_loss_sol} SOL
                   </td>
 
                   <td className="text-center">
