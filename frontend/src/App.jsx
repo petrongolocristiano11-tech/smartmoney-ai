@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
-import { getDiscoveredWallets, runDiscovery } from "./services/api"; 
 import { Link } from "react-router-dom";
 
-const API_URL = "http://127.0.0.1:8000";
+import { getDiscoveredWallets, runDiscovery } from "./services/api";
 
 function App() {
   const [wallets, setWallets] = useState([]);
   const [walletAddress, setWalletAddress] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [lastDiscovery, setLastDiscovery] = useState(null);
+  const [maxTokens, setMaxTokens] = useState(3);
+  const [maxWalletsPerToken, setMaxWalletsPerToken] = useState(3);
 
   const averageScore =
     wallets.length > 0
@@ -36,23 +38,22 @@ function App() {
 
     setLoading(true);
     setMessage("");
+    setLastDiscovery(null);
 
-    runDiscovery(walletAddress) 
+    runDiscovery(walletAddress, maxTokens, maxWalletsPerToken)
       .then((response) => {
         loadWallets();
         setWalletAddress("");
-
         setMessage(
           `Discovery completata: ${response.data.wallets_discovered} wallet trovati`
         );
+        setLastDiscovery(response.data);
       })
       .catch((error) => {
         console.error(error);
         alert("Errore durante la discovery");
       })
-      .finally(() => {
-        setLoading(false);
-      });
+      .finally(() => setLoading(false));
   }
 
   return (
@@ -65,7 +66,6 @@ function App() {
               Discover the smartest wallets on Solana
             </p>
           </div>
-
           <div className="rounded-full bg-green-900/40 border border-green-700 px-4 py-2 text-green-300 text-sm">
             Backend Online
           </div>
@@ -73,19 +73,41 @@ function App() {
       </header>
 
       <main className="max-w-7xl mx-auto p-8">
-        <div className="mb-6 flex gap-4">
+        <div className="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
           <input
             type="text"
             value={walletAddress}
             onChange={(event) => setWalletAddress(event.target.value)}
             placeholder="Wallet address..."
-            className="flex-1 rounded-lg bg-slate-800 border border-slate-700 px-4 py-3 outline-none focus:border-blue-500"
+            className="md:col-span-2 rounded-lg bg-slate-800 border border-slate-700 px-4 py-3 outline-none focus:border-blue-500"
+          />
+
+          <input
+            type="number"
+            value={maxTokens}
+            onChange={(event) => setMaxTokens(Number(event.target.value))}
+            min="1"
+            max="20"
+            className="rounded-lg bg-slate-800 border border-slate-700 px-4 py-3 outline-none focus:border-blue-500"
+            placeholder="Max tokens"
+          />
+
+          <input
+            type="number"
+            value={maxWalletsPerToken}
+            onChange={(event) =>
+              setMaxWalletsPerToken(Number(event.target.value))
+            }
+            min="1"
+            max="20"
+            className="rounded-lg bg-slate-800 border border-slate-700 px-4 py-3 outline-none focus:border-blue-500"
+            placeholder="Wallets/token"
           />
 
           <button
             onClick={handleDiscover}
             disabled={loading}
-            className="rounded-lg bg-blue-600 px-6 py-3 font-semibold hover:bg-blue-700 disabled:opacity-50"
+            className="md:col-span-4 rounded-lg bg-blue-600 px-6 py-3 font-semibold hover:bg-blue-700 disabled:opacity-50"
           >
             {loading ? "Discovering..." : "Discover"}
           </button>
@@ -94,6 +116,53 @@ function App() {
         {message && (
           <div className="mb-6 rounded-lg bg-green-900/40 border border-green-700 px-4 py-3 text-green-300">
             {message}
+          </div>
+        )}
+
+        {lastDiscovery && (
+          <div className="mb-8 rounded-xl bg-slate-800 border border-slate-700 p-6">
+            <h2 className="text-xl font-bold mb-4">Last Discovery Result</h2>
+
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              <div>
+                <p className="text-slate-400">Seed Wallet</p>
+                <p className="font-mono text-xs break-all">
+                  {lastDiscovery.seed_wallet}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-slate-400">Tokens Processed</p>
+                <p className="text-2xl font-bold">
+                  {lastDiscovery.tokens_processed}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-slate-400">Wallets Discovered</p>
+                <p className="text-2xl font-bold">
+                  {lastDiscovery.wallets_discovered}
+                </p>
+              </div>
+            </div>
+
+            <h3 className="font-semibold mb-3">Top Results</h3>
+
+            <div className="space-y-2">
+              {lastDiscovery.ranking?.slice(0, 5).map((item) => (
+                <div
+                  key={item.wallet}
+                  className="flex justify-between gap-4 rounded-lg bg-slate-900 px-4 py-3"
+                >
+                  <span className="font-mono text-xs break-all">
+                    {item.wallet}
+                  </span>
+                  <span className="font-bold whitespace-nowrap">
+                    Score: {item.smart_score}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -145,11 +214,11 @@ function App() {
                 >
                   <td className="p-4 font-mono text-sm">
                     <Link
-  to={`/wallet/${wallet.wallet_address}`}
-  className="text-blue-400 hover:underline"
->
-  {wallet.wallet_address}
-</Link> 
+                      to={`/wallet/${wallet.wallet_address}`}
+                      className="text-blue-400 hover:underline"
+                    >
+                      {wallet.wallet_address}
+                    </Link>
                   </td>
 
                   <td className="text-center font-bold">

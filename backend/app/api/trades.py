@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from backend.app.services.network_engine import build_wallet_network
 
 from backend.app.services.discovery_engine import (
     discover_full_from_wallet, 
@@ -164,4 +165,16 @@ def discover_full_pipeline(
         wallet_address=wallet_address,
         max_tokens=max_tokens,
         max_wallets_per_token=max_wallets_per_token,
+    ) 
+
+@router.get("/network/{wallet_address}")
+def get_wallet_network(
+    wallet_address: str,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+):
+    return build_wallet_network(
+        db=db,
+        wallet_address=wallet_address,
+        limit=limit,
     ) 

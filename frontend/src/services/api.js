@@ -14,14 +14,22 @@ export function getWalletTrades(walletAddress) {
   return axios.get(`${API_URL}/trades/wallet/${walletAddress}`);
 }
 
-export function runDiscovery(walletAddress) {
+export function getWalletNetwork(walletAddress) {
+  return axios.get(`${API_URL}/trades/network/${walletAddress}`);
+}
+
+export function runDiscovery(
+  walletAddress,
+  maxTokens = 3,
+  maxWalletsPerToken = 3
+) {
   return axios.post(
     `${API_URL}/trades/discovery/full/${walletAddress}`,
     null,
     {
       params: {
-        max_tokens: 3,
-        max_wallets_per_token: 3,
+        max_tokens: maxTokens,
+        max_wallets_per_token: maxWalletsPerToken,
       },
     }
   );
