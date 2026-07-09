@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import {
-  getWallet,
+  getWalletProfile,
   getWalletTrades,
   getWalletNetwork,
-} from "../services/api";
+} from "../services/api"; 
 
 function WalletDetails() {
   const { walletAddress } = useParams();
@@ -15,9 +15,9 @@ function WalletDetails() {
   const [network, setNetwork] = useState([]);
 
   useEffect(() => {
-    getWallet(walletAddress)
-      .then((response) => setWallet(response.data))
-      .catch(console.error);
+    getWalletProfile(walletAddress)
+  .then((response) => setWallet(response.data))
+  .catch(console.error); 
 
     getWalletTrades(walletAddress)
       .then((response) => setTrades(response.data))
@@ -50,7 +50,7 @@ function WalletDetails() {
           <h1 className="text-3xl font-bold">Wallet Details</h1>
 
           <a
-            href={`https://solscan.io/account/${wallet.wallet_address}`}
+            href={`https://solscan.io/account/${wallet.wallet}`}
             target="_blank"
             rel="noreferrer"
             className="rounded-lg bg-blue-600 px-4 py-2 font-semibold hover:bg-blue-700"
@@ -62,12 +62,12 @@ function WalletDetails() {
         <div className="grid grid-cols-2 gap-6 mb-10">
           <div>
             <p className="text-slate-400">Wallet</p>
-            <p className="font-mono break-all">{wallet.wallet_address}</p>
+            <p className="font-mono break-all">{wallet.wallet}</p>
           </div>
 
           <div>
             <p className="text-slate-400">Status</p>
-            <p>{wallet.status}</p>
+            <p>{wallet.classification}</p> 
           </div>
 
           <div>
@@ -104,7 +104,7 @@ function WalletDetails() {
 
           <div>
             <p className="text-slate-400">Reliable Positions</p>
-            <p className="text-2xl font-bold">{wallet.reliable_positions}</p>
+            <p className="text-2xl font-bold">{wallet.activity}</p> 
           </div>
         </div>
 

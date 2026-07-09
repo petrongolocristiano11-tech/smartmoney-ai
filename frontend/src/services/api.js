@@ -10,6 +10,10 @@ export function getWalletRanking() {
   return axios.get(`${API_URL}/trades/ranking`);
 }
 
+export function getWalletProfile(walletAddress) {
+  return axios.get(`${API_URL}/trades/profile/${walletAddress}`);
+}
+
 export function getWallet(walletAddress) {
   return axios.get(`${API_URL}/discovered-wallets/${walletAddress}`);
 }
