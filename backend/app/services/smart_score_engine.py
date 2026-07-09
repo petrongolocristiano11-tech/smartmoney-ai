@@ -1,9 +1,14 @@
 from backend.app.services.early_buyer_engine import calculate_early_buyer_score
 from backend.app.services.influence_engine import calculate_wallet_influence
 from backend.app.services.wallet_analytics_engine import calculate_wallet_analytics
+from backend.app.core.weights import SMART_SCORE_WEIGHTS
+
+from backend.app.core.risk import RISK_SCORES
+
+from backend.app.core.scoring import clamp
 
 
-SMART_SCORE_V22_WEIGHTS = {
+SMART_SCORE_WEIGHTS = {
     "roi": 0.16,
     "win_rate": 0.16,
     "profit": 0.10,

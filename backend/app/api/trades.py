@@ -3,6 +3,11 @@ from sqlalchemy.orm import Session
 from backend.app.services.network_engine import build_wallet_network
 from backend.app.services.early_buyer_engine import calculate_early_buyer_score
 from backend.app.services.influence_engine import calculate_wallet_influence
+from backend.app.schemas.conviction import WalletConvictionResponse
+from backend.app.services.conviction_engine import calculate_wallet_conviction
+from backend.app.schemas.prediction import WalletPredictionResponse
+from backend.app.services.prediction_engine import calculate_wallet_prediction
+from backend.app.services.prediction_engine import calculate_wallet_prediction
 
 from backend.app.services.discovery_engine import (
     discover_full_from_wallet, 
@@ -202,4 +207,30 @@ def get_wallet_influence(
         db=db,
         wallet_address=wallet_address,
         max_followers=max_followers,
+    )
+
+@router.get(
+    "/conviction/{wallet_address}",
+    response_model=WalletConvictionResponse,
+)
+def get_wallet_conviction(
+    wallet_address: str,
+    db: Session = Depends(get_db),
+):
+    return calculate_wallet_conviction(
+        db,
+        wallet_address,
+    )  
+
+@router.get(
+    "/prediction/{wallet_address}",
+    response_model=WalletPredictionResponse,
+)
+def get_wallet_prediction(
+    wallet_address: str,
+    db: Session = Depends(get_db),
+):
+    return calculate_wallet_prediction(
+        db,
+        wallet_address,
     ) 
