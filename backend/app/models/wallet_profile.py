@@ -1,43 +1,47 @@
-from sqlalchemy import Column
-from sqlalchemy import Float
-from sqlalchemy import Integer
-from sqlalchemy import String
+from sqlalchemy import DateTime, Float, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.sql import func
 
-from backend.app.database.session import Base
+from backend.app.database.base import Base
 
 
 class WalletProfile(Base):
-
     __tablename__ = "wallet_profiles"
 
-    id = Column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
-    wallet_address = Column(
-        String,
+    wallet_address: Mapped[str] = mapped_column(
+        String(64),
         unique=True,
         index=True,
     )
 
-    smart_score = Column(Float)
+    smart_score: Mapped[float] = mapped_column(Float, default=0)
+    roi: Mapped[float] = mapped_column(Float, default=0)
+    win_rate: Mapped[float] = mapped_column(Float, default=0)
+    profit: Mapped[float] = mapped_column(Float, default=0)
+    activity: Mapped[int] = mapped_column(Integer, default=0)
 
-    roi = Column(Float)
+    influence_score: Mapped[float] = mapped_column(Float, default=0)
+    conviction_score: Mapped[float] = mapped_column(Float, default=0)
+    early_buyer_score: Mapped[float] = mapped_column(Float, default=0)
+    prediction_score: Mapped[float] = mapped_column(Float, default=0)
+    holding_score: Mapped[float] = mapped_column(Float, default=0)
 
-    win_rate = Column(Float)
+    classification: Mapped[str] = mapped_column(String(50), default="NORMAL")
+    traits: Mapped[str] = mapped_column(Text, default="NORMAL")
 
-    profit = Column(Float)
+    dna: Mapped[str] = mapped_column(String(50), default="NORMAL")
+    risk: Mapped[str] = mapped_column(String(20), default="MEDIUM")
+    version: Mapped[str] = mapped_column(String(20), default="3.0")
 
-    activity = Column(Integer)
+    created_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
 
-    influence_score = Column(Float)
-
-    conviction_score = Column(Float)
-
-    early_buyer_score = Column(Float)
-
-    prediction_score = Column(Float)
-
-    dna = Column(String)
-
-    risk = Column(String)
-
-    version = Column(String) 
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    ) 

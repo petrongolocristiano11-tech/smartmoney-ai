@@ -1,6 +1,7 @@
 from backend.app.models.trade import Trade
 from backend.app.services.discovered_wallet_service import save_discovered_wallet
 from backend.app.services.helius import get_wallet_history
+from backend.app.services.profile_engine import build_wallet_profile
 from backend.app.services.wallet_sync_service import sync_wallet
 
 
@@ -70,30 +71,26 @@ def discover_import_and_score_wallets_from_token(
     results = []
 
     for wallet in discovery["wallets"][:limit]:
-
         score = sync_wallet(db, wallet)
+        analytics = score["dna"]["analytics"]
+
+        profile = build_wallet_profile(
+            db=db,
+            wallet_address=wallet,
+        )
 
         save_discovered_wallet(
             db=db,
             wallet_address=wallet,
             discovered_from_token=token_mint,
-            smart_score=score["smart_score"],
-            roi_percent=score["analytics"]["total_roi_percent"],
-            win_rate_percent=score["analytics"]["win_rate_percent"],
-            profit_loss_sol=score["analytics"]["total_profit_loss_sol"],
-            reliable_positions=score["analytics"]["reliable_positions"],
+            smart_score=profile["smart_score"],
+            roi_percent=analytics["total_roi_percent"],
+            win_rate_percent=analytics["win_rate_percent"],
+            profit_loss_sol=analytics["total_profit_loss_sol"],
+            reliable_positions=analytics["reliable_positions"],
         )
 
-        results.append(
-            {
-                "wallet": wallet,
-                "smart_score": score["smart_score"],
-                "roi_percent": score["analytics"]["total_roi_percent"],
-                "win_rate_percent": score["analytics"]["win_rate_percent"],
-                "profit_loss_sol": score["analytics"]["total_profit_loss_sol"],
-                "reliable_positions": score["analytics"]["reliable_positions"],
-            }
-        )
+        results.append(profile)
 
     results.sort(
         key=lambda item: item["smart_score"],
@@ -128,26 +125,26 @@ def discover_full_from_wallet(
     results = []
 
     for wallet in discovered_wallets:
-
         score = sync_wallet(db, wallet)
+        analytics = score["dna"]["analytics"]
+
+        profile = build_wallet_profile(
+            db=db,
+            wallet_address=wallet,
+        )
 
         save_discovered_wallet(
             db=db,
             wallet_address=wallet,
             discovered_from_token="MULTI_TOKEN",
-            smart_score=score["smart_score"],
-            roi_percent=score["analytics"]["total_roi_percent"],
-            win_rate_percent=score["analytics"]["win_rate_percent"],
-            profit_loss_sol=score["analytics"]["total_profit_loss_sol"],
-            reliable_positions=score["analytics"]["reliable_positions"],
+            smart_score=profile["smart_score"],
+            roi_percent=analytics["total_roi_percent"],
+            win_rate_percent=analytics["win_rate_percent"],
+            profit_loss_sol=analytics["total_profit_loss_sol"],
+            reliable_positions=analytics["reliable_positions"],
         )
 
-        results.append(
-            {
-                "wallet": wallet,
-                "smart_score": score["smart_score"],
-            }
-        )
+        results.append(profile)
 
     results.sort(
         key=lambda item: item["smart_score"],

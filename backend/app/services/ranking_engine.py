@@ -1,33 +1,44 @@
 from backend.app.models.discovered_wallet import DiscoveredWallet
-from backend.app.services.smart_score_engine import calculate_smart_score
+from backend.app.models.wallet_profile import WalletProfile
+from backend.app.services.profile_engine import (
+    build_wallet_profile,
+    ensure_wallet_profiles_table,
+)
+
+
+def _profile_to_ranking_item(profile: WalletProfile):
+    return {
+        "wallet": profile.wallet_address,
+        "smart_score": profile.smart_score,
+        "version": profile.version,
+        "classification": profile.classification or profile.dna or "NORMAL",
+        "traits": profile.traits.split(",") if profile.traits else ["NORMAL"],
+        "roi_percent": profile.roi,
+        "win_rate_percent": profile.win_rate,
+        "profit_loss_sol": profile.profit,
+    }
 
 
 def get_ranked_wallets(db, limit: int = 100):
-    wallets = db.query(DiscoveredWallet).all()
+    ensure_wallet_profiles_table(db)
 
-    ranking = []
+    profiles = db.query(WalletProfile).all()
 
-    for wallet in wallets:
-        score_data = calculate_smart_score(
-            db,
-            wallet.wallet_address,
-        )
+    if not profiles:
+        discovered_wallets = db.query(DiscoveredWallet).all()
 
-        ranking.append(
-            {
-                "wallet": wallet.wallet_address,
-                "smart_score": score_data["smart_score"],
-                "version": score_data["version"],
-                "classification": score_data["dna"]["classification"],
-                "traits": score_data["dna"]["traits"],
-                "roi_percent": wallet.roi_percent,
-                "win_rate_percent": wallet.win_rate_percent,
-                "profit_loss_sol": wallet.profit_loss_sol,
-            }
-        )
+        for wallet in discovered_wallets:
+            build_wallet_profile(
+                db=db,
+                wallet_address=wallet.wallet_address,
+            )
+
+        profiles = db.query(WalletProfile).all()
+
+    ranking = [_profile_to_ranking_item(profile) for profile in profiles]
 
     ranking.sort(
-        key=lambda item: item["smart_score"],
+        key=lambda item: item["smart_score"] or 0,
         reverse=True,
     )
 
