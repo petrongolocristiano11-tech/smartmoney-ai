@@ -8,6 +8,8 @@ from backend.app.services.conviction_engine import calculate_wallet_conviction
 from backend.app.schemas.prediction import WalletPredictionResponse
 from backend.app.services.prediction_engine import calculate_wallet_prediction
 from backend.app.services.prediction_engine import calculate_wallet_prediction
+from backend.app.services.holding_time_engine import calculate_wallet_holding_time
+from backend.app.services.wallet_dna_engine import calculate_wallet_dna
 
 from backend.app.services.discovery_engine import (
     discover_full_from_wallet, 
@@ -234,3 +236,18 @@ def get_wallet_prediction(
         db,
         wallet_address,
     ) 
+
+@router.get("/holding/{wallet_address}")
+def get_wallet_holding_time(
+    wallet_address: str,
+    db: Session = Depends(get_db),
+):
+    return calculate_wallet_holding_time(db, wallet_address)
+
+
+@router.get("/dna/{wallet_address}")
+def get_wallet_dna(
+    wallet_address: str,
+    db: Session = Depends(get_db),
+):
+    return calculate_wallet_dna(db, wallet_address) 
