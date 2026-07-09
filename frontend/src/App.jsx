@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { getDiscoveredWallets, runDiscovery } from "./services/api";
+import { getWalletRanking, runDiscovery } from "./services/api";
 
 function App() {
   const [wallets, setWallets] = useState([]);
@@ -14,6 +14,16 @@ function App() {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("smart_score");
 
+  function loadWallets() {
+    getWalletRanking()
+      .then((response) => setWallets(response.data.ranking))
+      .catch(console.error);
+  }
+
+  useEffect(() => {
+    loadWallets();
+  }, []);
+
   const averageScore =
     wallets.length > 0
       ? (
@@ -24,7 +34,7 @@ function App() {
 
   const filteredWallets = wallets
     .filter((wallet) =>
-      wallet.wallet_address.toLowerCase().includes(search.toLowerCase())
+      wallet.wallet.toLowerCase().includes(search.toLowerCase())
     )
     .sort((a, b) => {
       switch (sortBy) {
@@ -38,16 +48,6 @@ function App() {
           return b.smart_score - a.smart_score;
       }
     });
-
-  function loadWallets() {
-    getDiscoveredWallets()
-      .then((response) => setWallets(response.data))
-      .catch(console.error);
-  }
-
-  useEffect(() => {
-    loadWallets();
-  }, []);
 
   function handleDiscover() {
     if (!walletAddress.trim()) {
@@ -63,9 +63,11 @@ function App() {
       .then((response) => {
         loadWallets();
         setWalletAddress("");
+
         setMessage(
           `Discovery completata: ${response.data.wallets_discovered} wallet trovati`
         );
+
         setLastDiscovery(response.data);
       })
       .catch((error) => {
@@ -82,12 +84,12 @@ function App() {
           <div>
             <h1 className="text-4xl font-bold">🚀 SmartMoney AI</h1>
             <p className="text-slate-400 mt-2">
-              Discover the smartest wallets on Solana
+              Smart Score v3.0 Wallet Intelligence
             </p>
           </div>
 
           <div className="rounded-full bg-green-900/40 border border-green-700 px-4 py-2 text-green-300 text-sm">
-            Backend Online
+            Engine v3.0 Online
           </div>
         </div>
       </header>
@@ -162,7 +164,7 @@ function App() {
           <div className="mb-8 rounded-xl bg-slate-800 border border-slate-700 p-6">
             <h2 className="text-xl font-bold mb-4">Last Discovery Result</h2>
 
-            <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-3 gap-4">
               <div>
                 <p className="text-slate-400">Seed Wallet</p>
                 <p className="font-mono text-xs break-all">
@@ -183,24 +185,6 @@ function App() {
                   {lastDiscovery.wallets_discovered}
                 </p>
               </div>
-            </div>
-
-            <h3 className="font-semibold mb-3">Top Results</h3>
-
-            <div className="space-y-2">
-              {lastDiscovery.ranking?.slice(0, 5).map((item) => (
-                <div
-                  key={item.wallet}
-                  className="flex justify-between gap-4 rounded-lg bg-slate-900 px-4 py-3"
-                >
-                  <span className="font-mono text-xs break-all">
-                    {item.wallet}
-                  </span>
-                  <span className="font-bold whitespace-nowrap">
-                    Score: {item.smart_score}
-                  </span>
-                </div>
-              ))}
             </div>
           </div>
         )}
@@ -233,7 +217,7 @@ function App() {
 
         <div className="rounded-xl bg-slate-800 overflow-hidden">
           <div className="p-5 border-b border-slate-700">
-            <h2 className="text-xl font-bold">Top Smart Wallets</h2>
+            <h2 className="text-xl font-bold">Smart Wallet Ranking v3</h2>
           </div>
 
           <table className="w-full">
@@ -241,30 +225,37 @@ function App() {
               <tr>
                 <th className="text-left p-4">Wallet</th>
                 <th className="p-4">Score</th>
+                <th className="p-4">DNA</th>
                 <th className="p-4">ROI</th>
                 <th className="p-4">Win Rate</th>
                 <th className="p-4">Profit</th>
-                <th className="p-4">Status</th>
+                <th className="p-4">Traits</th>
               </tr>
             </thead>
 
             <tbody>
               {filteredWallets.map((wallet) => (
                 <tr
-                  key={wallet.id}
+                  key={wallet.wallet}
                   className="border-t border-slate-700 hover:bg-slate-700"
                 >
                   <td className="p-4 font-mono text-sm">
                     <Link
-                      to={`/wallet/${wallet.wallet_address}`}
+                      to={`/wallet/${wallet.wallet}`}
                       className="text-blue-400 hover:underline"
                     >
-                      {wallet.wallet_address}
+                      {wallet.wallet}
                     </Link>
                   </td>
 
-                  <td className="text-center font-bold">
+                  <td className="text-center font-bold text-green-400">
                     {wallet.smart_score}
+                  </td>
+
+                  <td className="text-center">
+                    <span className="rounded-full bg-purple-900/50 px-3 py-1 text-xs text-purple-300">
+                      {wallet.classification}
+                    </span>
                   </td>
 
                   <td className="text-center">{wallet.roi_percent}%</td>
@@ -277,10 +268,17 @@ function App() {
                     {wallet.profit_loss_sol} SOL
                   </td>
 
-                  <td className="text-center">
-                    <span className="rounded-full bg-slate-700 px-3 py-1 text-xs">
-                      {wallet.status}
-                    </span>
+                  <td className="p-4">
+                    <div className="flex flex-wrap gap-2">
+                      {wallet.traits?.map((trait) => (
+                        <span
+                          key={trait}
+                          className="rounded-full bg-slate-700 px-2 py-1 text-xs"
+                        >
+                          {trait}
+                        </span>
+                      ))}
+                    </div>
                   </td>
                 </tr>
               ))}
