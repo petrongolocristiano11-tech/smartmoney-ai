@@ -11,7 +11,7 @@ from backend.app.services.prediction_engine import calculate_wallet_prediction
 from backend.app.services.holding_time_engine import calculate_wallet_holding_time
 from backend.app.services.wallet_dna_engine import calculate_wallet_dna
 from backend.app.services.profile_engine import build_wallet_profile
-
+from backend.app.services.wallet_sync_service import sync_wallet 
 from backend.app.services.discovery_engine import (
     discover_full_from_wallet, 
     discover_import_and_score_wallets_from_token,
@@ -259,6 +259,16 @@ def get_wallet_profile(
     db: Session = Depends(get_db),
 ):
     return build_wallet_profile(
+        db=db,
+        wallet_address=wallet_address,
+    ) 
+
+@router.post("/refresh/{wallet_address}")
+def refresh_wallet(
+    wallet_address: str,
+    db: Session = Depends(get_db),
+):
+    return sync_wallet(
         db=db,
         wallet_address=wallet_address,
     ) 
