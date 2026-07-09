@@ -11,6 +11,7 @@ class SmartScoreComponentsResponse(BaseModel):
     avg_trade_size_score: float
     profit_per_token_score: float
     early_buyer_score: float
+    influence_score: float
     buy_sell_balance_score: float
     risk_score: float
 
@@ -23,6 +24,7 @@ class SmartScoreWeightsResponse(BaseModel):
     avg_trade_size: float
     profit_per_token: float
     early_buyer: float
+    influence: float
     buy_sell_balance: float
     risk: float
 
@@ -38,6 +40,23 @@ class EarlyBuyerResponse(BaseModel):
     worst_entry_rank: int
 
 
+class InfluenceFollowerResponse(BaseModel):
+    wallet: str
+    shared_tokens_after: int
+    smart_score: float
+    roi_percent: float
+    win_rate_percent: float
+    follower_strength: float
+
+
+class InfluenceResponse(BaseModel):
+    wallet: str
+    tokens_analyzed: int
+    followers_detected: int
+    influence_score: float
+    top_followers: list[InfluenceFollowerResponse]
+
+
 class SmartScoreResponse(BaseModel):
     wallet: str
     smart_score: float
@@ -45,4 +64,5 @@ class SmartScoreResponse(BaseModel):
     components: SmartScoreComponentsResponse
     weights: SmartScoreWeightsResponse
     analytics: WalletAnalyticsResponse
-    early_buyer: EarlyBuyerResponse 
+    early_buyer: EarlyBuyerResponse
+    influence: InfluenceResponse 

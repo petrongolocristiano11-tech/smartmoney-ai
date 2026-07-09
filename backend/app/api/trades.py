@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from backend.app.services.network_engine import build_wallet_network
 from backend.app.services.early_buyer_engine import calculate_early_buyer_score
+from backend.app.services.influence_engine import calculate_wallet_influence
 
 from backend.app.services.discovery_engine import (
     discover_full_from_wallet, 
@@ -189,4 +190,16 @@ def get_early_buyer_score(
         db=db,
         wallet_address=wallet_address,
         early_rank_threshold=early_rank_threshold,
+    ) 
+
+@router.get("/influence/{wallet_address}")
+def get_wallet_influence(
+    wallet_address: str,
+    max_followers: int = 20,
+    db: Session = Depends(get_db),
+):
+    return calculate_wallet_influence(
+        db=db,
+        wallet_address=wallet_address,
+        max_followers=max_followers,
     ) 
