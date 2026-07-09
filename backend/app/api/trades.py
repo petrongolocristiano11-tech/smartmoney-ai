@@ -7,7 +7,13 @@ from backend.app.schemas.conviction import WalletConvictionResponse
 from backend.app.services.conviction_engine import calculate_wallet_conviction
 from backend.app.schemas.prediction import WalletPredictionResponse
 from backend.app.services.prediction_engine import calculate_wallet_prediction
-from backend.app.services.prediction_engine import calculate_wallet_prediction
+from backend.app.schemas.signals import TokenSignalsResponse
+from backend.app.services.signals_engine import get_token_signals
+from backend.app.schemas.backtest import WalletBacktestResponse
+from backend.app.services.backtest_engine import run_wallet_backtest
+from backend.app.schemas.copy_trading import CopyTradingSimulationResponse
+from backend.app.services.copy_trading_engine import simulate_copy_trading
+
 from backend.app.services.holding_time_engine import calculate_wallet_holding_time
 from backend.app.services.wallet_dna_engine import calculate_wallet_dna
 from backend.app.services.profile_engine import build_wallet_profile
@@ -19,16 +25,7 @@ from backend.app.services.discovery_engine import (
     get_traded_tokens_by_wallet,
     get_wallets_by_token,
 ) 
-from backend.app.services.discovery_engine import (
-    discover_wallets_from_token_onchain,
-    get_traded_tokens_by_wallet,
-    get_wallets_by_token,
-) 
-from backend.app.services.discovery_engine import (
-    get_traded_tokens_by_wallet,
-    get_wallets_by_token,
-) 
-from backend.app.services.discovery_engine import get_traded_tokens_by_wallet 
+
 from backend.app.schemas.ranking import WalletRankingResponse 
 from backend.app.database.session import get_db
 from backend.app.models.trade import Trade
@@ -271,4 +268,45 @@ def refresh_wallet(
     return sync_wallet(
         db=db,
         wallet_address=wallet_address,
+    ) 
+
+@router.get(
+    "/signals",
+    response_model=TokenSignalsResponse,
+)
+def get_signals(
+    min_buyers: int = 2,
+    db: Session = Depends(get_db),
+):
+    return get_token_signals(
+        db=db,
+        min_buyers=min_buyers,
+    ) 
+
+@router.get(
+    "/backtest/{wallet_address}",
+    response_model=WalletBacktestResponse,
+)
+def get_wallet_backtest(
+    wallet_address: str,
+    db: Session = Depends(get_db),
+):
+    return run_wallet_backtest(
+        db,
+        wallet_address,
+    ) 
+
+@router.get(
+    "/copy/{wallet_address}",
+    response_model=CopyTradingSimulationResponse,
+)
+def get_copy_trading_simulation(
+    wallet_address: str,
+    starting_capital: float = 10.0,
+    db: Session = Depends(get_db),
+):
+    return simulate_copy_trading(
+        db=db,
+        wallet_address=wallet_address,
+        starting_capital=starting_capital,
     ) 
