@@ -13,6 +13,7 @@ from backend.app.schemas.backtest import WalletBacktestResponse
 from backend.app.services.backtest_engine import run_wallet_backtest
 from backend.app.schemas.copy_trading import CopyTradingSimulationResponse
 from backend.app.services.copy_trading_engine import simulate_copy_trading
+from backend.app.services.smart_discovery_engine import smart_discovery_from_wallet
 
 from backend.app.services.holding_time_engine import calculate_wallet_holding_time
 from backend.app.services.wallet_dna_engine import calculate_wallet_dna
@@ -309,4 +310,21 @@ def get_copy_trading_simulation(
         db=db,
         wallet_address=wallet_address,
         starting_capital=starting_capital,
+    ) 
+@router.post("/discovery/smart/{wallet_address}")
+def smart_discovery_pipeline(
+    wallet_address: str,
+    max_depth: int = 2,
+    max_tokens_per_wallet: int = 5,
+    max_wallets_per_token: int = 5,
+    min_smart_score: float = 60,
+    db: Session = Depends(get_db),
+):
+    return smart_discovery_from_wallet(
+        db=db,
+        seed_wallet=wallet_address,
+        max_depth=max_depth,
+        max_tokens_per_wallet=max_tokens_per_wallet,
+        max_wallets_per_token=max_wallets_per_token,
+        min_smart_score=min_smart_score,
     ) 
