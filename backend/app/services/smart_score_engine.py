@@ -1,99 +1,75 @@
-from backend.app.services.early_buyer_engine import calculate_early_buyer_score
-from backend.app.services.influence_engine import calculate_wallet_influence
-from backend.app.services.wallet_analytics_engine import calculate_wallet_analytics
-from backend.app.core.weights import SMART_SCORE_WEIGHTS
-
-from backend.app.core.risk import RISK_SCORES
-
-from backend.app.core.scoring import clamp
+from backend.app.services.wallet_dna_engine import calculate_wallet_dna
 
 
-SMART_SCORE_WEIGHTS = {
-    "roi": 0.16,
-    "win_rate": 0.16,
-    "profit": 0.10,
-    "activity": 0.07,
-    "avg_trade_size": 0.06,
-    "profit_per_token": 0.09,
-    "early_buyer": 0.16,
-    "influence": 0.12,
-    "buy_sell_balance": 0.04,
-    "risk": 0.04,
+SMART_SCORE_V3_WEIGHTS = {
+    "performance": 0.30,
+    "timing": 0.20,
+    "leadership": 0.15,
+    "conviction": 0.10,
+    "holding": 0.10,
+    "prediction": 0.10,
+    "risk": 0.05,
 }
 
 
-def clamp(value: float, minimum: float = 0, maximum: float = 100):
+def clamp(value, minimum=0, maximum=100):
     return max(minimum, min(value, maximum))
 
 
-def calculate_risk_score(risk_level: str):
+def risk_score(risk_level):
     if risk_level == "LOW":
         return 100
-
     if risk_level == "MEDIUM":
         return 50
-
     return 0
 
 
-def calculate_buy_sell_balance_score(buy_sell_ratio: float):
-    if buy_sell_ratio <= 0:
-        return 0
-
-    distance_from_balance = abs(1 - buy_sell_ratio)
-
-    return clamp(100 - distance_from_balance * 50)
-
-
 def calculate_smart_score(db, wallet_address: str):
-    analytics = calculate_wallet_analytics(db, wallet_address)
-    early_buyer = calculate_early_buyer_score(db, wallet_address)
-    influence = calculate_wallet_influence(db, wallet_address)
+    dna = calculate_wallet_dna(db, wallet_address)
 
-    roi_score = clamp((analytics["total_roi_percent"] + 100) / 2)
-    win_rate_score = clamp(analytics["win_rate_percent"])
-    profit_score = clamp(analytics["total_profit_loss_sol"] * 10 + 50)
-    activity_score = clamp(analytics["reliable_positions"] * 2)
-    avg_trade_size_score = clamp(analytics["average_trade_size_sol"] * 100)
-    profit_per_token_score = clamp(analytics["profit_per_token"] * 100 + 50)
-    early_buyer_score = clamp(early_buyer["early_buyer_score"])
-    influence_score = clamp(influence["influence_score"])
-    buy_sell_balance_score = calculate_buy_sell_balance_score(
-        analytics["buy_sell_ratio"]
+    analytics = dna["analytics"]
+    early = dna["early_buyer"]
+    influence = dna["influence"]
+    conviction = dna["conviction"]
+    holding = dna["holding"]
+    prediction = dna["prediction"]
+
+    performance_score = clamp(
+        analytics["win_rate_percent"] * 0.4
+        + ((analytics["total_roi_percent"] + 100) / 2) * 0.3
+        + (analytics["profit_per_token"] * 100 + 50) * 0.3
     )
-    risk_score = RISK_SCORES.get(analytics["risk_level"], 0)
+
+    timing_score = clamp(early["early_buyer_score"])
+    leadership_score = clamp(influence["influence_score"])
+    conviction_score = clamp(conviction["conviction_score"])
+    holding_score = clamp(holding["holding_score"])
+    prediction_score = clamp(prediction["prediction_score"])
+    wallet_risk_score = risk_score(analytics["risk_level"])
 
     smart_score = (
-        roi_score * SMART_SCORE_WEIGHTS["roi"]
-        + win_rate_score * SMART_SCORE_WEIGHTS["win_rate"]
-        + profit_score * SMART_SCORE_WEIGHTS["profit"]
-        + activity_score * SMART_SCORE_WEIGHTS["activity"]
-        + avg_trade_size_score * SMART_SCORE_WEIGHTS["avg_trade_size"]
-        + profit_per_token_score * SMART_SCORE_WEIGHTS["profit_per_token"]
-        + early_buyer_score * SMART_SCORE_WEIGHTS["early_buyer"]
-        + influence_score * SMART_SCORE_WEIGHTS["influence"]
-        + buy_sell_balance_score * SMART_SCORE_WEIGHTS["buy_sell_balance"]
-        + risk_score * SMART_SCORE_WEIGHTS["risk"]
+        performance_score * SMART_SCORE_V3_WEIGHTS["performance"]
+        + timing_score * SMART_SCORE_V3_WEIGHTS["timing"]
+        + leadership_score * SMART_SCORE_V3_WEIGHTS["leadership"]
+        + conviction_score * SMART_SCORE_V3_WEIGHTS["conviction"]
+        + holding_score * SMART_SCORE_V3_WEIGHTS["holding"]
+        + prediction_score * SMART_SCORE_V3_WEIGHTS["prediction"]
+        + wallet_risk_score * SMART_SCORE_V3_WEIGHTS["risk"]
     )
 
     return {
         "wallet": wallet_address,
         "smart_score": round(smart_score, 2),
-        "version": "2.2",
+        "version": "3.0",
         "components": {
-            "roi_score": round(roi_score, 2),
-            "win_rate_score": round(win_rate_score, 2),
-            "profit_score": round(profit_score, 2),
-            "activity_score": round(activity_score, 2),
-            "avg_trade_size_score": round(avg_trade_size_score, 2),
-            "profit_per_token_score": round(profit_per_token_score, 2),
-            "early_buyer_score": round(early_buyer_score, 2),
-            "influence_score": round(influence_score, 2),
-            "buy_sell_balance_score": round(buy_sell_balance_score, 2),
-            "risk_score": round(risk_score, 2),
+            "performance_score": round(performance_score, 2),
+            "timing_score": round(timing_score, 2),
+            "leadership_score": round(leadership_score, 2),
+            "conviction_score": round(conviction_score, 2),
+            "holding_score": round(holding_score, 2),
+            "prediction_score": round(prediction_score, 2),
+            "risk_score": round(wallet_risk_score, 2),
         },
-        "weights": SMART_SCORE_WEIGHTS,
-        "analytics": analytics,
-        "early_buyer": early_buyer,
-        "influence": influence,
+        "weights": SMART_SCORE_V3_WEIGHTS,
+        "dna": dna,
     } 

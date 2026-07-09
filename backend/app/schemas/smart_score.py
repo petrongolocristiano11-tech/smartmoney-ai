@@ -1,60 +1,26 @@
-from pydantic import BaseModel
+from typing import Any
 
-from backend.app.schemas.analytics import WalletAnalyticsResponse
+from pydantic import BaseModel
 
 
 class SmartScoreComponentsResponse(BaseModel):
-    roi_score: float
-    win_rate_score: float
-    profit_score: float
-    activity_score: float
-    avg_trade_size_score: float
-    profit_per_token_score: float
-    early_buyer_score: float
-    influence_score: float
-    buy_sell_balance_score: float
+    performance_score: float
+    timing_score: float
+    leadership_score: float
+    conviction_score: float
+    holding_score: float
+    prediction_score: float
     risk_score: float
 
 
 class SmartScoreWeightsResponse(BaseModel):
-    roi: float
-    win_rate: float
-    profit: float
-    activity: float
-    avg_trade_size: float
-    profit_per_token: float
-    early_buyer: float
-    influence: float
-    buy_sell_balance: float
+    performance: float
+    timing: float
+    leadership: float
+    conviction: float
+    holding: float
+    prediction: float
     risk: float
-
-
-class EarlyBuyerResponse(BaseModel):
-    wallet: str
-    tokens_analyzed: int
-    early_entries: int
-    early_rank_threshold: int
-    early_buyer_score: float
-    average_entry_rank: float
-    best_entry_rank: int
-    worst_entry_rank: int
-
-
-class InfluenceFollowerResponse(BaseModel):
-    wallet: str
-    shared_tokens_after: int
-    smart_score: float
-    roi_percent: float
-    win_rate_percent: float
-    follower_strength: float
-
-
-class InfluenceResponse(BaseModel):
-    wallet: str
-    tokens_analyzed: int
-    followers_detected: int
-    influence_score: float
-    top_followers: list[InfluenceFollowerResponse]
 
 
 class SmartScoreResponse(BaseModel):
@@ -63,6 +29,4 @@ class SmartScoreResponse(BaseModel):
     version: str
     components: SmartScoreComponentsResponse
     weights: SmartScoreWeightsResponse
-    analytics: WalletAnalyticsResponse
-    early_buyer: EarlyBuyerResponse
-    influence: InfluenceResponse 
+    dna: dict[str, Any] 
