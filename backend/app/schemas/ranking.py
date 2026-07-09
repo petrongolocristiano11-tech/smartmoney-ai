@@ -1,15 +1,17 @@
 from pydantic import BaseModel
 
 
-class RankingWalletResponse(BaseModel):
+class RankedWalletResponse(BaseModel):
     wallet: str
     smart_score: float
+    version: str
+    classification: str
+    traits: list[str]
     roi_percent: float
     win_rate_percent: float
     profit_loss_sol: float
-    reliable_positions: int
 
 
 class WalletRankingResponse(BaseModel):
-    wallets_found: int
-    ranking: list[RankingWalletResponse] 
+    count: int
+    ranking: list[RankedWalletResponse] 
