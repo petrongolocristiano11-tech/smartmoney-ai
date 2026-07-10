@@ -14,6 +14,15 @@ from backend.app.services.backtest_engine import run_wallet_backtest
 from backend.app.schemas.copy_trading import CopyTradingSimulationResponse
 from backend.app.services.copy_trading_engine import simulate_copy_trading
 from backend.app.services.smart_discovery_engine import smart_discovery_from_wallet
+from backend.app.services.wallet_graph_query_engine import get_wallet_graph
+from backend.app.services.wallet_cluster_engine import get_wallet_clusters
+from backend.app.services.alert_engine import get_alerts
+import asyncio
+
+from backend.app.services.live_scanner_engine import (
+    live_scanner,
+    stop_live_scanner,
+)
 
 from backend.app.services.holding_time_engine import calculate_wallet_holding_time
 from backend.app.services.wallet_dna_engine import calculate_wallet_dna
@@ -328,3 +337,56 @@ def smart_discovery_pipeline(
         max_wallets_per_token=max_wallets_per_token,
         min_smart_score=min_smart_score,
     ) 
+
+@router.get("/graph/{wallet_address}")
+def wallet_graph(
+    wallet_address: str,
+    db: Session = Depends(get_db),
+):
+    return get_wallet_graph(
+        db,
+        wallet_address,
+    ) 
+
+@router.get("/clusters")
+def wallet_clusters(
+    min_connections: int = 2,
+    db: Session = Depends(get_db),
+):
+    return get_wallet_clusters(
+        db,
+        min_connections,
+    ) 
+
+@router.get("/alerts")
+def alerts(
+    min_signal_score: float = 70,
+    db: Session = Depends(get_db),
+):
+    return get_alerts(
+        db,
+        min_signal_score=min_signal_score,
+    ) 
+
+@router.post("/scanner/start")
+async def start_scanner(
+    db: Session = Depends(get_db),
+):
+    asyncio.create_task(
+        live_scanner(
+            db=db,
+        )
+    )
+
+    return {
+        "status": "started",
+    }
+
+
+@router.post("/scanner/stop")
+def stop_scanner():
+    stop_live_scanner()
+
+    return {
+        "status": "stopped",
+    } 
