@@ -20,12 +20,28 @@ const Alerts = lazy(() =>
   import("./pages/Alerts.jsx")
 );
 
+const Analytics = lazy(() =>
+  import("./pages/Analytics.jsx")
+);
+
+const Backtesting = lazy(() =>
+  import("./pages/Backtesting.jsx")
+);
+
 const Discovery = lazy(() =>
   import("./pages/Discovery.jsx")
 );
 
 const LiveScanner = lazy(() =>
   import("./pages/LiveScanner.jsx")
+);
+
+const Notifications = lazy(() =>
+  import("./pages/Notifications.jsx")
+);
+
+const Portfolio = lazy(() =>
+  import("./pages/Portfolio.jsx")
 );
 
 const Signals = lazy(() =>
@@ -86,6 +102,36 @@ createRoot(
             <Route
               path="/alerts"
               element={<Alerts />}
+            />
+
+            <Route
+              path="/analytics"
+              element={<Analytics />}
+            />
+
+            <Route
+              path="/portfolio"
+              element={<Portfolio />}
+            />
+
+            <Route
+              path="/portfolio/:walletAddress"
+              element={<Portfolio />}
+            />
+
+            <Route
+              path="/backtesting"
+              element={<Backtesting />}
+            />
+
+            <Route
+              path="/backtesting/:walletAddress"
+              element={<Backtesting />}
+            />
+
+            <Route
+              path="/notifications"
+              element={<Notifications />}
             />
 
             <Route

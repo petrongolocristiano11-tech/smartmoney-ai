@@ -71,6 +71,42 @@ export function getWalletNetwork(walletAddress) {
   );
 }
 
+export function getWalletPortfolio(walletAddress) {
+  return api.get(
+    `/trades/portfolio/${encodeURIComponent(
+      walletAddress
+    )}`
+  );
+}
+
+// =========================
+// BACKTESTING
+// =========================
+
+export function getWalletBacktest(walletAddress) {
+  return api.get(
+    `/trades/backtest/${encodeURIComponent(
+      walletAddress
+    )}`
+  );
+}
+
+export function getCopyTradingSimulation(
+  walletAddress,
+  startingCapital = 10
+) {
+  return api.get(
+    `/trades/copy/${encodeURIComponent(
+      walletAddress
+    )}`,
+    {
+      params: {
+        starting_capital: startingCapital,
+      },
+    }
+  );
+}
+
 // =========================
 // TOKEN INTELLIGENCE
 // =========================
