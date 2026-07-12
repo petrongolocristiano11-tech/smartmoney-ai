@@ -8,6 +8,10 @@ from backend.app.core.config import settings
 from backend.app.database.session import SessionLocal
 from backend.app.models.wallet_profile import WalletProfile
 from backend.app.services.alert_engine import get_alerts
+from backend.app.services.event_dedup_engine import (
+    is_event_processed,
+    mark_event_processed,
+)
 from backend.app.services.event_engine import wallet_buy_event
 from backend.app.services.helius import get_enhanced_transaction
 from backend.app.services.profile_engine import build_wallet_profile
@@ -134,8 +138,26 @@ def process_signature(
 
             token_mint = trade_data.get("token_mint")
 
+            if not token_mint:
+                continue
+
             for alert in alerts["alerts"]:
                 if alert["token"] != token_mint:
+                    continue
+
+                event_key = (
+                    f"SMART_ACCUMULATION:"
+                    f"{signature}:"
+                    f"{token_mint}"
+                )
+
+                if is_event_processed(
+                    db=db,
+                    event_key=event_key,
+                ):
+                    print(
+                        f"[DUPLICATE ALERT SKIPPED] {event_key}"
+                    )
                     continue
 
                 event = wallet_buy_event(
@@ -146,6 +168,12 @@ def process_signature(
 
                 print("NEW REAL-TIME ALERT")
                 print(event)
+
+                mark_event_processed(
+                    db=db,
+                    event_key=event_key,
+                    event_type="SMART_ACCUMULATION",
+                )
 
     except Exception as error:
         db.rollback()
