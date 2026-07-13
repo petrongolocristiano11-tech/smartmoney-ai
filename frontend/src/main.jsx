@@ -12,7 +12,7 @@ import {
 
 import "./index.css";
 
-import MainLayout from "./layouts/MainLayout.jsx";
+import MainLayout from "./Layouts/MainLayout.jsx"; 
 
 const App = lazy(() => import("./App.jsx"));
 
@@ -53,8 +53,8 @@ const TokenDetails = lazy(() =>
 );
 
 const WalletDetails = lazy(() =>
-  import("./pages/WalletDetails.jsx")
-);
+  import("./pages/walletdetails.jsx")
+); 
 
 const Watchlist = lazy(() =>
   import("./pages/Watchlist.jsx")
