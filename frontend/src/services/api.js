@@ -1,10 +1,30 @@
 import axios from "axios";
 
-const API_URL = "http://127.0.0.1:8000";
+const DEFAULT_API_URL =
+  "http://127.0.0.1:8000";
+
+function normalizeApiUrl(value) {
+  const normalizedValue = String(
+    value ?? ""
+  ).trim();
+
+  if (!normalizedValue) {
+    return DEFAULT_API_URL;
+  }
+
+  return normalizedValue.replace(/\/+$/, "");
+}
+
+export const API_URL = normalizeApiUrl(
+  import.meta.env.VITE_API_URL
+);
 
 export const api = axios.create({
   baseURL: API_URL,
   timeout: 120000,
+  headers: {
+    Accept: "application/json",
+  },
 });
 
 // =========================
