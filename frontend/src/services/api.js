@@ -175,8 +175,10 @@ export function runSmartDiscovery(
     {
       params: {
         max_depth: maxDepth,
-        max_tokens_per_wallet: maxTokensPerWallet,
-        max_wallets_per_token: maxWalletsPerToken,
+        max_tokens_per_wallet:
+          maxTokensPerWallet,
+        max_wallets_per_token:
+          maxWalletsPerToken,
         min_smart_score: minSmartScore,
       },
     }
