@@ -2,7 +2,11 @@ from pathlib import Path
 from typing import Literal, Self
 from urllib.parse import urlparse
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import (
+    Field,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import (
     BaseSettings,
     SettingsConfigDict,
@@ -41,6 +45,7 @@ class Settings(BaseSettings):
     )
 
     SQL_ECHO: bool = False
+
     DB_POOL_RECYCLE_SECONDS: int = Field(
         default=1800,
         ge=0,
@@ -118,6 +123,39 @@ class Settings(BaseSettings):
 
     @field_validator(
         "DATABASE_URL",
+        mode="before",
+    )
+    @classmethod
+    def normalize_database_url(
+        cls,
+        value,
+    ):
+        normalized = str(value).strip()
+
+        if normalized.startswith(
+            "postgres://"
+        ):
+            return (
+                "postgresql+psycopg://"
+                + normalized[
+                    len("postgres://") :
+                ]
+            )
+
+        if normalized.startswith(
+            "postgresql://"
+        ):
+            return (
+                "postgresql+psycopg://"
+                + normalized[
+                    len("postgresql://") :
+                ]
+            )
+
+        return normalized
+
+    @field_validator(
+        "DATABASE_URL",
         "SOLANA_RPC_URL",
         "HELIUS_API_KEY",
     )
@@ -135,7 +173,8 @@ class Settings(BaseSettings):
 
         if "YOUR_" in normalized.upper():
             raise ValueError(
-                "È ancora presente un valore dimostrativo."
+                "È ancora presente un valore "
+                "dimostrativo."
             )
 
         return normalized
@@ -149,7 +188,8 @@ class Settings(BaseSettings):
         parsed = urlparse(value)
 
         if (
-            parsed.scheme not in {"http", "https"}
+            parsed.scheme
+            not in {"http", "https"}
             or not parsed.netloc
         ):
             raise ValueError(
@@ -163,7 +203,9 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list[str]:
         return [
             origin.strip().rstrip("/")
-            for origin in self.CORS_ORIGINS.split(",")
+            for origin in self.CORS_ORIGINS.split(
+                ","
+            )
             if origin.strip()
         ]
 
@@ -185,7 +227,8 @@ class Settings(BaseSettings):
         ):
             raise ValueError(
                 "Non usare '*' in CORS_ORIGINS "
-                "quando CORS_ALLOW_CREDENTIALS è true."
+                "quando CORS_ALLOW_CREDENTIALS "
+                "è true."
             )
 
         for origin in origins:
@@ -195,19 +238,24 @@ class Settings(BaseSettings):
             parsed = urlparse(origin)
 
             if (
-                parsed.scheme not in {"http", "https"}
+                parsed.scheme
+                not in {"http", "https"}
                 or not parsed.netloc
                 or parsed.path not in {"", "/"}
             ):
                 raise ValueError(
-                    f"Origine CORS non valida: {origin}"
+                    f"Origine CORS non valida: "
+                    f"{origin}"
                 )
 
         return self
 
     @property
     def is_production(self) -> bool:
-        return self.ENVIRONMENT == "production"
+        return (
+            self.ENVIRONMENT
+            == "production"
+        )
 
 
 settings = Settings() 
