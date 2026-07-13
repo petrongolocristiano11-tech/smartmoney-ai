@@ -1,37 +1,204 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+import logging
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from time import perf_counter
+from uuid import uuid4
+
+from fastapi import (
+    FastAPI,
+    Request,
+)
+from fastapi.middleware.cors import (
+    CORSMiddleware,
+)
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend.app.api.discovered_wallets import (
     router as discovered_wallets_router,
 )
-from backend.app.api.helius import router as helius_router
-from backend.app.api.live import router as live_router
-from backend.app.api.scanner import router as scanner_router
-from backend.app.api.solana import router as solana_router
-from backend.app.api.tokens import router as tokens_router
-from backend.app.api.trades import router as trades_router
-from backend.app.api.wallets import router as wallet_router
+from backend.app.api.helius import (
+    router as helius_router,
+)
+from backend.app.api.live import (
+    router as live_router,
+)
+from backend.app.api.scanner import (
+    router as scanner_router,
+)
+from backend.app.api.solana import (
+    router as solana_router,
+)
+from backend.app.api.tokens import (
+    router as tokens_router,
+)
+from backend.app.api.trades import (
+    router as trades_router,
+)
+from backend.app.api.wallets import (
+    router as wallet_router,
+)
+from backend.app.core.config import settings
+from backend.app.core.error_handlers import (
+    register_exception_handlers,
+)
+from backend.app.core.logging_config import (
+    configure_logging,
+)
 from backend.app.database.session import engine
 
 
+configure_logging()
+
+logger = logging.getLogger(
+    "smartmoney.api"
+)
+
+
+def utc_timestamp() -> str:
+    return datetime.now(
+        timezone.utc
+    ).isoformat()
+
+
+@asynccontextmanager
+async def lifespan(
+    app: FastAPI,
+):
+    logger.info(
+        "application_starting name=%s "
+        "version=%s environment=%s",
+        settings.APP_NAME,
+        settings.APP_VERSION,
+        settings.ENVIRONMENT,
+    )
+
+    try:
+        with engine.connect() as connection:
+            connection.execute(
+                text("SELECT 1")
+            )
+
+        logger.info(
+            "database_startup_check=connected"
+        )
+    except SQLAlchemyError as exception:
+        logger.warning(
+            "database_startup_check=unavailable "
+            "error_type=%s",
+            type(exception).__name__,
+        )
+
+    yield
+
+    engine.dispose()
+
+    logger.info(
+        "application_stopped name=%s",
+        settings.APP_NAME,
+    )
+
+
 app = FastAPI(
-    title="SmartMoney AI",
-    version="0.8.0",
+    title=settings.APP_NAME,
+    version=settings.APP_VERSION,
+    debug=settings.DEBUG,
+    lifespan=lifespan,
+    docs_url=(
+        "/docs"
+        if settings.ENABLE_DOCS
+        else None
+    ),
+    redoc_url=(
+        "/redoc"
+        if settings.ENABLE_DOCS
+        else None
+    ),
+    openapi_url=(
+        "/openapi.json"
+        if settings.ENABLE_DOCS
+        else None
+    ),
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:5174",
-    ],
-    allow_credentials=True,
+    allow_origins=settings.cors_origins,
+    allow_credentials=(
+        settings.CORS_ALLOW_CREDENTIALS
+    ),
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=[
+        "X-Request-ID",
+        "X-Process-Time",
+    ],
 )
+
+register_exception_handlers(app)
+
+
+@app.middleware("http")
+async def request_context_middleware(
+    request: Request,
+    call_next,
+):
+    request_id = (
+        request.headers.get(
+            "X-Request-ID"
+        )
+        or uuid4().hex
+    )
+
+    request.state.request_id = request_id
+
+    started_at = perf_counter()
+
+    try:
+        response = await call_next(request)
+    except Exception:
+        elapsed = (
+            perf_counter() - started_at
+        )
+
+        logger.exception(
+            "request_failed request_id=%s "
+            "method=%s path=%s "
+            "duration_ms=%.2f",
+            request_id,
+            request.method,
+            request.url.path,
+            elapsed * 1000,
+        )
+
+        raise
+
+    elapsed = (
+        perf_counter() - started_at
+    )
+
+    response.headers[
+        "X-Request-ID"
+    ] = request_id
+
+    response.headers[
+        "X-Process-Time"
+    ] = f"{elapsed:.6f}"
+
+    logger.info(
+        "request_complete request_id=%s "
+        "method=%s path=%s status=%s "
+        "duration_ms=%.2f",
+        request_id,
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed * 1000,
+    )
+
+    return response
+
 
 app.include_router(live_router)
 app.include_router(tokens_router)
@@ -40,24 +207,107 @@ app.include_router(wallet_router)
 app.include_router(solana_router)
 app.include_router(helius_router)
 app.include_router(trades_router)
-app.include_router(discovered_wallets_router)
+app.include_router(
+    discovered_wallets_router
+)
 
 
-@app.get("/")
+@app.get(
+    "/",
+    tags=["System"],
+)
 def home():
     return {
         "status": "online",
-        "project": "SmartMoney AI",
-        "version": "0.8.0",
+        "project": settings.APP_NAME,
+        "version": settings.APP_VERSION,
+        "environment": (
+            settings.ENVIRONMENT
+        ),
+        "docs_enabled": (
+            settings.ENABLE_DOCS
+        ),
+        "timestamp": utc_timestamp(),
     }
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["System"],
+)
 def health():
-    with engine.connect() as connection:
-        connection.execute(text("SELECT 1"))
+    """
+    Liveness check.
+
+    Conferma che il processo API sia attivo.
+    Non interroga servizi esterni.
+    """
 
     return {
         "status": "ok",
-        "database": "connected",
+        "service": settings.APP_NAME,
+        "version": settings.APP_VERSION,
+        "timestamp": utc_timestamp(),
+    }
+
+
+@app.get(
+    "/ready",
+    tags=["System"],
+    responses={
+        503: {
+            "description": (
+                "Servizio non pronto"
+            ),
+        },
+    },
+)
+def readiness():
+    """
+    Readiness check.
+
+    Verifica che il database sia raggiungibile
+    e che le integrazioni siano configurate.
+    """
+
+    try:
+        with engine.connect() as connection:
+            connection.execute(
+                text("SELECT 1")
+            )
+    except SQLAlchemyError as exception:
+        logger.warning(
+            "readiness_check=failed "
+            "dependency=database "
+            "error_type=%s",
+            type(exception).__name__,
+        )
+
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not_ready",
+                "dependencies": {
+                    "database": (
+                        "disconnected"
+                    ),
+                    "helius": "configured",
+                    "solana_rpc": (
+                        "configured"
+                    ),
+                },
+                "timestamp": (
+                    utc_timestamp()
+                ),
+            },
+        )
+
+    return {
+        "status": "ready",
+        "dependencies": {
+            "database": "connected",
+            "helius": "configured",
+            "solana_rpc": "configured",
+        },
+        "timestamp": utc_timestamp(),
     } 
