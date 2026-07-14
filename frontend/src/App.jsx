@@ -198,7 +198,7 @@ function App() {
             </h1>
 
             <p className="mt-2 text-slate-400">
-              Smart Score v3.0 Wallet Intelligence
+              Smart Score v4.0 Wallet Intelligence
             </p>
           </div>
 
