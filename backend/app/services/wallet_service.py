@@ -1,4 +1,4 @@
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -11,13 +11,26 @@ def update_wallet_last_sync(
 ):
     wallet = (
         db.query(Wallet)
-        .filter(Wallet.address == wallet_address)
+        .filter(
+            Wallet.address
+            == wallet_address
+        )
         .first()
     )
 
+    current_time = datetime.now(UTC)
+
     if wallet is None:
-        return
+        wallet = Wallet(
+            address=wallet_address,
+            last_sync=current_time,
+        )
 
-    wallet.last_sync = datetime.now(UTC)
+        db.add(wallet)
+    else:
+        wallet.last_sync = current_time
 
-    db.commit() 
+    db.commit()
+    db.refresh(wallet)
+
+    return wallet 
