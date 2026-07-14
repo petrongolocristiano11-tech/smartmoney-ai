@@ -429,7 +429,7 @@ function WalletTable({ wallets = [] }) {
         <div className="flex flex-col gap-4 border-b border-slate-700 p-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-xl font-bold">
-              Smart Wallet Ranking v3
+              Smart Wallet Ranking v4 
             </h2>
 
             <p className="mt-1 text-sm text-slate-400">

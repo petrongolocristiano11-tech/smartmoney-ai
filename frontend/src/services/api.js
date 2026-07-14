@@ -75,6 +75,16 @@ export function getWalletProfile(walletAddress) {
   );
 }
 
+export function getWalletSmartScore(
+  walletAddress
+) {
+  return api.get(
+    `/trades/smart-score/${encodeURIComponent(
+      walletAddress
+    )}`
+  );
+}
+
 export function getWalletTrades(walletAddress) {
   return api.get(
     `/trades/wallet/${encodeURIComponent(
@@ -91,7 +101,9 @@ export function getWalletNetwork(walletAddress) {
   );
 }
 
-export function getWalletPortfolio(walletAddress) {
+export function getWalletPortfolio(
+  walletAddress
+) {
   return api.get(
     `/trades/portfolio/${encodeURIComponent(
       walletAddress
@@ -154,7 +166,8 @@ export function runDiscovery(
     {
       params: {
         max_tokens: maxTokens,
-        max_wallets_per_token: maxWalletsPerToken,
+        max_wallets_per_token:
+          maxWalletsPerToken,
       },
     }
   );
