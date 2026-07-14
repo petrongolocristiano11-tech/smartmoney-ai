@@ -1,9 +1,12 @@
 const DEFAULT_MAX_TOKENS = 3;
 const DEFAULT_MAX_WALLETS_PER_TOKEN = 3;
-const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
+const DEFAULT_TIMEOUT_MS =
+  10 * 60 * 1000;
 const DEFAULT_DELAY_MS = 2000;
 
-function requireEnvironmentVariable(name) {
+function requireEnvironmentVariable(
+  name
+) {
   const value = String(
     process.env[name] ?? ""
   ).trim();
@@ -26,8 +29,8 @@ function readInteger(
   const rawValue = process.env[name];
 
   if (
-    rawValue === undefined ||
-    String(rawValue).trim() === ""
+    rawValue === undefined
+    || String(rawValue).trim() === ""
   ) {
     return defaultValue;
   }
@@ -45,7 +48,10 @@ function readInteger(
 
   return Math.min(
     maximum,
-    Math.max(minimum, parsedValue)
+    Math.max(
+      minimum,
+      parsedValue
+    )
   );
 }
 
@@ -64,7 +70,10 @@ function parseSeedWallets(value) {
 
 function sleep(milliseconds) {
   return new Promise((resolve) => {
-    setTimeout(resolve, milliseconds);
+    setTimeout(
+      resolve,
+      milliseconds
+    );
   });
 }
 
@@ -73,24 +82,30 @@ async function requestJson(
   {
     method = "GET",
     timeoutMs = DEFAULT_TIMEOUT_MS,
+    headers = {},
   } = {}
 ) {
-  const controller = new AbortController();
+  const controller =
+    new AbortController();
 
   const timeoutId = setTimeout(() => {
     controller.abort();
   }, timeoutMs);
 
   try {
-    const response = await fetch(url, {
-      method,
-      headers: {
-        Accept: "application/json",
-        "User-Agent":
-          "SmartMoney-Automation/1.0",
-      },
-      signal: controller.signal,
-    });
+    const response = await fetch(
+      url,
+      {
+        method,
+        headers: {
+          Accept: "application/json",
+          "User-Agent":
+            "SmartMoney-Automation/1.1",
+          ...headers,
+        },
+        signal: controller.signal,
+      }
+    );
 
     const responseText =
       await response.text();
@@ -102,7 +117,8 @@ async function requestJson(
         responseBody =
           JSON.parse(responseText);
       } catch {
-        responseBody = responseText;
+        responseBody =
+          responseText;
       }
     }
 
@@ -110,7 +126,9 @@ async function requestJson(
       const errorDetails =
         typeof responseBody === "string"
           ? responseBody
-          : JSON.stringify(responseBody);
+          : JSON.stringify(
+              responseBody
+            );
 
       throw new Error(
         `HTTP ${response.status}: ${errorDetails}`
@@ -119,7 +137,10 @@ async function requestJson(
 
     return responseBody;
   } catch (error) {
-    if (error.name === "AbortError") {
+    if (
+      error instanceof Error
+      && error.name === "AbortError"
+    ) {
       throw new Error(
         `Richiesta scaduta dopo ${timeoutMs} ms`
       );
@@ -138,7 +159,7 @@ function buildDiscoveryUrl(
   maxWalletsPerToken
 ) {
   const url = new URL(
-    `/trades/discovery/full/${encodeURIComponent(
+    `/trades/discovery/automation/${encodeURIComponent(
       wallet
     )}`,
     backendUrl
@@ -157,19 +178,28 @@ function buildDiscoveryUrl(
   return url;
 }
 
-function summarizeResult(wallet, result) {
+function summarizeResult(
+  wallet,
+  result
+) {
   return {
     wallet,
     seedTradesImported:
-      result?.seed_trades_imported ?? null,
+      result?.seed_trades_imported
+      ?? null,
     seedTokensFound:
-      result?.seed_tokens_found ?? null,
+      result?.seed_tokens_found
+      ?? null,
     tokensProcessed:
-      result?.tokens_processed ?? 0,
+      result?.tokens_processed
+      ?? 0,
     walletsDiscovered:
-      result?.wallets_discovered ?? 0,
+      result?.wallets_discovered
+      ?? 0,
     rankingEntries:
-      Array.isArray(result?.ranking)
+      Array.isArray(
+        result?.ranking
+      )
         ? result.ranking.length
         : 0,
   };
@@ -178,21 +208,29 @@ function summarizeResult(wallet, result) {
 async function main() {
   const startedAt = new Date();
 
-  const backendUrl = normalizeBackendUrl(
-    requireEnvironmentVariable(
-      "BACKEND_URL"
-    )
-  );
+  const backendUrl =
+    normalizeBackendUrl(
+      requireEnvironmentVariable(
+        "BACKEND_URL"
+      )
+    );
 
-  const seedWallets = parseSeedWallets(
+  const automationApiKey =
     requireEnvironmentVariable(
-      "SEED_WALLETS"
-    )
-  );
+      "AUTOMATION_API_KEY"
+    );
+
+  const seedWallets =
+    parseSeedWallets(
+      requireEnvironmentVariable(
+        "SEED_WALLETS"
+      )
+    );
 
   if (seedWallets.length === 0) {
     throw new Error(
-      "SEED_WALLETS non contiene wallet validi."
+      "SEED_WALLETS non contiene "
+      + "wallet validi."
     );
   }
 
@@ -203,12 +241,13 @@ async function main() {
     10
   );
 
-  const maxWalletsPerToken = readInteger(
-    "MAX_WALLETS_PER_TOKEN",
-    DEFAULT_MAX_WALLETS_PER_TOKEN,
-    1,
-    10
-  );
+  const maxWalletsPerToken =
+    readInteger(
+      "MAX_WALLETS_PER_TOKEN",
+      DEFAULT_MAX_WALLETS_PER_TOKEN,
+      1,
+      10
+    );
 
   const timeoutMs = readInteger(
     "REQUEST_TIMEOUT_MS",
@@ -227,10 +266,14 @@ async function main() {
   console.log(
     JSON.stringify({
       event: "automation_started",
-      timestamp: startedAt.toISOString(),
-      seedWallets: seedWallets.length,
+      timestamp:
+        startedAt.toISOString(),
+      seedWallets:
+        seedWallets.length,
       maxTokens,
       maxWalletsPerToken,
+      authentication:
+        "x-automation-key",
     })
   );
 
@@ -239,18 +282,21 @@ async function main() {
     backendUrl
   );
 
-  const readiness = await requestJson(
-    readinessUrl,
-    {
-      timeoutMs: 60_000,
-    }
-  );
+  const readiness =
+    await requestJson(
+      readinessUrl,
+      {
+        timeoutMs: 60_000,
+      }
+    );
 
-  if (readiness?.status !== "ready") {
+  if (
+    readiness?.status
+    !== "ready"
+  ) {
     throw new Error(
-      `Backend non pronto: ${JSON.stringify(
-        readiness
-      )}`
+      "Backend non pronto: "
+      + JSON.stringify(readiness)
     );
   }
 
@@ -258,8 +304,10 @@ async function main() {
     JSON.stringify({
       event: "backend_ready",
       database:
-        readiness?.dependencies?.database ??
-        "unknown",
+        readiness
+          ?.dependencies
+          ?.database
+        ?? "unknown",
     })
   );
 
@@ -271,14 +319,17 @@ async function main() {
     index < seedWallets.length;
     index += 1
   ) {
-    const wallet = seedWallets[index];
+    const wallet =
+      seedWallets[index];
 
     console.log(
       JSON.stringify({
-        event: "discovery_started",
+        event:
+          "discovery_started",
         wallet,
         position: index + 1,
-        total: seedWallets.length,
+        total:
+          seedWallets.length,
       })
     );
 
@@ -291,24 +342,33 @@ async function main() {
           maxWalletsPerToken
         );
 
-      const result = await requestJson(
-        discoveryUrl,
-        {
-          method: "POST",
-          timeoutMs,
-        }
-      );
+      const result =
+        await requestJson(
+          discoveryUrl,
+          {
+            method: "POST",
+            timeoutMs,
+            headers: {
+              "X-Automation-Key":
+                automationApiKey,
+            },
+          }
+        );
 
-      const summary = summarizeResult(
-        wallet,
-        result
-      );
+      const summary =
+        summarizeResult(
+          wallet,
+          result
+        );
 
-      successfulRuns.push(summary);
+      successfulRuns.push(
+        summary
+      );
 
       console.log(
         JSON.stringify({
-          event: "discovery_completed",
+          event:
+            "discovery_completed",
           ...summary,
         })
       );
@@ -325,16 +385,21 @@ async function main() {
 
       console.error(
         JSON.stringify({
-          event: "discovery_failed",
+          event:
+            "discovery_failed",
           ...failure,
         })
       );
     }
 
     const hasAnotherWallet =
-      index < seedWallets.length - 1;
+      index
+      < seedWallets.length - 1;
 
-    if (hasAnotherWallet && delayMs > 0) {
+    if (
+      hasAnotherWallet
+      && delayMs > 0
+    ) {
       await sleep(delayMs);
     }
   }
@@ -343,22 +408,30 @@ async function main() {
 
   console.log(
     JSON.stringify({
-      event: "automation_completed",
-      startedAt: startedAt.toISOString(),
-      finishedAt: finishedAt.toISOString(),
-      durationSeconds: Math.round(
-        (finishedAt.getTime() -
-          startedAt.getTime()) /
-          1000
-      ),
+      event:
+        "automation_completed",
+      startedAt:
+        startedAt.toISOString(),
+      finishedAt:
+        finishedAt.toISOString(),
+      durationSeconds:
+        Math.round(
+          (
+            finishedAt.getTime()
+            - startedAt.getTime()
+          ) / 1000
+        ),
       successfulRuns:
         successfulRuns.length,
-      failedRuns: failedRuns.length,
+      failedRuns:
+        failedRuns.length,
       results: successfulRuns,
     })
   );
 
-  if (successfulRuns.length === 0) {
+  if (
+    successfulRuns.length === 0
+  ) {
     throw new Error(
       "Nessuna Discovery completata."
     );
@@ -369,7 +442,8 @@ main().catch((error) => {
   console.error(
     JSON.stringify({
       event: "automation_crashed",
-      timestamp: new Date().toISOString(),
+      timestamp:
+        new Date().toISOString(),
       error:
         error instanceof Error
           ? error.message

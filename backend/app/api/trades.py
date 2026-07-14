@@ -1,4 +1,12 @@
-from fastapi import APIRouter, Depends
+from fastapi import (
+    APIRouter,
+    Depends,
+    Query,
+) 
+from backend.app.core.discovery_security import (
+    enforce_public_discovery_cooldown,
+    require_automation_key,
+) 
 from sqlalchemy.orm import Session
 from backend.app.services.network_engine import build_wallet_network
 from backend.app.services.early_buyer_engine import calculate_early_buyer_score
@@ -170,18 +178,65 @@ def discover_import_and_score_wallets_endpoint(
         limit=limit,
     ) 
 
-@router.post("/discovery/full/{wallet_address}")
+@router.post(
+    "/discovery/full/{wallet_address}"
+)
 def discover_full_pipeline(
     wallet_address: str,
-    max_tokens: int = 5,
-    max_wallets_per_token: int = 5,
+    max_tokens: int = Query(
+        default=3,
+        ge=1,
+        le=5,
+    ),
+    max_wallets_per_token: int = Query(
+        default=3,
+        ge=1,
+        le=5,
+    ),
+    _: None = Depends(
+        enforce_public_discovery_cooldown
+    ),
     db: Session = Depends(get_db),
 ):
     return discover_full_from_wallet(
         db=db,
         wallet_address=wallet_address,
         max_tokens=max_tokens,
-        max_wallets_per_token=max_wallets_per_token,
+        max_wallets_per_token=(
+            max_wallets_per_token
+        ),
+    )
+
+
+@router.post(
+    "/discovery/automation/"
+    "{wallet_address}",
+    include_in_schema=False,
+)
+def discover_automation_pipeline(
+    wallet_address: str,
+    max_tokens: int = Query(
+        default=3,
+        ge=1,
+        le=10,
+    ),
+    max_wallets_per_token: int = Query(
+        default=3,
+        ge=1,
+        le=10,
+    ),
+    _: None = Depends(
+        require_automation_key
+    ),
+    db: Session = Depends(get_db),
+):
+    return discover_full_from_wallet(
+        db=db,
+        wallet_address=wallet_address,
+        max_tokens=max_tokens,
+        max_wallets_per_token=(
+            max_wallets_per_token
+        ),
     ) 
 
 @router.get("/network/{wallet_address}")
@@ -320,21 +375,46 @@ def get_copy_trading_simulation(
         wallet_address=wallet_address,
         starting_capital=starting_capital,
     ) 
-@router.post("/discovery/smart/{wallet_address}")
+@router.post(
+    "/discovery/smart/{wallet_address}"
+)
 def smart_discovery_pipeline(
     wallet_address: str,
-    max_depth: int = 2,
-    max_tokens_per_wallet: int = 5,
-    max_wallets_per_token: int = 5,
-    min_smart_score: float = 60,
+    max_depth: int = Query(
+        default=2,
+        ge=1,
+        le=3,
+    ),
+    max_tokens_per_wallet: int = Query(
+        default=5,
+        ge=1,
+        le=10,
+    ),
+    max_wallets_per_token: int = Query(
+        default=5,
+        ge=1,
+        le=10,
+    ),
+    min_smart_score: float = Query(
+        default=60,
+        ge=0,
+        le=100,
+    ),
+    _: None = Depends(
+        enforce_public_discovery_cooldown
+    ),
     db: Session = Depends(get_db),
 ):
     return smart_discovery_from_wallet(
         db=db,
         seed_wallet=wallet_address,
         max_depth=max_depth,
-        max_tokens_per_wallet=max_tokens_per_wallet,
-        max_wallets_per_token=max_wallets_per_token,
+        max_tokens_per_wallet=(
+            max_tokens_per_wallet
+        ),
+        max_wallets_per_token=(
+            max_wallets_per_token
+        ),
         min_smart_score=min_smart_score,
     ) 
 

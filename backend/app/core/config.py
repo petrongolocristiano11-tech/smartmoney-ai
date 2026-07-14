@@ -13,7 +13,10 @@ from pydantic_settings import (
 )
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = Path(
+    __file__
+).resolve().parents[3]
+
 ENV_FILE = PROJECT_ROOT / ".env"
 
 
@@ -63,6 +66,23 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # AUTOMATION / SECURITY
+    # =========================
+
+    AUTOMATION_API_KEY: str = Field(
+        default="",
+        repr=False,
+    )
+
+    PUBLIC_DISCOVERY_COOLDOWN_SECONDS: int = (
+        Field(
+            default=120,
+            ge=10,
+            le=3600,
+        )
+    )
+
+    # =========================
     # CORS
     # =========================
 
@@ -103,7 +123,9 @@ class Settings(BaseSettings):
         cls,
         value,
     ):
-        normalized = str(value).strip().upper()
+        normalized = str(
+            value
+        ).strip().upper()
 
         allowed_levels = {
             "DEBUG",
@@ -115,8 +137,9 @@ class Settings(BaseSettings):
 
         if normalized not in allowed_levels:
             raise ValueError(
-                "LOG_LEVEL deve essere DEBUG, INFO, "
-                "WARNING, ERROR oppure CRITICAL."
+                "LOG_LEVEL deve essere DEBUG, "
+                "INFO, WARNING, ERROR oppure "
+                "CRITICAL."
             )
 
         return normalized
@@ -155,6 +178,20 @@ class Settings(BaseSettings):
         return normalized
 
     @field_validator(
+        "AUTOMATION_API_KEY",
+        mode="before",
+    )
+    @classmethod
+    def normalize_automation_api_key(
+        cls,
+        value,
+    ):
+        if value is None:
+            return ""
+
+        return str(value).strip()
+
+    @field_validator(
         "DATABASE_URL",
         "SOLANA_RPC_URL",
         "HELIUS_API_KEY",
@@ -168,7 +205,8 @@ class Settings(BaseSettings):
 
         if not normalized:
             raise ValueError(
-                "La variabile non può essere vuota."
+                "La variabile non può "
+                "essere vuota."
             )
 
         if "YOUR_" in normalized.upper():
@@ -179,7 +217,9 @@ class Settings(BaseSettings):
 
         return normalized
 
-    @field_validator("SOLANA_RPC_URL")
+    @field_validator(
+        "SOLANA_RPC_URL"
+    )
     @classmethod
     def validate_solana_rpc_url(
         cls,
@@ -193,23 +233,26 @@ class Settings(BaseSettings):
             or not parsed.netloc
         ):
             raise ValueError(
-                "SOLANA_RPC_URL deve essere un URL "
-                "HTTP o HTTPS valido."
+                "SOLANA_RPC_URL deve essere "
+                "un URL HTTP o HTTPS valido."
             )
 
         return value.rstrip("/")
 
     @property
-    def cors_origins(self) -> list[str]:
+    def cors_origins(
+        self,
+    ) -> list[str]:
         return [
             origin.strip().rstrip("/")
-            for origin in self.CORS_ORIGINS.split(
-                ","
-            )
+            for origin
+            in self.CORS_ORIGINS.split(",")
             if origin.strip()
         ]
 
-    @model_validator(mode="after")
+    @model_validator(
+        mode="after"
+    )
     def validate_cors_configuration(
         self,
     ) -> Self:
@@ -226,8 +269,9 @@ class Settings(BaseSettings):
             and "*" in origins
         ):
             raise ValueError(
-                "Non usare '*' in CORS_ORIGINS "
-                "quando CORS_ALLOW_CREDENTIALS "
+                "Non usare '*' in "
+                "CORS_ORIGINS quando "
+                "CORS_ALLOW_CREDENTIALS "
                 "è true."
             )
 
@@ -241,17 +285,42 @@ class Settings(BaseSettings):
                 parsed.scheme
                 not in {"http", "https"}
                 or not parsed.netloc
-                or parsed.path not in {"", "/"}
+                or parsed.path
+                not in {"", "/"}
             ):
                 raise ValueError(
-                    f"Origine CORS non valida: "
+                    "Origine CORS non valida: "
                     f"{origin}"
                 )
 
         return self
 
+    @model_validator(
+        mode="after"
+    )
+    def validate_production_security(
+        self,
+    ) -> Self:
+        if (
+            self.is_production
+            and len(
+                self.AUTOMATION_API_KEY
+            )
+            < 32
+        ):
+            raise ValueError(
+                "In produzione "
+                "AUTOMATION_API_KEY deve "
+                "contenere almeno 32 "
+                "caratteri."
+            )
+
+        return self
+
     @property
-    def is_production(self) -> bool:
+    def is_production(
+        self,
+    ) -> bool:
         return (
             self.ENVIRONMENT
             == "production"
