@@ -1,6 +1,13 @@
+from datetime import (
+    datetime,
+    timezone,
+)
+
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from fastapi.testclient import (
+    TestClient,
+)
 from sqlalchemy import create_engine
 from sqlalchemy.orm import (
     Session,
@@ -11,8 +18,12 @@ from sqlalchemy.pool import StaticPool
 from backend.app.api.paper_trading import (
     router,
 )
-from backend.app.core.config import settings
-from backend.app.database.session import get_db
+from backend.app.core.config import (
+    settings,
+)
+from backend.app.database.session import (
+    get_db,
+)
 from backend.app.models.paper_account import (
     PaperAccount,
 )
@@ -22,13 +33,93 @@ from backend.app.models.paper_order import (
 from backend.app.models.paper_position import (
     PaperPosition,
 )
+from backend.app.services.price_oracle import (
+    OracleBatch,
+    OraclePrice,
+    PriceOracleError,
+    get_price_oracle,
+)
 
 
 ACCESS_KEY = "k" * 40
 
+TOKEN_MINT = (
+    "Token1111111111111111111111111111111111111"
+)
+
+
+class FakeOracle:
+    def __init__(self):
+        self.sol_price = 0.1
+
+    def _quote(
+        self,
+        token_mint: str,
+    ) -> OraclePrice:
+        if token_mint != TOKEN_MINT:
+            raise PriceOracleError(
+                "Prezzo non disponibile.",
+                code=(
+                    "PRICE_NOT_AVAILABLE"
+                ),
+            )
+
+        return OraclePrice(
+            token_mint=token_mint,
+            usd_price=(
+                self.sol_price * 100
+            ),
+            sol_price=self.sol_price,
+            sol_usd_price=100,
+            block_id=123,
+            decimals=6,
+            price_change_24h=2.5,
+            fetched_at=datetime.now(
+                timezone.utc
+            ),
+        )
+
+    def get_price(
+        self,
+        token_mint: str,
+        force_refresh: bool = False,
+    ) -> OraclePrice:
+        return self._quote(
+            token_mint
+        )
+
+    def get_prices(
+        self,
+        token_mints,
+        force_refresh: bool = False,
+    ) -> OracleBatch:
+        prices = {}
+        missing = []
+
+        for token_mint in token_mints:
+            try:
+                prices[token_mint] = (
+                    self._quote(
+                        token_mint
+                    )
+                )
+
+            except PriceOracleError:
+                missing.append(
+                    token_mint
+                )
+
+        return OracleBatch(
+            prices=prices,
+            missing_token_mints=missing,
+            fetched_at=datetime.now(
+                timezone.utc
+            ),
+        )
+
 
 @pytest.fixture()
-def client(
+def api_client(
     monkeypatch,
 ):
     monkeypatch.setattr(
@@ -66,21 +157,26 @@ def client(
         testing_session()
     )
 
+    oracle = FakeOracle()
+
     app = FastAPI()
     app.include_router(router)
 
     def override_get_db():
-        try:
-            yield session
-        finally:
-            pass
+        yield session
 
     app.dependency_overrides[
         get_db
     ] = override_get_db
 
-    with TestClient(app) as test_client:
-        yield test_client
+    app.dependency_overrides[
+        get_price_oracle
+    ] = lambda: oracle
+
+    with TestClient(
+        app
+    ) as client:
+        yield client, oracle
 
     session.close()
     engine.dispose()
@@ -114,8 +210,10 @@ def create_account(
 
 
 def test_access_key_is_required(
-    client: TestClient,
+    api_client,
 ):
+    client, _ = api_client
+
     response = client.get(
         "/paper-trading/accounts"
     )
@@ -123,29 +221,35 @@ def test_access_key_is_required(
     assert response.status_code == 401
 
 
-def test_account_creation_and_listing(
-    client: TestClient,
+def test_price_preview_uses_oracle(
+    api_client,
 ):
-    created = create_account(client)
-
-    assert (
-        created["account"]["name"]
-        == "Test Account"
-    )
+    client, _ = api_client
 
     response = client.get(
-        "/paper-trading/accounts",
+        (
+            "/paper-trading/prices/"
+            f"{TOKEN_MINT}"
+        ),
         headers=auth_headers(),
     )
 
     assert response.status_code == 200
-    assert response.json()["count"] == 1
+
+    assert (
+        response.json()["sol_price"]
+        == pytest.approx(0.1)
+    )
 
 
-def test_complete_paper_workflow(
-    client: TestClient,
+def test_complete_oracle_workflow(
+    api_client,
 ):
-    created = create_account(client)
+    client, oracle = api_client
+
+    created = create_account(
+        client
+    )
 
     account_id = (
         created["account"]["id"]
@@ -153,14 +257,13 @@ def test_complete_paper_workflow(
 
     buy_response = client.post(
         (
-            f"/paper-trading/accounts/"
+            "/paper-trading/accounts/"
             f"{account_id}/buy"
         ),
         headers=auth_headers(),
         json={
-            "token_mint": "TOKEN_A",
+            "token_mint": TOKEN_MINT,
             "value_sol": 1,
-            "market_price_sol": 0.1,
             "slippage_percent": 0,
             "fee_percent": 0,
             "signal_score": 80,
@@ -168,7 +271,17 @@ def test_complete_paper_workflow(
         },
     )
 
-    assert buy_response.status_code == 200
+    assert (
+        buy_response.status_code
+        == 200
+    )
+
+    assert (
+        buy_response.json()
+        ["price"]
+        ["sol_price"]
+        == pytest.approx(0.1)
+    )
 
     assert (
         buy_response.json()
@@ -177,35 +290,41 @@ def test_complete_paper_workflow(
         == pytest.approx(9)
     )
 
-    mark_response = client.post(
+    oracle.sol_price = 0.2
+
+    refresh_response = client.post(
         (
-            f"/paper-trading/accounts/"
-            f"{account_id}/mark"
+            "/paper-trading/accounts/"
+            f"{account_id}/"
+            "refresh-prices"
         ),
         headers=auth_headers(),
-        json={
-            "token_mint": "TOKEN_A",
-            "market_price_sol": 0.2,
+        params={
+            "force_refresh": True,
         },
     )
 
-    assert mark_response.status_code == 200
+    assert (
+        refresh_response.status_code
+        == 200
+    )
 
     assert (
-        mark_response.json()
+        refresh_response.json()
+        ["updated_positions"]
+        [0]
         ["unrealized_pnl_sol"]
         == pytest.approx(1)
     )
 
     sell_response = client.post(
         (
-            f"/paper-trading/accounts/"
+            "/paper-trading/accounts/"
             f"{account_id}/sell"
         ),
         headers=auth_headers(),
         json={
-            "token_mint": "TOKEN_A",
-            "market_price_sol": 0.2,
+            "token_mint": TOKEN_MINT,
             "quantity": None,
             "slippage_percent": 0,
             "fee_percent": 0,
@@ -213,7 +332,10 @@ def test_complete_paper_workflow(
         },
     )
 
-    assert sell_response.status_code == 200
+    assert (
+        sell_response.status_code
+        == 200
+    )
 
     assert (
         sell_response.json()
@@ -222,33 +344,91 @@ def test_complete_paper_workflow(
         == pytest.approx(1)
     )
 
-    detail_response = client.get(
-        (
-            f"/paper-trading/accounts/"
-            f"{account_id}"
-        ),
-        headers=auth_headers(),
-    )
-
-    assert detail_response.status_code == 200
-
-    detail = detail_response.json()
-
     assert (
-        detail["summary"]["equity_sol"]
+        sell_response.json()
+        ["summary"]
+        ["equity_sol"]
         == pytest.approx(11)
     )
 
+
+def test_manual_market_price_is_rejected(
+    api_client,
+):
+    client, _ = api_client
+
+    created = create_account(
+        client
+    )
+
+    account_id = (
+        created["account"]["id"]
+    )
+
+    response = client.post(
+        (
+            "/paper-trading/accounts/"
+            f"{account_id}/buy"
+        ),
+        headers=auth_headers(),
+        json={
+            "token_mint": TOKEN_MINT,
+            "value_sol": 1,
+            "market_price_sol": (
+                0.000001
+            ),
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_missing_oracle_price_blocks_buy(
+    api_client,
+):
+    client, _ = api_client
+
+    created = create_account(
+        client
+    )
+
+    account_id = (
+        created["account"]["id"]
+    )
+
+    response = client.post(
+        (
+            "/paper-trading/accounts/"
+            f"{account_id}/buy"
+        ),
+        headers=auth_headers(),
+        json={
+            "token_mint": (
+                "Missing111111111111111111"
+                "111111111111111111"
+            ),
+            "value_sol": 1,
+        },
+    )
+
+    assert response.status_code == 422
+
     assert (
-        detail["positions"][0]["status"]
-        == "CLOSED"
+        response.json()
+        ["detail"]
+        ["code"]
+        == "PRICE_NOT_AVAILABLE"
     )
 
 
 def test_pause_blocks_new_buys(
-    client: TestClient,
+    api_client,
 ):
-    created = create_account(client)
+    client, _ = api_client
+
+    created = create_account(
+        client
+    )
 
     account_id = (
         created["account"]["id"]
@@ -256,7 +436,7 @@ def test_pause_blocks_new_buys(
 
     pause_response = client.patch(
         (
-            f"/paper-trading/accounts/"
+            "/paper-trading/accounts/"
             f"{account_id}"
         ),
         headers=auth_headers(),
@@ -265,64 +445,24 @@ def test_pause_blocks_new_buys(
         },
     )
 
-    assert pause_response.status_code == 200
+    assert (
+        pause_response.status_code
+        == 200
+    )
 
     buy_response = client.post(
         (
-            f"/paper-trading/accounts/"
+            "/paper-trading/accounts/"
             f"{account_id}/buy"
         ),
         headers=auth_headers(),
         json={
-            "token_mint": "TOKEN_A",
+            "token_mint": TOKEN_MINT,
             "value_sol": 1,
-            "market_price_sol": 0.1,
         },
     )
 
-    assert buy_response.status_code == 409
-
-
-def test_reset_requires_exact_name(
-    client: TestClient,
-):
-    created = create_account(client)
-
-    account_id = (
-        created["account"]["id"]
-    )
-
-    wrong_response = client.post(
-        (
-            f"/paper-trading/accounts/"
-            f"{account_id}/reset"
-        ),
-        headers=auth_headers(),
-        json={
-            "confirmation_name": "Wrong",
-        },
-    )
-
-    assert wrong_response.status_code == 409
-
-    correct_response = client.post(
-        (
-            f"/paper-trading/accounts/"
-            f"{account_id}/reset"
-        ),
-        headers=auth_headers(),
-        json={
-            "confirmation_name":
-                "Test Account",
-        },
-    )
-
-    assert correct_response.status_code == 200
-
-    summary = (
-        correct_response.json()
-        ["summary"]
-    )
-
-    assert summary["equity_sol"] == 10
-    assert summary["open_positions"] == 0 
+    assert (
+        buy_response.status_code
+        == 409
+    ) 

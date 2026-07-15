@@ -13,7 +13,9 @@ from sqlalchemy.orm import Session
 from backend.app.core.paper_trading_security import (
     require_paper_trading_key,
 )
-from backend.app.database.session import get_db
+from backend.app.database.session import (
+    get_db,
+)
 from backend.app.schemas.paper_trading import (
     PaperAccountCreateRequest,
     PaperAccountDetailResponse,
@@ -23,8 +25,8 @@ from backend.app.schemas.paper_trading import (
     PaperAccountUpdateRequest,
     PaperBuyRequest,
     PaperExecutionResponse,
-    PaperMarkRequest,
-    PaperPositionResponse,
+    PaperPriceRefreshResponse,
+    PaperPriceResponse,
     PaperSellRequest,
 )
 from backend.app.services.paper_trading_account_service import (
@@ -34,14 +36,22 @@ from backend.app.services.paper_trading_account_service import (
 )
 from backend.app.services.paper_trading_engine import (
     PaperTradingError,
-    buy_paper_token,
     create_paper_account,
     get_paper_account,
     get_paper_account_summary,
     list_paper_orders,
     list_paper_positions,
-    mark_paper_position,
-    sell_paper_token,
+)
+from backend.app.services.paper_trading_pricing_service import (
+    buy_paper_token_with_oracle,
+    get_paper_token_price,
+    refresh_paper_account_prices,
+    sell_paper_token_with_oracle,
+)
+from backend.app.services.price_oracle import (
+    JupiterPriceOracle,
+    PriceOracleError,
+    get_price_oracle,
 )
 
 
@@ -61,6 +71,7 @@ NOT_FOUND_CODES = {
     "POSITION_NOT_FOUND",
 }
 
+
 CONFLICT_CODES = {
     "ACCOUNT_NAME_EXISTS",
     "ACCOUNT_NOT_ACTIVE",
@@ -76,6 +87,16 @@ CONFLICT_CODES = {
 }
 
 
+ORACLE_SERVICE_CODES = {
+    "ORACLE_NOT_CONFIGURED",
+    "ORACLE_TIMEOUT",
+    "ORACLE_UNAVAILABLE",
+    "ORACLE_AUTHENTICATION_FAILED",
+    "ORACLE_RATE_LIMITED",
+    "SOL_PRICE_NOT_AVAILABLE",
+}
+
+
 def raise_paper_http_error(
     exception: PaperTradingError,
 ) -> None:
@@ -83,13 +104,43 @@ def raise_paper_http_error(
         status_code = (
             status.HTTP_404_NOT_FOUND
         )
+
     elif exception.code in CONFLICT_CODES:
         status_code = (
             status.HTTP_409_CONFLICT
         )
+
     else:
         status_code = (
-            status.HTTP_422_UNPROCESSABLE_ENTITY
+            status
+            .HTTP_422_UNPROCESSABLE_ENTITY
+        )
+
+    raise HTTPException(
+        status_code=status_code,
+        detail={
+            "code": exception.code,
+            "message": exception.message,
+        },
+    ) from exception
+
+
+def raise_oracle_http_error(
+    exception: PriceOracleError,
+) -> None:
+    if (
+        exception.code
+        in ORACLE_SERVICE_CODES
+    ):
+        status_code = (
+            status
+            .HTTP_503_SERVICE_UNAVAILABLE
+        )
+
+    else:
+        status_code = (
+            status
+            .HTTP_422_UNPROCESSABLE_ENTITY
         )
 
     raise HTTPException(
@@ -111,8 +162,18 @@ def paper_operation(
             *args,
             **kwargs,
         )
-    except PaperTradingError as exception:
+
+    except (
+        PaperTradingError
+    ) as exception:
         raise_paper_http_error(
+            exception
+        )
+
+    except (
+        PriceOracleError
+    ) as exception:
+        raise_oracle_http_error(
             exception
         )
 
@@ -153,6 +214,27 @@ def build_account_detail(
         "positions": positions,
         "orders": orders,
     }
+
+
+@router.get(
+    "/prices/{token_mint}",
+    response_model=PaperPriceResponse,
+)
+def get_token_price(
+    token_mint: str,
+    force_refresh: bool = Query(
+        default=False
+    ),
+    oracle: JupiterPriceOracle = (
+        Depends(get_price_oracle)
+    ),
+):
+    return paper_operation(
+        get_paper_token_price,
+        oracle=oracle,
+        token_mint=token_mint,
+        force_refresh=force_refresh,
+    )
 
 
 @router.get(
@@ -287,17 +369,48 @@ def reset_account(
 
 
 @router.post(
+    "/accounts/{account_id}/refresh-prices",
+    response_model=(
+        PaperPriceRefreshResponse
+    ),
+)
+def refresh_prices(
+    account_id: int,
+    force_refresh: bool = Query(
+        default=False
+    ),
+    db: Session = Depends(get_db),
+    oracle: JupiterPriceOracle = (
+        Depends(get_price_oracle)
+    ),
+):
+    return paper_operation(
+        refresh_paper_account_prices,
+        db=db,
+        oracle=oracle,
+        account_id=account_id,
+        force_refresh=force_refresh,
+    )
+
+
+@router.post(
     "/accounts/{account_id}/buy",
-    response_model=PaperExecutionResponse,
+    response_model=(
+        PaperExecutionResponse
+    ),
 )
 def buy_token(
     account_id: int,
     payload: PaperBuyRequest,
     db: Session = Depends(get_db),
+    oracle: JupiterPriceOracle = (
+        Depends(get_price_oracle)
+    ),
 ):
     return paper_operation(
-        buy_paper_token,
+        buy_paper_token_with_oracle,
         db=db,
+        oracle=oracle,
         account_id=account_id,
         **payload.model_dump(),
     )
@@ -305,36 +418,22 @@ def buy_token(
 
 @router.post(
     "/accounts/{account_id}/sell",
-    response_model=PaperExecutionResponse,
+    response_model=(
+        PaperExecutionResponse
+    ),
 )
 def sell_token(
     account_id: int,
     payload: PaperSellRequest,
     db: Session = Depends(get_db),
+    oracle: JupiterPriceOracle = (
+        Depends(get_price_oracle)
+    ),
 ):
     return paper_operation(
-        sell_paper_token,
+        sell_paper_token_with_oracle,
         db=db,
+        oracle=oracle,
         account_id=account_id,
         **payload.model_dump(),
-    )
-
-
-@router.post(
-    "/accounts/{account_id}/mark",
-    response_model=PaperPositionResponse,
-)
-def mark_position(
-    account_id: int,
-    payload: PaperMarkRequest,
-    db: Session = Depends(get_db),
-):
-    return paper_operation(
-        mark_paper_position,
-        db=db,
-        account_id=account_id,
-        token_mint=payload.token_mint,
-        market_price_sol=(
-            payload.market_price_sol
-        ),
     ) 

@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -9,7 +10,8 @@ import {
   createPaperAccount,
   getPaperAccount,
   getPaperAccounts,
-  markPaperPosition,
+  getPaperTokenPrice,
+  refreshPaperAccountPrices,
   resetPaperAccount,
   sellPaperToken,
   updatePaperAccount,
@@ -18,6 +20,8 @@ import {
 
 const ACCESS_KEY_STORAGE =
   "smartmoney-paper-access-key";
+
+const AUTO_REFRESH_MS = 30_000;
 
 
 const EMPTY_CREATE_FORM = {
@@ -32,7 +36,6 @@ const EMPTY_CREATE_FORM = {
 const EMPTY_BUY_FORM = {
   token_mint: "",
   value_sol: "0.1",
-  market_price_sol: "",
   slippage_percent: "0.5",
   fee_percent: "0.25",
   signal_score: "",
@@ -53,7 +56,8 @@ function formatNumber(
   return number.toLocaleString(
     "it-IT",
     {
-      maximumFractionDigits: digits,
+      maximumFractionDigits:
+        digits,
     }
   );
 }
@@ -64,8 +68,9 @@ function formatDate(value) {
     return "-";
   }
 
-  return new Date(value)
-    .toLocaleString("it-IT");
+  return new Date(
+    value
+  ).toLocaleString("it-IT");
 }
 
 
@@ -158,10 +163,6 @@ function StatusBadge({ status }) {
       "border-blue-700 bg-blue-900/40 text-blue-300",
     CLOSED:
       "border-slate-600 bg-slate-700 text-slate-300",
-    FILLED:
-      "border-green-700 bg-green-900/40 text-green-300",
-    REJECTED:
-      "border-red-700 bg-red-900/40 text-red-300",
   };
 
   return (
@@ -213,6 +214,21 @@ function PaperTrading() {
     setPositionDrafts,
   ] = useState({});
 
+  const [
+    pricePreview,
+    setPricePreview,
+  ] = useState(null);
+
+  const [
+    pricingWarning,
+    setPricingWarning,
+  ] = useState("");
+
+  const [
+    lastPriceRefresh,
+    setLastPriceRefresh,
+  ] = useState(null);
+
   const [loading, setLoading] =
     useState(false);
 
@@ -226,190 +242,367 @@ function PaperTrading() {
     useState("");
 
 
-  function handleRequestError(
-    requestError
-  ) {
-    const status =
-      requestError?.response?.status;
+  const handleRequestError =
+    useCallback(
+      (requestError) => {
+        const status =
+          requestError?.response
+            ?.status;
 
-    if (status === 401) {
-      sessionStorage.removeItem(
-        ACCESS_KEY_STORAGE
-      );
+        if (status === 401) {
+          sessionStorage.removeItem(
+            ACCESS_KEY_STORAGE
+          );
 
-      setAccessKey("");
-      setKeyInput("");
-      setAccounts([]);
-      setDetail(null);
+          setAccessKey("");
+          setKeyInput("");
+          setAccounts([]);
+          setDetail(null);
 
-      setError(
-        "Chiave di accesso non valida."
-      );
+          setError(
+            "Chiave di accesso "
+            + "non valida."
+          );
 
-      return;
-    }
+          return;
+        }
 
-    setError(
-      parseApiError(requestError)
+        setError(
+          parseApiError(
+            requestError
+          )
+        );
+      },
+      []
     );
-  }
 
 
-  async function loadDetail(
-    key,
-    accountId
-  ) {
-    const response =
-      await getPaperAccount(
+  const applyDetail =
+    useCallback(
+      (nextDetail) => {
+        setDetail(nextDetail);
+
+        const account =
+          nextDetail.account;
+
+        setSettingsForm({
+          name: account.name,
+          max_position_size_sol:
+            String(
+              account
+                .max_position_size_sol
+            ),
+          max_open_positions:
+            String(
+              account
+                .max_open_positions
+            ),
+          daily_loss_limit_sol:
+            String(
+              account
+                .daily_loss_limit_sol
+            ),
+        });
+
+        const nextDrafts = {};
+
+        for (
+          const position
+          of nextDetail.positions
+        ) {
+          nextDrafts[
+            position.id
+          ] = {
+            quantity: "",
+          };
+        }
+
+        setPositionDrafts(
+          nextDrafts
+        );
+      },
+      []
+    );
+
+
+  const loadAccountDetail =
+    useCallback(
+      async (
         key,
         accountId
-      );
+      ) => {
+        const response =
+          await getPaperAccount(
+            key,
+            accountId
+          );
 
-    setDetail(response.data);
-
-    const account =
-      response.data.account;
-
-    setSettingsForm({
-      name: account.name,
-      max_position_size_sol:
-        String(
-          account
-            .max_position_size_sol
-        ),
-      max_open_positions:
-        String(
-          account
-            .max_open_positions
-        ),
-      daily_loss_limit_sol:
-        String(
-          account
-            .daily_loss_limit_sol
-        ),
-    });
-
-    const nextDrafts = {};
-
-    for (
-      const position
-      of response.data.positions
-    ) {
-      nextDrafts[position.id] = {
-        market_price_sol:
-          position.last_price_sol > 0
-            ? String(
-                position
-                  .last_price_sol
-              )
-            : "",
-        quantity: "",
-      };
-    }
-
-    setPositionDrafts(nextDrafts);
-  }
-
-
-  async function loadAccounts(
-    key,
-    preferredAccountId = null
-  ) {
-    setLoading(true);
-    setError("");
-
-    try {
-      const response =
-        await getPaperAccounts(key);
-
-      const accountRows =
-        response.data.accounts ?? [];
-
-      setAccounts(accountRows);
-
-      const existingIds = new Set(
-        accountRows.map(
-          (row) => row.account.id
-        )
-      );
-
-      const preferredId = Number(
-        preferredAccountId
-        ?? selectedAccountId
-      );
-
-      const nextAccountId =
-        existingIds.has(preferredId)
-          ? preferredId
-          : accountRows[0]
-              ?.account
-              ?.id
-            ?? null;
-
-      setSelectedAccountId(
-        nextAccountId
-      );
-
-      if (nextAccountId) {
-        await loadDetail(
-          key,
-          nextAccountId
+        applyDetail(
+          response.data
         );
-      } else {
-        setDetail(null);
-        setSettingsForm(null);
-      }
-    } catch (requestError) {
-      handleRequestError(
-        requestError
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
+      },
+      [applyDetail]
+    );
+
+
+  const refreshPrices =
+    useCallback(
+      async (
+        key,
+        accountId,
+        forceRefresh = false
+      ) => {
+        const response =
+          await refreshPaperAccountPrices(
+            key,
+            accountId,
+            forceRefresh
+          );
+
+        const missing =
+          response.data
+            .missing_token_mints
+          ?? [];
+
+        if (missing.length > 0) {
+          setPricingWarning(
+            "Jupiter non ha "
+            + "restituito un prezzo "
+            + "affidabile per: "
+            + missing
+              .map((mint) =>
+                shortenAddress(
+                  mint
+                )
+              )
+              .join(", ")
+          );
+        } else {
+          setPricingWarning("");
+        }
+
+        setLastPriceRefresh(
+          response.data
+            .refreshed_at
+        );
+
+        return response.data;
+      },
+      []
+    );
+
+
+  const loadAccounts =
+    useCallback(
+      async (
+        key,
+        preferredAccountId =
+          null,
+        refreshSelected = true
+      ) => {
+        setLoading(true);
+        setError("");
+
+        try {
+          let response =
+            await getPaperAccounts(
+              key
+            );
+
+          let accountRows =
+            response.data
+              .accounts
+            ?? [];
+
+          const existingIds =
+            new Set(
+              accountRows.map(
+                (row) =>
+                  row.account.id
+              )
+            );
+
+          const preferredId =
+            Number(
+              preferredAccountId
+            );
+
+          const nextAccountId =
+            existingIds.has(
+              preferredId
+            )
+              ? preferredId
+              : accountRows[0]
+                  ?.account
+                  ?.id
+                ?? null;
+
+          setSelectedAccountId(
+            nextAccountId
+          );
+
+          if (nextAccountId) {
+            if (refreshSelected) {
+              await refreshPrices(
+                key,
+                nextAccountId
+              );
+
+              response =
+                await getPaperAccounts(
+                  key
+                );
+
+              accountRows =
+                response.data
+                  .accounts
+                ?? [];
+            }
+
+            setAccounts(
+              accountRows
+            );
+
+            await loadAccountDetail(
+              key,
+              nextAccountId
+            );
+          } else {
+            setAccounts([]);
+            setDetail(null);
+            setSettingsForm(null);
+          }
+        } catch (requestError) {
+          handleRequestError(
+            requestError
+          );
+        } finally {
+          setLoading(false);
+        }
+      },
+      [
+        handleRequestError,
+        loadAccountDetail,
+        refreshPrices,
+      ]
+    );
 
 
   useEffect(() => {
     if (accessKey) {
-      loadAccounts(accessKey);
+      loadAccounts(
+        accessKey,
+        selectedAccountId,
+        true
+      );
     }
   }, [accessKey]);
 
 
-  const openPositions = useMemo(
-    () =>
-      detail?.positions?.filter(
-        (position) =>
-          position.status === "OPEN"
-      ) ?? [],
-    [detail]
-  );
+  useEffect(() => {
+    if (
+      !accessKey
+      || !selectedAccountId
+    ) {
+      return undefined;
+    }
+
+    const intervalId =
+      window.setInterval(
+        async () => {
+          try {
+            await refreshPrices(
+              accessKey,
+              selectedAccountId,
+              false
+            );
+
+            await loadAccountDetail(
+              accessKey,
+              selectedAccountId
+            );
+
+            const response =
+              await getPaperAccounts(
+                accessKey
+              );
+
+            setAccounts(
+              response.data
+                .accounts
+              ?? []
+            );
+          } catch (
+            requestError
+          ) {
+            handleRequestError(
+              requestError
+            );
+          }
+        },
+        AUTO_REFRESH_MS
+      );
+
+    return () => {
+      window.clearInterval(
+        intervalId
+      );
+    };
+  }, [
+    accessKey,
+    selectedAccountId,
+    handleRequestError,
+    loadAccountDetail,
+    refreshPrices,
+  ]);
+
+
+  const openPositions =
+    useMemo(
+      () =>
+        detail?.positions
+          ?.filter(
+            (position) =>
+              position.status
+              === "OPEN"
+          )
+        ?? [],
+      [detail]
+    );
 
 
   async function runAction(
     actionName,
     operation,
-    successMessage,
-    preferredAccountId =
-      selectedAccountId
+    successMessage
   ) {
     setBusyAction(actionName);
     setError("");
     setMessage("");
 
     try {
-      await operation();
+      const result =
+        await operation();
 
       setMessage(successMessage);
 
+      const targetAccountId =
+        result?.accountId
+        ?? selectedAccountId;
+
       await loadAccounts(
         accessKey,
-        preferredAccountId
+        targetAccountId,
+        true
       );
+
+      return result;
     } catch (requestError) {
       handleRequestError(
         requestError
       );
+
+      return null;
     } finally {
       setBusyAction("");
     }
@@ -424,7 +617,8 @@ function PaperTrading() {
 
     if (!normalizedKey) {
       setError(
-        "Inserisci la chiave di accesso."
+        "Inserisci la chiave "
+        + "di accesso."
       );
 
       return;
@@ -436,7 +630,9 @@ function PaperTrading() {
     );
 
     setError("");
-    setAccessKey(normalizedKey);
+    setAccessKey(
+      normalizedKey
+    );
   }
 
 
@@ -451,28 +647,22 @@ function PaperTrading() {
     setDetail(null);
     setMessage("");
     setError("");
+    setPricingWarning("");
   }
 
 
   async function selectAccount(
     accountId
   ) {
-    setSelectedAccountId(accountId);
-    setLoading(true);
-    setError("");
+    setSelectedAccountId(
+      accountId
+    );
 
-    try {
-      await loadDetail(
-        accessKey,
-        accountId
-      );
-    } catch (requestError) {
-      handleRequestError(
-        requestError
-      );
-    } finally {
-      setLoading(false);
-    }
+    await loadAccounts(
+      accessKey,
+      accountId,
+      true
+    );
   }
 
 
@@ -489,12 +679,27 @@ function PaperTrading() {
   }
 
 
+  function updateBuyForm(
+    field,
+    value
+  ) {
+    setBuyForm(
+      (current) => ({
+        ...current,
+        [field]: value,
+      })
+    );
+
+    if (field === "token_mint") {
+      setPricePreview(null);
+    }
+  }
+
+
   async function submitCreateAccount(
     event
   ) {
     event.preventDefault();
-
-    let createdAccountId = null;
 
     await runAction(
       "create-account",
@@ -503,7 +708,8 @@ function PaperTrading() {
           await createPaperAccount(
             accessKey,
             {
-              name: createForm.name,
+              name:
+                createForm.name,
               starting_balance_sol:
                 Number(
                   createForm
@@ -527,23 +733,19 @@ function PaperTrading() {
             }
           );
 
-        createdAccountId =
-          response.data.account.id;
-
         setCreateForm(
           EMPTY_CREATE_FORM
         );
-      },
-      "Conto virtuale creato.",
-      createdAccountId
-    );
 
-    if (createdAccountId) {
-      await loadAccounts(
-        accessKey,
-        createdAccountId
-      );
-    }
+        return {
+          accountId:
+            response.data
+              .account
+              .id,
+        };
+      },
+      "Conto virtuale creato."
+    );
   }
 
 
@@ -590,7 +792,9 @@ function PaperTrading() {
   }
 
 
-  async function changeStatus(status) {
+  async function changeStatus(
+    status
+  ) {
     await runAction(
       `status-${status}`,
       () =>
@@ -604,94 +808,115 @@ function PaperTrading() {
   }
 
 
+  async function verifyPrice() {
+    const tokenMint =
+      buyForm.token_mint.trim();
+
+    if (!tokenMint) {
+      setError(
+        "Inserisci prima "
+        + "il token mint."
+      );
+
+      return;
+    }
+
+    setBusyAction(
+      "verify-price"
+    );
+
+    setError("");
+    setPricePreview(null);
+
+    try {
+      const response =
+        await getPaperTokenPrice(
+          accessKey,
+          tokenMint,
+          true
+        );
+
+      setPricePreview(
+        response.data
+      );
+    } catch (requestError) {
+      handleRequestError(
+        requestError
+      );
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+
   async function submitBuy(event) {
     event.preventDefault();
 
-    await runAction(
-      "buy",
-      () =>
-        buyPaperToken(
-          accessKey,
-          selectedAccountId,
-          {
-            token_mint:
-              buyForm.token_mint,
-            value_sol:
-              Number(
-                buyForm.value_sol
-              ),
-            market_price_sol:
-              Number(
+    const result =
+      await runAction(
+        "buy",
+        () =>
+          buyPaperToken(
+            accessKey,
+            selectedAccountId,
+            {
+              token_mint:
                 buyForm
-                  .market_price_sol
-              ),
-            slippage_percent:
-              Number(
+                  .token_mint,
+              value_sol:
+                Number(
+                  buyForm
+                    .value_sol
+                ),
+              slippage_percent:
+                Number(
+                  buyForm
+                    .slippage_percent
+                ),
+              fee_percent:
+                Number(
+                  buyForm
+                    .fee_percent
+                ),
+              signal_score:
                 buyForm
-                  .slippage_percent
-              ),
-            fee_percent:
-              Number(
-                buyForm.fee_percent
-              ),
-            signal_score:
-              buyForm.signal_score
-                ? Number(
-                    buyForm
-                      .signal_score
-                  )
-                : null,
-            reason:
-              buyForm.reason || null,
-          }
-        ),
-      "Acquisto virtuale eseguito."
-    );
+                  .signal_score
+                  ? Number(
+                      buyForm
+                        .signal_score
+                    )
+                  : null,
+              reason:
+                buyForm.reason
+                || null,
+            }
+          ),
+        "Acquisto virtuale "
+        + "eseguito con prezzo "
+        + "Jupiter."
+      );
 
-    setBuyForm(EMPTY_BUY_FORM);
+    if (result !== null) {
+      setBuyForm(
+        EMPTY_BUY_FORM
+      );
+
+      setPricePreview(null);
+    }
   }
 
 
   function updatePositionDraft(
     positionId,
-    field,
     value
   ) {
     setPositionDrafts(
       (current) => ({
         ...current,
         [positionId]: {
-          ...current[positionId],
-          [field]: value,
+          quantity: value,
         },
       })
-    );
-  }
-
-
-  async function markPosition(
-    position
-  ) {
-    const draft =
-      positionDrafts[position.id];
-
-    await runAction(
-      `mark-${position.id}`,
-      () =>
-        markPaperPosition(
-          accessKey,
-          selectedAccountId,
-          {
-            token_mint:
-              position.token_mint,
-            market_price_sol:
-              Number(
-                draft
-                  ?.market_price_sol
-              ),
-          }
-        ),
-      "Prezzo della posizione aggiornato."
     );
   }
 
@@ -700,7 +925,9 @@ function PaperTrading() {
     position
   ) {
     const draft =
-      positionDrafts[position.id];
+      positionDrafts[
+        position.id
+      ];
 
     await runAction(
       `sell-${position.id}`,
@@ -711,27 +938,71 @@ function PaperTrading() {
           {
             token_mint:
               position.token_mint,
-            market_price_sol:
-              Number(
-                draft
-                  ?.market_price_sol
-              ),
             quantity:
               draft?.quantity
                 ? Number(
                     draft.quantity
                   )
                 : null,
-            slippage_percent: 0.5,
-            fee_percent: 0.25,
+            slippage_percent:
+              0.5,
+            fee_percent:
+              0.25,
             reason:
-              "Vendita dalla Paper Trading Console",
+              "Vendita dalla "
+              + "Paper Trading Console",
           }
         ),
       draft?.quantity
-        ? "Vendita parziale eseguita."
-        : "Posizione chiusa."
+        ? "Vendita parziale "
+          + "eseguita con prezzo "
+          + "Jupiter."
+        : "Posizione chiusa "
+          + "con prezzo Jupiter."
     );
+  }
+
+
+  async function refreshNow() {
+    setBusyAction(
+      "refresh-prices"
+    );
+
+    setError("");
+
+    try {
+      await refreshPrices(
+        accessKey,
+        selectedAccountId,
+        true
+      );
+
+      await loadAccountDetail(
+        accessKey,
+        selectedAccountId
+      );
+
+      const response =
+        await getPaperAccounts(
+          accessKey
+        );
+
+      setAccounts(
+        response.data.accounts
+        ?? []
+      );
+
+      setMessage(
+        "Prezzi aggiornati "
+        + "da Jupiter."
+      );
+    } catch (requestError) {
+      handleRequestError(
+        requestError
+      );
+    } finally {
+      setBusyAction("");
+    }
   }
 
 
@@ -741,8 +1012,9 @@ function PaperTrading() {
 
     const confirmation =
       window.prompt(
-        "Per azzerare conto, ordini e "
-        + "posizioni, scrivi esattamente:\n"
+        "Per azzerare conto, "
+        + "ordini e posizioni, "
+        + "scrivi esattamente:\n"
         + accountName
       );
 
@@ -780,10 +1052,8 @@ function PaperTrading() {
             </h1>
 
             <p className="mt-3 text-slate-400">
-              Inserisci la chiave configurata
-              sul backend. La chiave rimane
-              nella sessione del browser e
-              non viene inserita nella build.
+              Inserisci la chiave Paper
+              Trading configurata nel backend.
             </p>
 
             {error && (
@@ -823,8 +1093,11 @@ function PaperTrading() {
   }
 
 
-  const account = detail?.account;
-  const summary = detail?.summary;
+  const account =
+    detail?.account;
+
+  const summary =
+    detail?.summary;
 
 
   return (
@@ -833,7 +1106,7 @@ function PaperTrading() {
         <header className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-wider text-blue-300">
-              Simulazione protetta
+              Prezzi reali Jupiter
             </p>
 
             <h1 className="mt-2 text-3xl font-bold">
@@ -841,26 +1114,36 @@ function PaperTrading() {
             </h1>
 
             <p className="mt-2 text-slate-400">
-              Nessuna chiave privata e nessun
-              fondo reale vengono utilizzati.
+              Operazioni virtuali con prezzi
+              recuperati e verificati dal
+              backend.
             </p>
+
+            {lastPriceRefresh && (
+              <p className="mt-2 text-xs text-slate-500">
+                Ultimo aggiornamento:{" "}
+                {formatDate(
+                  lastPriceRefresh
+                )}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
-              onClick={() =>
-                loadAccounts(
-                  accessKey,
-                  selectedAccountId
-                )
+              onClick={refreshNow}
+              disabled={
+                !selectedAccountId
+                || busyAction
+                === "refresh-prices"
               }
-              disabled={loading}
               className="rounded-lg border border-blue-700 bg-blue-950/40 px-4 py-2 text-blue-300 disabled:opacity-50"
             >
-              {loading
+              {busyAction
+                === "refresh-prices"
                 ? "Aggiornamento..."
-                : "Aggiorna"}
+                : "Aggiorna prezzi"}
             </button>
 
             <button
@@ -876,6 +1159,12 @@ function PaperTrading() {
         {error && (
           <div className="mt-6 rounded-lg border border-red-700 bg-red-950/40 p-4 text-red-300">
             {error}
+          </div>
+        )}
+
+        {pricingWarning && (
+          <div className="mt-6 rounded-lg border border-yellow-700 bg-yellow-950/40 p-4 text-yellow-300">
+            {pricingWarning}
           </div>
         )}
 
@@ -967,57 +1256,119 @@ function PaperTrading() {
             </section>
 
             <form
-              onSubmit={submitCreateAccount}
+              onSubmit={
+                submitCreateAccount
+              }
               className="rounded-xl border border-slate-700 bg-slate-900 p-5"
             >
               <h2 className="text-lg font-bold">
                 Nuovo conto
               </h2>
 
-              <div className="mt-4 space-y-3">
-                {Object.entries({
-                  name: "Nome",
-                  starting_balance_sol:
-                    "Saldo iniziale SOL",
-                  max_position_size_sol:
-                    "Massimo per posizione",
-                  max_open_positions:
-                    "Posizioni massime",
-                  daily_loss_limit_sol:
-                    "Perdita giornaliera massima",
-                }).map(
-                  ([field, label]) => (
-                    <label
-                      key={field}
-                      className="block"
-                    >
-                      <span className="text-xs text-slate-400">
-                        {label}
-                      </span>
+              <label className="mt-4 block">
+                <span className="text-xs text-slate-400">
+                  Nome
+                </span>
 
-                      <input
-                        type={
-                          field === "name"
-                            ? "text"
-                            : "number"
-                        }
-                        step="any"
-                        value={
-                          createForm[field]
-                        }
-                        onChange={(event) =>
-                          updateCreateForm(
-                            field,
-                            event.target
-                              .value
-                          )
-                        }
-                        className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 outline-none focus:border-blue-500"
-                      />
-                    </label>
-                  )
-                )}
-              </div>
+                <input
+                  value={createForm.name}
+                  onChange={(event) =>
+                    updateCreateForm(
+                      "name",
+                      event.target.value
+                    )
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2"
+                />
+              </label>
+
+              <label className="mt-3 block">
+                <span className="text-xs text-slate-400">
+                  Saldo iniziale SOL
+                </span>
+
+                <input
+                  type="number"
+                  step="any"
+                  value={
+                    createForm
+                      .starting_balance_sol
+                  }
+                  onChange={(event) =>
+                    updateCreateForm(
+                      "starting_balance_sol",
+                      event.target.value
+                    )
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2"
+                />
+              </label>
+
+              <label className="mt-3 block">
+                <span className="text-xs text-slate-400">
+                  Massimo per posizione
+                </span>
+
+                <input
+                  type="number"
+                  step="any"
+                  value={
+                    createForm
+                      .max_position_size_sol
+                  }
+                  onChange={(event) =>
+                    updateCreateForm(
+                      "max_position_size_sol",
+                      event.target.value
+                    )
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2"
+                />
+              </label>
+
+              <label className="mt-3 block">
+                <span className="text-xs text-slate-400">
+                  Posizioni massime
+                </span>
+
+                <input
+                  type="number"
+                  value={
+                    createForm
+                      .max_open_positions
+                  }
+                  onChange={(event) =>
+                    updateCreateForm(
+                      "max_open_positions",
+                      event.target.value
+                    )
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2"
+                />
+              </label>
+
+              <label className="mt-3 block">
+                <span className="text-xs text-slate-400">
+                  Perdita giornaliera
+                  massima
+                </span>
+
+                <input
+                  type="number"
+                  step="any"
+                  value={
+                    createForm
+                      .daily_loss_limit_sol
+                  }
+                  onChange={(event) =>
+                    updateCreateForm(
+                      "daily_loss_limit_sol",
+                      event.target.value
+                    )
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2"
+                />
+              </label>
 
               <button
                 type="submit"
@@ -1025,7 +1376,7 @@ function PaperTrading() {
                   busyAction
                   === "create-account"
                 }
-                className="mt-4 w-full rounded-lg bg-blue-600 px-4 py-2 font-semibold hover:bg-blue-700 disabled:opacity-50"
+                className="mt-4 w-full rounded-lg bg-blue-600 px-4 py-2 font-semibold disabled:opacity-50"
               >
                 Crea conto
               </button>
@@ -1048,16 +1399,14 @@ function PaperTrading() {
                         </h2>
 
                         <StatusBadge
-                          status={account.status}
+                          status={
+                            account.status
+                          }
                         />
                       </div>
 
                       <p className="mt-2 text-sm text-slate-400">
-                        Conto #{account.id} ·
-                        creato{" "}
-                        {formatDate(
-                          account.created_at
-                        )}
+                        Conto #{account.id}
                       </p>
                     </div>
 
@@ -1100,8 +1449,10 @@ function PaperTrading() {
 
                       <button
                         type="button"
-                        onClick={resetAccount}
-                        className="rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold hover:bg-red-800"
+                        onClick={
+                          resetAccount
+                        }
+                        className="rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold"
                       >
                         Azzera
                       </button>
@@ -1163,13 +1514,6 @@ function PaperTrading() {
                         .total_return_percent,
                       2
                     )}%`}
-                    valueClassName={
-                      summary
-                        .total_return_percent
-                      >= 0
-                        ? "text-green-300"
-                        : "text-red-300"
-                    }
                   />
 
                   <MetricCard
@@ -1199,7 +1543,9 @@ function PaperTrading() {
 
                 <div className="grid gap-6 lg:grid-cols-2">
                   <form
-                    onSubmit={submitSettings}
+                    onSubmit={
+                      submitSettings
+                    }
                     className="rounded-xl border border-slate-700 bg-slate-900 p-5"
                   >
                     <h2 className="text-xl font-bold">
@@ -1207,64 +1553,97 @@ function PaperTrading() {
                     </h2>
 
                     {settingsForm && (
-                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                        {Object.entries({
-                          name: "Nome",
-                          max_position_size_sol:
-                            "Massimo per posizione",
-                          max_open_positions:
-                            "Posizioni massime",
-                          daily_loss_limit_sol:
-                            "Perdita giornaliera massima",
-                        }).map(
-                          ([field, label]) => (
-                            <label
-                              key={field}
-                              className="block"
-                            >
-                              <span className="text-xs text-slate-400">
-                                {label}
-                              </span>
-
-                              <input
-                                type={
-                                  field
-                                  === "name"
-                                    ? "text"
-                                    : "number"
-                                }
-                                step="any"
-                                value={
-                                  settingsForm[
-                                    field
-                                  ]
-                                }
-                                onChange={(
+                      <div className="mt-4 space-y-3">
+                        <input
+                          value={
+                            settingsForm
+                              .name
+                          }
+                          onChange={(event) =>
+                            setSettingsForm(
+                              (current) => ({
+                                ...current,
+                                name:
                                   event
-                                ) =>
-                                  setSettingsForm(
-                                    (
-                                      current
-                                    ) => ({
-                                      ...current,
-                                      [field]:
-                                        event
-                                          .target
-                                          .value,
-                                    })
-                                  )
-                                }
-                                className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 outline-none focus:border-blue-500"
-                              />
-                            </label>
-                          )
-                        )}
+                                    .target
+                                    .value,
+                              })
+                            )
+                          }
+                          className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2"
+                          placeholder="Nome"
+                        />
+
+                        <input
+                          type="number"
+                          step="any"
+                          value={
+                            settingsForm
+                              .max_position_size_sol
+                          }
+                          onChange={(event) =>
+                            setSettingsForm(
+                              (current) => ({
+                                ...current,
+                                max_position_size_sol:
+                                  event
+                                    .target
+                                    .value,
+                              })
+                            )
+                          }
+                          className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2"
+                          placeholder="Massimo per posizione"
+                        />
+
+                        <input
+                          type="number"
+                          value={
+                            settingsForm
+                              .max_open_positions
+                          }
+                          onChange={(event) =>
+                            setSettingsForm(
+                              (current) => ({
+                                ...current,
+                                max_open_positions:
+                                  event
+                                    .target
+                                    .value,
+                              })
+                            )
+                          }
+                          className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2"
+                          placeholder="Posizioni massime"
+                        />
+
+                        <input
+                          type="number"
+                          step="any"
+                          value={
+                            settingsForm
+                              .daily_loss_limit_sol
+                          }
+                          onChange={(event) =>
+                            setSettingsForm(
+                              (current) => ({
+                                ...current,
+                                daily_loss_limit_sol:
+                                  event
+                                    .target
+                                    .value,
+                              })
+                            )
+                          }
+                          className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2"
+                          placeholder="Perdita giornaliera"
+                        />
                       </div>
                     )}
 
                     <button
                       type="submit"
-                      className="mt-4 rounded-lg bg-blue-600 px-4 py-2 font-semibold hover:bg-blue-700"
+                      className="mt-4 rounded-lg bg-blue-600 px-4 py-2 font-semibold"
                     >
                       Salva limiti
                     </button>
@@ -1275,89 +1654,175 @@ function PaperTrading() {
                     className="rounded-xl border border-slate-700 bg-slate-900 p-5"
                   >
                     <h2 className="text-xl font-bold">
-                      Acquisto virtuale
+                      Acquisto con prezzo
+                      Jupiter
                     </h2>
 
-                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                      {Object.entries({
-                        token_mint:
-                          "Token mint",
-                        value_sol:
-                          "Importo SOL",
-                        market_price_sol:
-                          "Prezzo token in SOL",
-                        slippage_percent:
-                          "Slippage %",
-                        fee_percent:
-                          "Commissione %",
-                        signal_score:
-                          "Signal score",
-                        reason:
-                          "Motivazione",
-                      }).map(
-                        ([field, label]) => (
-                          <label
-                            key={field}
-                            className={
-                              field
-                              === "token_mint"
-                              || field
-                              === "reason"
-                                ? "block sm:col-span-2"
-                                : "block"
-                            }
-                          >
-                            <span className="text-xs text-slate-400">
-                              {label}
-                            </span>
+                    <label className="mt-4 block">
+                      <span className="text-xs text-slate-400">
+                        Token mint
+                      </span>
 
-                            <input
-                              type={
-                                [
-                                  "token_mint",
-                                  "reason",
-                                ].includes(
-                                  field
-                                )
-                                  ? "text"
-                                  : "number"
-                              }
-                              step="any"
-                              value={
-                                buyForm[field]
-                              }
-                              onChange={(
-                                event
-                              ) =>
-                                setBuyForm(
-                                  (
-                                    current
-                                  ) => ({
-                                    ...current,
-                                    [field]:
-                                      event
-                                        .target
-                                        .value,
-                                  })
-                                )
-                              }
-                              className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 outline-none focus:border-blue-500"
-                            />
-                          </label>
-                        )
-                      )}
+                      <input
+                        value={
+                          buyForm.token_mint
+                        }
+                        onChange={(event) =>
+                          updateBuyForm(
+                            "token_mint",
+                            event.target.value
+                          )
+                        }
+                        className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2"
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={verifyPrice}
+                      disabled={
+                        busyAction
+                        === "verify-price"
+                      }
+                      className="mt-3 rounded-lg border border-blue-700 px-4 py-2 text-sm text-blue-300 disabled:opacity-50"
+                    >
+                      Verifica prezzo
+                    </button>
+
+                    {pricePreview && (
+                      <div className="mt-4 rounded-lg border border-blue-800 bg-blue-950/30 p-4">
+                        <p className="text-sm text-slate-400">
+                          Prezzo corrente
+                        </p>
+
+                        <p className="mt-1 text-xl font-bold text-blue-300">
+                          {formatNumber(
+                            pricePreview
+                              .sol_price,
+                            10
+                          )}{" "}
+                          SOL
+                        </p>
+
+                        <p className="mt-1 text-sm text-slate-400">
+                          $
+                          {formatNumber(
+                            pricePreview
+                              .usd_price,
+                            8
+                          )}
+                          {" · "}24h{" "}
+                          {formatNumber(
+                            pricePreview
+                              .price_change_24h,
+                            2
+                          )}
+                          %
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <input
+                        type="number"
+                        step="any"
+                        value={
+                          buyForm.value_sol
+                        }
+                        onChange={(event) =>
+                          updateBuyForm(
+                            "value_sol",
+                            event.target.value
+                          )
+                        }
+                        className="rounded-lg border border-slate-600 bg-slate-950 px-3 py-2"
+                        placeholder="Importo SOL"
+                      />
+
+                      <input
+                        type="number"
+                        step="any"
+                        value={
+                          buyForm
+                            .signal_score
+                        }
+                        onChange={(event) =>
+                          updateBuyForm(
+                            "signal_score",
+                            event.target.value
+                          )
+                        }
+                        className="rounded-lg border border-slate-600 bg-slate-950 px-3 py-2"
+                        placeholder="Signal score"
+                      />
+
+                      <input
+                        type="number"
+                        step="any"
+                        value={
+                          buyForm
+                            .slippage_percent
+                        }
+                        onChange={(event) =>
+                          updateBuyForm(
+                            "slippage_percent",
+                            event.target.value
+                          )
+                        }
+                        className="rounded-lg border border-slate-600 bg-slate-950 px-3 py-2"
+                        placeholder="Slippage %"
+                      />
+
+                      <input
+                        type="number"
+                        step="any"
+                        value={
+                          buyForm
+                            .fee_percent
+                        }
+                        onChange={(event) =>
+                          updateBuyForm(
+                            "fee_percent",
+                            event.target.value
+                          )
+                        }
+                        className="rounded-lg border border-slate-600 bg-slate-950 px-3 py-2"
+                        placeholder="Fee %"
+                      />
                     </div>
+
+                    <input
+                      value={buyForm.reason}
+                      onChange={(event) =>
+                        updateBuyForm(
+                          "reason",
+                          event.target.value
+                        )
+                      }
+                      className="mt-3 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2"
+                      placeholder="Motivazione"
+                    />
 
                     <button
                       type="submit"
                       disabled={
                         account.status
                         !== "ACTIVE"
+                        || busyAction
+                        === "buy"
                       }
-                      className="mt-4 rounded-lg bg-green-600 px-4 py-2 font-semibold hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="mt-4 rounded-lg bg-green-600 px-4 py-2 font-semibold disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      Simula acquisto
+                      Compra al prezzo corrente
                     </button>
+
+                    {account.status
+                      !== "ACTIVE" && (
+                      <p className="mt-3 text-sm text-yellow-300">
+                        Riattiva il conto per
+                        eseguire acquisti.
+                      </p>
+                    )}
                   </form>
                 </div>
 
@@ -1368,13 +1833,13 @@ function PaperTrading() {
                     </h2>
 
                     <p className="mt-1 text-sm text-slate-400">
-                      {openPositions.length} posizioni
-                      attualmente aperte
+                      Aggiornamento automatico
+                      ogni 30 secondi
                     </p>
                   </div>
 
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1250px]">
+                    <table className="w-full min-w-[1150px]">
                       <thead className="bg-slate-800">
                         <tr>
                           <th className="p-4 text-left">
@@ -1387,25 +1852,22 @@ function PaperTrading() {
                             Quantità
                           </th>
                           <th className="p-4 text-right">
-                            Costo
+                            Prezzo medio
                           </th>
                           <th className="p-4 text-right">
-                            Prezzo
+                            Prezzo attuale
                           </th>
                           <th className="p-4 text-right">
                             Valore
                           </th>
                           <th className="p-4 text-right">
-                            PnL
-                          </th>
-                          <th className="p-4">
-                            Nuovo prezzo
+                            PnL non realizzato
                           </th>
                           <th className="p-4">
                             Quantità vendita
                           </th>
                           <th className="p-4">
-                            Azioni
+                            Azione
                           </th>
                         </tr>
                       </thead>
@@ -1415,7 +1877,7 @@ function PaperTrading() {
                           === 0 ? (
                           <tr>
                             <td
-                              colSpan={10}
+                              colSpan={9}
                               className="p-10 text-center text-slate-400"
                             >
                               Nessuna posizione.
@@ -1463,7 +1925,8 @@ function PaperTrading() {
                                 <td className="p-4 text-right">
                                   {formatNumber(
                                     position
-                                      .cost_basis_sol
+                                      .average_entry_price_sol,
+                                    10
                                   )}
                                 </td>
 
@@ -1471,7 +1934,7 @@ function PaperTrading() {
                                   {formatNumber(
                                     position
                                       .last_price_sol,
-                                    8
+                                    10
                                   )}
                                 </td>
 
@@ -1503,38 +1966,6 @@ function PaperTrading() {
                                     <input
                                       type="number"
                                       step="any"
-                                      value={
-                                        positionDrafts[
-                                          position
-                                            .id
-                                        ]
-                                          ?.market_price_sol
-                                        ?? ""
-                                      }
-                                      onChange={(
-                                        event
-                                      ) =>
-                                        updatePositionDraft(
-                                          position.id,
-                                          "market_price_sol",
-                                          event
-                                            .target
-                                            .value
-                                        )
-                                      }
-                                      className="w-32 rounded border border-slate-600 bg-slate-950 px-2 py-1"
-                                    />
-                                  ) : (
-                                    "-"
-                                  )}
-                                </td>
-
-                                <td className="p-4">
-                                  {position.status
-                                  === "OPEN" ? (
-                                    <input
-                                      type="number"
-                                      step="any"
                                       placeholder="Tutto"
                                       value={
                                         positionDrafts[
@@ -1549,7 +1980,6 @@ function PaperTrading() {
                                       ) =>
                                         updatePositionDraft(
                                           position.id,
-                                          "quantity",
                                           event
                                             .target
                                             .value
@@ -1565,31 +1995,21 @@ function PaperTrading() {
                                 <td className="p-4">
                                   {position.status
                                   === "OPEN" && (
-                                    <div className="flex gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          markPosition(
-                                            position
-                                          )
-                                        }
-                                        className="rounded border border-blue-700 px-3 py-1 text-blue-300"
-                                      >
-                                        Aggiorna
-                                      </button>
-
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          sellPosition(
-                                            position
-                                          )
-                                        }
-                                        className="rounded border border-red-700 px-3 py-1 text-red-300"
-                                      >
-                                        Vendi
-                                      </button>
-                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        sellPosition(
+                                          position
+                                        )
+                                      }
+                                      disabled={
+                                        busyAction
+                                        === `sell-${position.id}`
+                                      }
+                                      className="rounded border border-red-700 px-3 py-1 text-red-300 disabled:opacity-50"
+                                    >
+                                      Vendi al prezzo corrente
+                                    </button>
                                   )}
                                 </td>
                               </tr>
@@ -1606,16 +2026,10 @@ function PaperTrading() {
                     <h2 className="text-xl font-bold">
                       Storico ordini
                     </h2>
-
-                    <p className="mt-1 text-sm text-slate-400">
-                      Ultimi{" "}
-                      {detail.orders.length}
-                      {" "}ordini simulati
-                    </p>
                   </div>
 
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1050px]">
+                    <table className="w-full min-w-[1000px]">
                       <thead className="bg-slate-800">
                         <tr>
                           <th className="p-4">
@@ -1676,13 +2090,7 @@ function PaperTrading() {
                                   </span>
                                 </td>
 
-                                <td
-                                  className="p-4 font-mono text-sm"
-                                  title={
-                                    order
-                                      .token_mint
-                                  }
-                                >
+                                <td className="p-4 font-mono text-sm">
                                   {shortenAddress(
                                     order
                                       .token_mint
@@ -1700,7 +2108,7 @@ function PaperTrading() {
                                   {formatNumber(
                                     order
                                       .execution_price_sol,
-                                    8
+                                    10
                                   )}
                                 </td>
 
@@ -1748,6 +2156,11 @@ function PaperTrading() {
                     </table>
                   </div>
                 </section>
+
+                <p className="text-sm text-slate-500">
+                  Posizioni aperte:{" "}
+                  {openPositions.length}
+                </p>
               </div>
             )}
           </div>

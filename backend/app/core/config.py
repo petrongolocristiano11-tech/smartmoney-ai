@@ -88,6 +88,35 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # JUPITER PRICE ORACLE
+    # =========================
+
+    JUPITER_API_KEY: str = Field(
+        default="",
+        repr=False,
+    )
+
+    JUPITER_PRICE_API_URL: str = (
+        "https://api.jup.ag/price/v3"
+    )
+
+    JUPITER_PRICE_TIMEOUT_SECONDS: float = (
+        Field(
+            default=10.0,
+            ge=1.0,
+            le=60.0,
+        )
+    )
+
+    JUPITER_PRICE_CACHE_SECONDS: int = (
+        Field(
+            default=15,
+            ge=1,
+            le=300,
+        )
+    )
+
+    # =========================
     # CORS
     # =========================
 
@@ -185,6 +214,7 @@ class Settings(BaseSettings):
     @field_validator(
         "AUTOMATION_API_KEY",
         "PAPER_TRADING_API_KEY",
+        "JUPITER_API_KEY",
         mode="before",
     )
     @classmethod
@@ -224,14 +254,19 @@ class Settings(BaseSettings):
         return normalized
 
     @field_validator(
-        "SOLANA_RPC_URL"
+        "SOLANA_RPC_URL",
+        "JUPITER_PRICE_API_URL",
     )
     @classmethod
-    def validate_solana_rpc_url(
+    def validate_http_url(
         cls,
         value: str,
     ):
-        parsed = urlparse(value)
+        normalized = (
+            value.strip().rstrip("/")
+        )
+
+        parsed = urlparse(normalized)
 
         if (
             parsed.scheme
@@ -239,11 +274,11 @@ class Settings(BaseSettings):
             or not parsed.netloc
         ):
             raise ValueError(
-                "SOLANA_RPC_URL deve essere "
+                "La variabile deve essere "
                 "un URL HTTP o HTTPS valido."
             )
 
-        return value.rstrip("/")
+        return normalized
 
     @property
     def cors_origins(
@@ -329,6 +364,13 @@ class Settings(BaseSettings):
                     "contenere almeno "
                     "32 caratteri."
                 )
+
+        if not self.JUPITER_API_KEY:
+            raise ValueError(
+                "In produzione "
+                "JUPITER_API_KEY è "
+                "obbligatoria."
+            )
 
         return self
 

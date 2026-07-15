@@ -76,12 +76,12 @@ class PaperAccountUpdateRequest(
         le=1_000_000,
     )
 
-    max_open_positions: int | None = (
-        Field(
-            default=None,
-            ge=1,
-            le=1_000,
-        )
+    max_open_positions: (
+        int | None
+    ) = Field(
+        default=None,
+        ge=1,
+        le=1_000,
     )
 
     daily_loss_limit_sol: (
@@ -92,14 +92,16 @@ class PaperAccountUpdateRequest(
         le=1_000_000,
     )
 
-    @model_validator(mode="after")
+    @model_validator(
+        mode="after"
+    )
     def require_update(
         self,
     ):
         if not self.model_fields_set:
             raise ValueError(
-                "Specificare almeno una "
-                "modifica."
+                "Specificare almeno "
+                "una modifica."
             )
 
         return self
@@ -114,7 +116,9 @@ class PaperAccountResetRequest(
     )
 
 
-class PaperBuyRequest(PaperRequestModel):
+class PaperBuyRequest(
+    PaperRequestModel
+):
     token_mint: str = Field(
         min_length=1,
         max_length=64,
@@ -123,10 +127,6 @@ class PaperBuyRequest(PaperRequestModel):
     value_sol: float = Field(
         gt=0,
         le=1_000_000,
-    )
-
-    market_price_sol: float = Field(
-        gt=0,
     )
 
     slippage_percent: float = Field(
@@ -161,10 +161,6 @@ class PaperSellRequest(
         max_length=64,
     )
 
-    market_price_sol: float = Field(
-        gt=0,
-    )
-
     quantity: float | None = Field(
         default=None,
         gt=0,
@@ -191,19 +187,6 @@ class PaperSellRequest(
     reason: str | None = Field(
         default=None,
         max_length=500,
-    )
-
-
-class PaperMarkRequest(
-    PaperRequestModel
-):
-    token_mint: str = Field(
-        min_length=1,
-        max_length=64,
-    )
-
-    market_price_sol: float = Field(
-        gt=0,
     )
 
 
@@ -238,7 +221,10 @@ class PaperPositionResponse(
     id: int
     account_id: int
     token_mint: str
-    status: Literal["OPEN", "CLOSED"]
+    status: Literal[
+        "OPEN",
+        "CLOSED",
+    ]
 
     quantity: float
     average_entry_price_sol: float
@@ -263,7 +249,11 @@ class PaperOrderResponse(
     position_id: int | None
     token_mint: str
 
-    side: Literal["BUY", "SELL"]
+    side: Literal[
+        "BUY",
+        "SELL",
+    ]
+
     status: Literal[
         "PENDING",
         "FILLED",
@@ -315,13 +305,17 @@ class PaperAccountListItem(
     BaseModel
 ):
     account: PaperAccountResponse
-    summary: PaperAccountSummaryResponse
+
+    summary: (
+        PaperAccountSummaryResponse
+    )
 
 
 class PaperAccountListResponse(
     BaseModel
 ):
     count: int
+
     accounts: list[
         PaperAccountListItem
     ]
@@ -331,13 +325,34 @@ class PaperAccountDetailResponse(
     BaseModel
 ):
     account: PaperAccountResponse
-    summary: PaperAccountSummaryResponse
+
+    summary: (
+        PaperAccountSummaryResponse
+    )
+
     positions: list[
         PaperPositionResponse
     ]
+
     orders: list[
         PaperOrderResponse
     ]
+
+
+class PaperPriceResponse(BaseModel):
+    token_mint: str
+
+    usd_price: float
+    sol_price: float
+    sol_usd_price: float
+
+    block_id: int | None
+    decimals: int | None
+
+    price_change_24h: float | None
+
+    fetched_at: datetime
+    source: str
 
 
 class PaperExecutionResponse(
@@ -346,4 +361,31 @@ class PaperExecutionResponse(
     account: PaperAccountResponse
     position: PaperPositionResponse
     order: PaperOrderResponse
-    summary: PaperAccountSummaryResponse 
+
+    summary: (
+        PaperAccountSummaryResponse
+    )
+
+    price: PaperPriceResponse
+
+
+class PaperPriceRefreshResponse(
+    BaseModel
+):
+    account_id: int
+
+    updated_positions: list[
+        PaperPositionResponse
+    ]
+
+    prices: list[
+        PaperPriceResponse
+    ]
+
+    missing_token_mints: list[str]
+
+    summary: (
+        PaperAccountSummaryResponse
+    )
+
+    refreshed_at: datetime 
