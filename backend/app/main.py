@@ -3,6 +3,9 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from time import perf_counter
 from uuid import uuid4
+from backend.app.api.paper_trading import (
+    router as paper_trading_router,
+)
 
 from fastapi import (
     FastAPI,
@@ -210,7 +213,13 @@ app.include_router(trades_router)
 app.include_router(
     discovered_wallets_router
 )
+app.include_router(
+    trades_router
+)
 
+app.include_router(
+    paper_trading_router
+) 
 
 @app.get(
     "/",

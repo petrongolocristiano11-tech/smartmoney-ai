@@ -197,3 +197,114 @@ export function runSmartDiscovery(
     }
   );
 } 
+// =========================
+// PAPER TRADING
+// =========================
+
+function getPaperTradingConfig(
+  accessKey
+) {
+  const normalizedKey = String(
+    accessKey ?? ""
+  ).trim();
+
+  return {
+    headers: {
+      "X-Paper-Trading-Key":
+        normalizedKey,
+    },
+  };
+}
+
+export function getPaperAccounts(
+  accessKey
+) {
+  return api.get(
+    "/paper-trading/accounts",
+    getPaperTradingConfig(accessKey)
+  );
+}
+
+export function createPaperAccount(
+  accessKey,
+  payload
+) {
+  return api.post(
+    "/paper-trading/accounts",
+    payload,
+    getPaperTradingConfig(accessKey)
+  );
+}
+
+export function getPaperAccount(
+  accessKey,
+  accountId
+) {
+  return api.get(
+    `/paper-trading/accounts/${accountId}`,
+    getPaperTradingConfig(accessKey)
+  );
+}
+
+export function updatePaperAccount(
+  accessKey,
+  accountId,
+  payload
+) {
+  return api.patch(
+    `/paper-trading/accounts/${accountId}`,
+    payload,
+    getPaperTradingConfig(accessKey)
+  );
+}
+
+export function resetPaperAccount(
+  accessKey,
+  accountId,
+  confirmationName
+) {
+  return api.post(
+    `/paper-trading/accounts/${accountId}/reset`,
+    {
+      confirmation_name:
+        confirmationName,
+    },
+    getPaperTradingConfig(accessKey)
+  );
+}
+
+export function buyPaperToken(
+  accessKey,
+  accountId,
+  payload
+) {
+  return api.post(
+    `/paper-trading/accounts/${accountId}/buy`,
+    payload,
+    getPaperTradingConfig(accessKey)
+  );
+}
+
+export function sellPaperToken(
+  accessKey,
+  accountId,
+  payload
+) {
+  return api.post(
+    `/paper-trading/accounts/${accountId}/sell`,
+    payload,
+    getPaperTradingConfig(accessKey)
+  );
+}
+
+export function markPaperPosition(
+  accessKey,
+  accountId,
+  payload
+) {
+  return api.post(
+    `/paper-trading/accounts/${accountId}/mark`,
+    payload,
+    getPaperTradingConfig(accessKey)
+  );
+} 

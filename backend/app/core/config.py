@@ -74,6 +74,11 @@ class Settings(BaseSettings):
         repr=False,
     )
 
+    PAPER_TRADING_API_KEY: str = Field(
+        default="",
+        repr=False,
+    )
+
     PUBLIC_DISCOVERY_COOLDOWN_SECONDS: int = (
         Field(
             default=120,
@@ -179,10 +184,11 @@ class Settings(BaseSettings):
 
     @field_validator(
         "AUTOMATION_API_KEY",
+        "PAPER_TRADING_API_KEY",
         mode="before",
     )
     @classmethod
-    def normalize_automation_api_key(
+    def normalize_private_api_keys(
         cls,
         value,
     ):
@@ -301,19 +307,28 @@ class Settings(BaseSettings):
     def validate_production_security(
         self,
     ) -> Self:
-        if (
-            self.is_production
-            and len(
+        if not self.is_production:
+            return self
+
+        private_keys = {
+            "AUTOMATION_API_KEY": (
                 self.AUTOMATION_API_KEY
-            )
-            < 32
+            ),
+            "PAPER_TRADING_API_KEY": (
+                self.PAPER_TRADING_API_KEY
+            ),
+        }
+
+        for variable_name, value in (
+            private_keys.items()
         ):
-            raise ValueError(
-                "In produzione "
-                "AUTOMATION_API_KEY deve "
-                "contenere almeno 32 "
-                "caratteri."
-            )
+            if len(value) < 32:
+                raise ValueError(
+                    f"In produzione "
+                    f"{variable_name} deve "
+                    "contenere almeno "
+                    "32 caratteri."
+                )
 
         return self
 

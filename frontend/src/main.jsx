@@ -56,6 +56,10 @@ const WalletDetails = lazy(() =>
   import("./pages/walletdetails.jsx")
 ); 
 
+const PaperTrading = lazy(() =>
+  import("./pages/PaperTrading.jsx")
+); 
+
 const Watchlist = lazy(() =>
   import("./pages/Watchlist.jsx")
 );
@@ -143,6 +147,11 @@ createRoot(
               path="/wallet/:walletAddress"
               element={<WalletDetails />}
             />
+
+            <Route
+              path="/paper-trading"
+              element={<PaperTrading />}
+            /> 
 
             <Route
               path="/token/:tokenMint"

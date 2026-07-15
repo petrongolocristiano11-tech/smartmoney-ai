@@ -19,6 +19,10 @@ const NAVIGATION_ITEMS = [
     end: true,
   },
   {
+  label: "Paper Trading",
+  path: "/paper-trading",
+  },
+  {
     label: "Live",
     path: "/live",
   },
