@@ -163,6 +163,13 @@ class PaperOrder(Base):
         )
     )
 
+    realized_pnl_sol: Mapped[float] = (
+        mapped_column(
+            Float,
+            default=0.0,
+        )
+    )
+
     signal_score: Mapped[
         float | None
     ] = mapped_column(
