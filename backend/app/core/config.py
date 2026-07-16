@@ -335,44 +335,26 @@ class Settings(BaseSettings):
                 )
 
         return self
-
-    @model_validator(
-        mode="after"
-    )
-    def validate_production_security(
-        self,
-    ) -> Self:
-        if not self.is_production:
-            return self
-
-        private_keys = {
-            "AUTOMATION_API_KEY": (
-                self.AUTOMATION_API_KEY
-            ),
-            "PAPER_TRADING_API_KEY": (
-                self.PAPER_TRADING_API_KEY
-            ),
-        }
-
-        for variable_name, value in (
-            private_keys.items()
-        ):
-            if len(value) < 32:
-                raise ValueError(
-                    f"In produzione "
-                    f"{variable_name} deve "
-                    "contenere almeno "
-                    "32 caratteri."
-                )
-
-        if not self.JUPITER_API_KEY:
-            raise ValueError(
-                "In produzione "
-                "JUPITER_API_KEY è "
-                "obbligatoria."
-            )
-
+@model_validator(
+    mode="after"
+)
+def validate_production_security(
+    self,
+) -> Self:
+    if not self.is_production:
         return self
+
+    if len(
+        self.AUTOMATION_API_KEY
+    ) < 32:
+        raise ValueError(
+            "In produzione "
+            "AUTOMATION_API_KEY deve "
+            "contenere almeno "
+            "32 caratteri."
+        )
+
+    return self 
 
     @property
     def is_production(
