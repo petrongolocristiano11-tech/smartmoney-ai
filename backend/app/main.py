@@ -6,7 +6,9 @@ from uuid import uuid4
 from backend.app.api.paper_trading import (
     router as paper_trading_router,
 )
-
+from backend.app.api.paper_autopilot import (
+    router as paper_autopilot_router,
+) 
 from fastapi import (
     FastAPI,
     Request,
@@ -219,6 +221,10 @@ app.include_router(
 
 app.include_router(
     paper_trading_router
+) 
+
+app.include_router(
+    paper_autopilot_router
 ) 
 
 @app.get(

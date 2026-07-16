@@ -28,3 +28,10 @@ __all__ = [
     "Trade",
     "Wallet",
 ] 
+
+from backend.app.models.paper_autopilot import (
+    PaperAutopilotDecision,
+    PaperAutopilotManagedPosition,
+    PaperAutopilotPolicy,
+    PaperAutopilotRun,
+) 
