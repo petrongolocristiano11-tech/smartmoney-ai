@@ -1,8 +1,13 @@
 from collections.abc import Callable
 from typing import Any
-
+from backend.app.schemas.paper_autopilot_analytics import (
+    PaperAutopilotAnalyticsResponse,
+)
+from backend.app.services.paper_autopilot_analytics import (
+    build_paper_autopilot_analytics,
+)
 from fastapi import (
-    APIRouter,
+    APIRouter, 
     Depends,
     HTTPException,
     Query,
@@ -310,6 +315,32 @@ def run_autopilot_manually(
         ),
     )
 
+@router.get(
+    "/accounts/{account_id}/analytics",
+    response_model=(
+        PaperAutopilotAnalyticsResponse
+    ),
+    dependencies=[
+        Depends(
+            require_paper_trading_key
+        )
+    ],
+)
+def get_autopilot_analytics(
+    account_id: int,
+    days: int = Query(
+        default=30,
+        ge=1,
+        le=365,
+    ),
+    db: Session = Depends(get_db),
+):
+    return autopilot_operation(
+        build_paper_autopilot_analytics,
+        db,
+        account_id,
+        days=days,
+    )
 
 @router.post(
     "/automation/run",

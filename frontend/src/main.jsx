@@ -59,7 +59,7 @@ const TokenDetails = lazy(() =>
 );
 
 const WalletDetails = lazy(() =>
-  import("./pages/walletdetails.jsx")
+  import("./pages/WalletDetails.jsx")
 ); 
 
 const PaperTrading = lazy(() =>
