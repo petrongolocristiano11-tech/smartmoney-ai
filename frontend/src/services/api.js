@@ -405,3 +405,48 @@ export function sellPaperToken(
     )
   );
 } 
+
+// =========================
+// PAPER AUTOPILOT
+// =========================
+
+export function getPaperAutopilot(
+  accessKey,
+  accountId
+) {
+  return api.get(
+    `/paper-autopilot/accounts/${accountId}`,
+    getPaperTradingConfig(
+      accessKey
+    )
+  );
+}
+
+
+export function updatePaperAutopilotPolicy(
+  accessKey,
+  accountId,
+  payload
+) {
+  return api.patch(
+    `/paper-autopilot/accounts/${accountId}/policy`,
+    payload,
+    getPaperTradingConfig(
+      accessKey
+    )
+  );
+}
+
+
+export function runPaperAutopilot(
+  accessKey,
+  accountId
+) {
+  return api.post(
+    `/paper-autopilot/accounts/${accountId}/run`,
+    null,
+    getPaperTradingConfig(
+      accessKey
+    )
+  );
+} 

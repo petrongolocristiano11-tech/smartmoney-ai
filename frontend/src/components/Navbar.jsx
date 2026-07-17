@@ -59,6 +59,11 @@ const NAVIGATION_ITEMS = [
     label: "Watchlist",
     path: "/watchlist",
   },
+
+  {
+  label: "Autopilot",
+  path: "/autopilot",
+  },
 ];
 
 function formatUnreadCount(count) {

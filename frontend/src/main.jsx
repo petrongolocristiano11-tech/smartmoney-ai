@@ -14,6 +14,12 @@ import "./index.css";
 
 import MainLayout from "./Layouts/MainLayout.jsx"; 
 
+const PaperAutopilot = lazy(() =>
+  import(
+    "./pages/PaperAutopilot.jsx"
+  )
+); 
+
 const App = lazy(() => import("./App.jsx"));
 
 const Alerts = lazy(() =>
@@ -88,6 +94,11 @@ createRoot(
           <Route element={<MainLayout />}>
             <Route path="/" element={<App />} />
 
+            <Route
+              path="/autopilot"
+              element={<PaperAutopilot />}
+            />
+            
             <Route
               path="/live"
               element={<LiveScanner />}
