@@ -71,14 +71,6 @@ def get_autopilot_signal_provider(
 ]:
     return get_token_signals 
 
-def get_autopilot_signal_provider(
-) -> Callable[
-    ...,
-    dict[str, Any],
-]:
-    return get_token_signals
-
-
 def raise_autopilot_http_error(
     exception: Exception,
 ) -> None:

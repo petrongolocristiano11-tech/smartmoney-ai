@@ -214,10 +214,7 @@ app.include_router(helius_router)
 app.include_router(trades_router)
 app.include_router(
     discovered_wallets_router
-)
-app.include_router(
-    trades_router
-)
+) 
 
 app.include_router(
     paper_trading_router
