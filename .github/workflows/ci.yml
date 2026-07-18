@@ -24,11 +24,15 @@ jobs:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/smartmoney_ci
       SOLANA_RPC_URL: https://api.mainnet-beta.solana.com
       HELIUS_API_KEY: ci-placeholder-key
+      AUTOMATION_API_KEY: ci-automation-key-12345678901234567890
+      PAPER_TRADING_API_KEY: ci-paper-key-123456789012345678901234
       ENVIRONMENT: test
       DEBUG: "false"
+      LOG_LEVEL: INFO
       ENABLE_DOCS: "true"
       CORS_ORIGINS: http://localhost:5173
       CORS_ALLOW_CREDENTIALS: "true"
+      PYTHONPATH: .
 
     steps:
       - name: Checkout repository
@@ -44,19 +48,25 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install -r requirements.txt
 
-      - name: Compile backend
+      - name: Compile backend and migrations
         run: |
           python -m compileall -q backend
           python -m compileall -q alembic
 
-      - name: Validate Alembic revisions
-        run: alembic heads
+      - name: Validate Alembic migration chain
+        run: |
+          alembic heads
+          alembic upgrade head --sql > /tmp/smartmoney-migrations.sql
+          test -s /tmp/smartmoney-migrations.sql
 
       - name: Validate FastAPI imports
         run: |
           python -c "from backend.app.main import app; assert app.title == 'SmartMoney AI'; print('FastAPI import OK')"
+
+      - name: Run backend test suite
+        run: python -m pytest -q
 
   frontend:
     name: Frontend validation
@@ -108,11 +118,10 @@ jobs:
           package-manager-cache: false
 
       - name: Validate automation JavaScript
-        run: node --check automation/run.mjs
+        run: npm --prefix automation run check
 
-      - name: Validate automation package
-        run: |
-          node -e "JSON.parse(require('fs').readFileSync('automation/package.json', 'utf8')); console.log('Automation package.json OK')"
+      - name: Run automation test suite
+        run: npm --prefix automation test
 
       - name: Validate Railway configuration
         run: |
