@@ -63,6 +63,7 @@ postgres_data/
 # LOGS / TEMPORARY FILES
 # =========================
 
+*.zip 
 *.log
 logs/
 
