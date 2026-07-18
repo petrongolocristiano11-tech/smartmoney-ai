@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import {
   lazy,
   StrictMode,
@@ -12,15 +13,12 @@ import {
 
 import "./index.css";
 
-import MainLayout from "./Layouts/MainLayout.jsx"; 
+import MainLayout from "./Layouts/MainLayout.jsx";
 
-const PaperAutopilot = lazy(() =>
-  import(
-    "./pages/PaperAutopilot.jsx"
-  )
-); 
 
-const App = lazy(() => import("./App.jsx"));
+const App = lazy(() =>
+  import("./App.jsx")
+);
 
 const Alerts = lazy(() =>
   import("./pages/Alerts.jsx")
@@ -42,8 +40,20 @@ const LiveScanner = lazy(() =>
   import("./pages/LiveScanner.jsx")
 );
 
+const LiveTrading = lazy(() =>
+  import("./pages/LiveTrading.jsx")
+);
+
 const Notifications = lazy(() =>
   import("./pages/Notifications.jsx")
+);
+
+const PaperAutopilot = lazy(() =>
+  import("./pages/PaperAutopilot.jsx")
+);
+
+const PaperTrading = lazy(() =>
+  import("./pages/PaperTrading.jsx")
 );
 
 const Portfolio = lazy(() =>
@@ -60,15 +70,12 @@ const TokenDetails = lazy(() =>
 
 const WalletDetails = lazy(() =>
   import("./pages/WalletDetails.jsx")
-); 
-
-const PaperTrading = lazy(() =>
-  import("./pages/PaperTrading.jsx")
-); 
+);
 
 const Watchlist = lazy(() =>
   import("./pages/Watchlist.jsx")
 );
+
 
 function PageLoader() {
   return (
@@ -84,6 +91,7 @@ function PageLoader() {
   );
 }
 
+
 createRoot(
   document.getElementById("root")
 ).render(
@@ -92,13 +100,26 @@ createRoot(
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route element={<MainLayout />}>
-            <Route path="/" element={<App />} />
+            <Route
+              path="/"
+              element={<App />}
+            />
+
+            <Route
+              path="/paper-trading"
+              element={<PaperTrading />}
+            />
 
             <Route
               path="/autopilot"
               element={<PaperAutopilot />}
             />
-            
+
+            <Route
+              path="/live-trading"
+              element={<LiveTrading />}
+            />
+
             <Route
               path="/live"
               element={<LiveScanner />}
@@ -158,11 +179,6 @@ createRoot(
               path="/wallet/:walletAddress"
               element={<WalletDetails />}
             />
-
-            <Route
-              path="/paper-trading"
-              element={<PaperTrading />}
-            /> 
 
             <Route
               path="/token/:tokenMint"

@@ -2,15 +2,13 @@ import {
   useEffect,
   useState,
 } from "react";
-import {
-  NavLink,
-  useLocation,
-} from "react-router-dom";
+import { NavLink } from "react-router-dom";
 
 import {
   getUnreadNotificationCount,
   subscribeNotificationCenter,
 } from "../services/notificationCenter";
+
 
 const NAVIGATION_ITEMS = [
   {
@@ -19,11 +17,20 @@ const NAVIGATION_ITEMS = [
     end: true,
   },
   {
-  label: "Paper Trading",
-  path: "/paper-trading",
+    label: "Paper Trading",
+    path: "/paper-trading",
   },
   {
-    label: "Live",
+    label: "Autopilot",
+    path: "/autopilot",
+  },
+  {
+    label: "Copy Trading",
+    path: "/live-trading",
+    liveTrading: true,
+  },
+  {
+    label: "Live Scanner",
     path: "/live",
   },
   {
@@ -59,16 +66,15 @@ const NAVIGATION_ITEMS = [
     label: "Watchlist",
     path: "/watchlist",
   },
-
-  {
-  label: "Autopilot",
-  path: "/autopilot",
-  },
 ];
 
+
 function formatUnreadCount(count) {
-  return count > 99 ? "99+" : count;
+  return count > 99
+    ? "99+"
+    : count;
 }
+
 
 function DesktopNavLink({
   item,
@@ -84,15 +90,26 @@ function DesktopNavLink({
           "rounded-lg px-3 py-2",
           "text-sm font-semibold transition",
           isActive
-            ? "bg-blue-600 text-white"
-            : "text-slate-300 hover:bg-slate-800 hover:text-white",
+            ? item.liveTrading
+              ? "bg-red-600 text-white"
+              : "bg-blue-600 text-white"
+            : item.liveTrading
+              ? "text-red-300 hover:bg-red-950/60 hover:text-red-200"
+              : "text-slate-300 hover:bg-slate-800 hover:text-white",
         ].join(" ")
       }
     >
+      {item.liveTrading && (
+        <span
+          className="h-2 w-2 rounded-full bg-red-400"
+          aria-hidden="true"
+        />
+      )}
+
       <span>{item.label}</span>
 
-      {item.notificationBadge &&
-        unreadNotifications > 0 && (
+      {item.notificationBadge
+        && unreadNotifications > 0 && (
           <span className="flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-xs font-bold text-white">
             {formatUnreadCount(
               unreadNotifications
@@ -103,29 +120,45 @@ function DesktopNavLink({
   );
 }
 
+
 function MobileNavLink({
   item,
   unreadNotifications,
+  onNavigate,
 }) {
   return (
     <NavLink
       to={item.path}
       end={item.end}
+      onClick={onNavigate}
       className={({ isActive }) =>
         [
           "flex w-full items-center justify-between",
           "rounded-xl px-4 py-3",
           "font-semibold transition",
           isActive
-            ? "bg-blue-600 text-white"
-            : "text-slate-300 hover:bg-slate-800 hover:text-white",
+            ? item.liveTrading
+              ? "bg-red-600 text-white"
+              : "bg-blue-600 text-white"
+            : item.liveTrading
+              ? "text-red-300 hover:bg-red-950/60 hover:text-red-200"
+              : "text-slate-300 hover:bg-slate-800 hover:text-white",
         ].join(" ")
       }
     >
-      <span>{item.label}</span>
+      <span className="flex items-center gap-2">
+        {item.liveTrading && (
+          <span
+            className="h-2 w-2 rounded-full bg-red-400"
+            aria-hidden="true"
+          />
+        )}
 
-      {item.notificationBadge &&
-        unreadNotifications > 0 && (
+        <span>{item.label}</span>
+      </span>
+
+      {item.notificationBadge
+        && unreadNotifications > 0 && (
           <span className="flex min-w-6 items-center justify-center rounded-full bg-red-600 px-2 py-1 text-xs font-bold text-white">
             {formatUnreadCount(
               unreadNotifications
@@ -135,6 +168,7 @@ function MobileNavLink({
     </NavLink>
   );
 }
+
 
 function MenuIcon() {
   return (
@@ -154,6 +188,7 @@ function MenuIcon() {
   );
 }
 
+
 function CloseIcon() {
   return (
     <svg
@@ -172,9 +207,8 @@ function CloseIcon() {
   );
 }
 
-function Navbar() {
-  const location = useLocation();
 
+function Navbar() {
   const [menuOpen, setMenuOpen] =
     useState(false);
 
@@ -186,16 +220,15 @@ function Navbar() {
   );
 
   useEffect(() => {
-    return subscribeNotificationCenter(() => {
-      setUnreadNotifications(
-        getUnreadNotificationCount()
-      );
-    });
+    return subscribeNotificationCenter(
+      () => {
+        setUnreadNotifications(
+          getUnreadNotificationCount()
+        );
+      }
+    );
   }, []);
 
-  useEffect(() => {
-    setMenuOpen(false);
-  }, [location.pathname]);
 
   useEffect(() => {
     if (!menuOpen) {
@@ -211,7 +244,8 @@ function Navbar() {
       }
     }
 
-    document.body.style.overflow = "hidden";
+    document.body.style.overflow =
+      "hidden";
 
     window.addEventListener(
       "keydown",
@@ -237,27 +271,33 @@ function Navbar() {
             to="/"
             className="flex shrink-0 items-center gap-2 text-lg font-bold text-white"
           >
-            <span aria-hidden="true">🚀</span>
+            <span aria-hidden="true">
+              🚀
+            </span>
 
             <span>SmartMoney AI</span>
           </NavLink>
 
           <div className="hidden items-center gap-1 2xl:flex">
-            {NAVIGATION_ITEMS.map((item) => (
-              <DesktopNavLink
-                key={item.path}
-                item={item}
-                unreadNotifications={
-                  unreadNotifications
-                }
-              />
-            ))}
+            {NAVIGATION_ITEMS.map(
+              (item) => (
+                <DesktopNavLink
+                  key={item.path}
+                  item={item}
+                  unreadNotifications={
+                    unreadNotifications
+                  }
+                />
+              )
+            )}
           </div>
 
           <button
             type="button"
             onClick={() =>
-              setMenuOpen((current) => !current)
+              setMenuOpen(
+                (current) => !current
+              )
             }
             className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-700 bg-slate-900 text-slate-200 transition hover:border-slate-600 hover:bg-slate-800 2xl:hidden"
             aria-label="Apri menu"
@@ -282,7 +322,9 @@ function Navbar() {
           <button
             type="button"
             aria-label="Chiudi menu"
-            onClick={() => setMenuOpen(false)}
+            onClick={() =>
+              setMenuOpen(false)
+            }
             className="fixed inset-0 z-[60] cursor-default bg-black/65 backdrop-blur-sm"
           />
 
@@ -292,7 +334,9 @@ function Navbar() {
           >
             <header className="flex min-h-16 items-center justify-between border-b border-slate-700 px-5">
               <div className="flex items-center gap-2 font-bold text-white">
-                <span aria-hidden="true">🚀</span>
+                <span aria-hidden="true">
+                  🚀
+                </span>
 
                 <span>SmartMoney AI</span>
               </div>
@@ -323,6 +367,9 @@ function Navbar() {
                       unreadNotifications={
                         unreadNotifications
                       }
+                      onNavigate={() =>
+                        setMenuOpen(false)
+                      }
                     />
                   )
                 )}
@@ -336,8 +383,7 @@ function Navbar() {
                 </p>
 
                 <p className="mt-1 text-xs text-slate-500">
-                  Wallet e token intelligence
-                  platform
+                  Wallet intelligence e copy-trading controllato
                 </p>
               </div>
             </footer>
@@ -347,5 +393,6 @@ function Navbar() {
     </>
   );
 }
+
 
 export default Navbar; 
