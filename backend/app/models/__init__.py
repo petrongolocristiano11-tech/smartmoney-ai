@@ -1,11 +1,29 @@
-from backend.app.models.discovery_job import (
+﻿from backend.app.models.discovery_job import (
     DiscoveryJob,
 )
 from backend.app.models.discovered_wallet import (
     DiscoveredWallet,
 )
+from backend.app.models.live_copy_order import (
+    LiveCopyOrder,
+)
+from backend.app.models.live_position import (
+    LivePosition,
+)
+from backend.app.models.live_trading_event import (
+    LiveTradingEvent,
+)
+from backend.app.models.live_trading_policy import (
+    LiveTradingPolicy,
+)
 from backend.app.models.paper_account import (
     PaperAccount,
+)
+from backend.app.models.paper_autopilot import (
+    PaperAutopilotDecision,
+    PaperAutopilotManagedPosition,
+    PaperAutopilotPolicy,
+    PaperAutopilotRun,
 )
 from backend.app.models.paper_order import (
     PaperOrder,
@@ -16,22 +34,31 @@ from backend.app.models.paper_position import (
 from backend.app.models.token import Token
 from backend.app.models.trade import Trade
 from backend.app.models.wallet import Wallet
+from backend.app.models.wallet_edge import (
+    WalletEdge,
+)
+from backend.app.models.wallet_profile import (
+    WalletProfile,
+)
 
 
 __all__ = [
     "DiscoveryJob",
     "DiscoveredWallet",
+    "LiveCopyOrder",
+    "LivePosition",
+    "LiveTradingEvent",
+    "LiveTradingPolicy",
     "PaperAccount",
+    "PaperAutopilotDecision",
+    "PaperAutopilotManagedPosition",
+    "PaperAutopilotPolicy",
+    "PaperAutopilotRun",
     "PaperOrder",
     "PaperPosition",
     "Token",
     "Trade",
     "Wallet",
-] 
-
-from backend.app.models.paper_autopilot import (
-    PaperAutopilotDecision,
-    PaperAutopilotManagedPosition,
-    PaperAutopilotPolicy,
-    PaperAutopilotRun,
-) 
+    "WalletEdge",
+    "WalletProfile",
+]

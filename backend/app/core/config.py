@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # =========================
 
     APP_NAME: str = "SmartMoney AI"
-    APP_VERSION: str = "0.9.0"
+    APP_VERSION: str = "1.0.0"
 
     ENVIRONMENT: Literal[
         "development",
@@ -79,16 +79,19 @@ class Settings(BaseSettings):
         repr=False,
     )
 
-    PUBLIC_DISCOVERY_COOLDOWN_SECONDS: int = (
-        Field(
-            default=120,
-            ge=10,
-            le=3600,
-        )
+    LIVE_TRADING_API_KEY: str = Field(
+        default="",
+        repr=False,
+    )
+
+    PUBLIC_DISCOVERY_COOLDOWN_SECONDS: int = Field(
+        default=120,
+        ge=10,
+        le=3600,
     )
 
     # =========================
-    # JUPITER PRICE ORACLE
+    # JUPITER
     # =========================
 
     JUPITER_API_KEY: str = Field(
@@ -100,20 +103,37 @@ class Settings(BaseSettings):
         "https://api.jup.ag/price/v3"
     )
 
-    JUPITER_PRICE_TIMEOUT_SECONDS: float = (
-        Field(
-            default=10.0,
-            ge=1.0,
-            le=60.0,
-        )
+    JUPITER_PRICE_TIMEOUT_SECONDS: float = Field(
+        default=10.0,
+        ge=1.0,
+        le=60.0,
     )
 
-    JUPITER_PRICE_CACHE_SECONDS: int = (
-        Field(
-            default=15,
-            ge=1,
-            le=300,
-        )
+    JUPITER_PRICE_CACHE_SECONDS: int = Field(
+        default=15,
+        ge=1,
+        le=300,
+    )
+
+    JUPITER_SWAP_API_URL: str = (
+        "https://api.jup.ag/swap/v2"
+    )
+
+    JUPITER_SWAP_TIMEOUT_SECONDS: float = Field(
+        default=20.0,
+        ge=2.0,
+        le=60.0,
+    )
+
+    # =========================
+    # LIVE TRADING WALLET
+    # =========================
+
+    LIVE_TRADING_WALLET_ADDRESS: str = ""
+
+    LIVE_TRADING_PRIVATE_KEY: str = Field(
+        default="",
+        repr=False,
     )
 
     # =========================
@@ -146,7 +166,9 @@ class Settings(BaseSettings):
         cls,
         value,
     ):
-        return str(value).strip().lower()
+        return str(
+            value
+        ).strip().lower()
 
     @field_validator(
         "LOG_LEVEL",
@@ -187,7 +209,9 @@ class Settings(BaseSettings):
         cls,
         value,
     ):
-        normalized = str(value).strip()
+        normalized = str(
+            value
+        ).strip()
 
         if normalized.startswith(
             "postgres://"
@@ -214,18 +238,23 @@ class Settings(BaseSettings):
     @field_validator(
         "AUTOMATION_API_KEY",
         "PAPER_TRADING_API_KEY",
+        "LIVE_TRADING_API_KEY",
         "JUPITER_API_KEY",
+        "LIVE_TRADING_WALLET_ADDRESS",
+        "LIVE_TRADING_PRIVATE_KEY",
         mode="before",
     )
     @classmethod
-    def normalize_private_api_keys(
+    def normalize_optional_secrets(
         cls,
         value,
     ):
         if value is None:
             return ""
 
-        return str(value).strip()
+        return str(
+            value
+        ).strip()
 
     @field_validator(
         "DATABASE_URL",
@@ -241,8 +270,7 @@ class Settings(BaseSettings):
 
         if not normalized:
             raise ValueError(
-                "La variabile non può "
-                "essere vuota."
+                "La variabile non può essere vuota."
             )
 
         if "YOUR_" in normalized.upper():
@@ -256,6 +284,7 @@ class Settings(BaseSettings):
     @field_validator(
         "SOLANA_RPC_URL",
         "JUPITER_PRICE_API_URL",
+        "JUPITER_SWAP_API_URL",
     )
     @classmethod
     def validate_http_url(
@@ -266,7 +295,9 @@ class Settings(BaseSettings):
             value.strip().rstrip("/")
         )
 
-        parsed = urlparse(normalized)
+        parsed = urlparse(
+            normalized
+        )
 
         if (
             parsed.scheme
@@ -274,11 +305,36 @@ class Settings(BaseSettings):
             or not parsed.netloc
         ):
             raise ValueError(
-                "La variabile deve essere "
-                "un URL HTTP o HTTPS valido."
+                "La variabile deve essere un URL "
+                "HTTP o HTTPS valido."
             )
 
         return normalized
+
+    @field_validator(
+        "LIVE_TRADING_WALLET_ADDRESS"
+    )
+    @classmethod
+    def validate_optional_wallet_address(
+        cls,
+        value: str,
+    ):
+        if not value:
+            return value
+
+        if "YOUR_" in value.upper():
+            raise ValueError(
+                "LIVE_TRADING_WALLET_ADDRESS "
+                "contiene un valore dimostrativo."
+            )
+
+        if not 32 <= len(value) <= 44:
+            raise ValueError(
+                "LIVE_TRADING_WALLET_ADDRESS "
+                "non ha una lunghezza Solana valida."
+            )
+
+        return value
 
     @property
     def cors_origins(
@@ -290,6 +346,26 @@ class Settings(BaseSettings):
             in self.CORS_ORIGINS.split(",")
             if origin.strip()
         ]
+
+    @property
+    def is_production(
+        self,
+    ) -> bool:
+        return (
+            self.ENVIRONMENT
+            == "production"
+        )
+
+    @property
+    def is_live_trading_configured(
+        self,
+    ) -> bool:
+        return bool(
+            self.LIVE_TRADING_API_KEY
+            and self.JUPITER_API_KEY
+            and self.LIVE_TRADING_WALLET_ADDRESS
+            and self.LIVE_TRADING_PRIVATE_KEY
+        )
 
     @model_validator(
         mode="after"
@@ -310,9 +386,8 @@ class Settings(BaseSettings):
             and "*" in origins
         ):
             raise ValueError(
-                "Non usare '*' in "
-                "CORS_ORIGINS quando "
-                "CORS_ALLOW_CREDENTIALS "
+                "Non usare '*' in CORS_ORIGINS "
+                "quando CORS_ALLOW_CREDENTIALS "
                 "è true."
             )
 
@@ -320,7 +395,9 @@ class Settings(BaseSettings):
             if origin == "*":
                 continue
 
-            parsed = urlparse(origin)
+            parsed = urlparse(
+                origin
+            )
 
             if (
                 parsed.scheme
@@ -335,35 +412,57 @@ class Settings(BaseSettings):
                 )
 
         return self
-@model_validator(
-    mode="after"
-)
-def validate_production_security(
-    self,
-) -> Self:
-    if not self.is_production:
-        return self
 
-    if len(
-        self.AUTOMATION_API_KEY
-    ) < 32:
-        raise ValueError(
-            "In produzione "
-            "AUTOMATION_API_KEY deve "
-            "contenere almeno "
-            "32 caratteri."
-        )
-
-    return self 
-
-    @property
-    def is_production(
+    @model_validator(
+        mode="after"
+    )
+    def validate_production_security(
         self,
-    ) -> bool:
-        return (
-            self.ENVIRONMENT
-            == "production"
+    ) -> Self:
+        if not self.is_production:
+            return self
+
+        if len(
+            self.AUTOMATION_API_KEY
+        ) < 32:
+            raise ValueError(
+                "In produzione "
+                "AUTOMATION_API_KEY deve "
+                "contenere almeno 32 caratteri."
+            )
+
+        live_values = (
+            self.LIVE_TRADING_WALLET_ADDRESS,
+            self.LIVE_TRADING_PRIVATE_KEY,
+            self.LIVE_TRADING_API_KEY,
         )
+
+        if any(live_values):
+            if not all(live_values):
+                raise ValueError(
+                    "La configurazione Live Trading "
+                    "in produzione deve includere "
+                    "wallet, chiave privata e API "
+                    "key interna."
+                )
+
+            if len(
+                self.LIVE_TRADING_API_KEY
+            ) < 32:
+                raise ValueError(
+                    "In produzione "
+                    "LIVE_TRADING_API_KEY deve "
+                    "contenere almeno 32 caratteri."
+                )
+
+            if not self.JUPITER_API_KEY:
+                raise ValueError(
+                    "JUPITER_API_KEY è obbligatoria "
+                    "quando il Live Trading è "
+                    "configurato in produzione."
+                )
+
+        return self
 
 
 settings = Settings() 

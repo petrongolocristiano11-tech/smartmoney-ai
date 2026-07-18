@@ -1,18 +1,15 @@
 import logging
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from contextlib import (
+    asynccontextmanager,
+)
+from datetime import (
+    datetime,
+    timezone,
+)
 from time import perf_counter
 from uuid import uuid4
-from backend.app.api.paper_trading import (
-    router as paper_trading_router,
-)
-from backend.app.api.paper_autopilot import (
-    router as paper_autopilot_router,
-) 
-from fastapi import (
-    FastAPI,
-    Request,
-)
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import (
     CORSMiddleware,
 )
@@ -28,6 +25,15 @@ from backend.app.api.helius import (
 )
 from backend.app.api.live import (
     router as live_router,
+)
+from backend.app.api.live_trading import (
+    router as live_trading_router,
+)
+from backend.app.api.paper_autopilot import (
+    router as paper_autopilot_router,
+)
+from backend.app.api.paper_trading import (
+    router as paper_trading_router,
 )
 from backend.app.api.scanner import (
     router as scanner_router,
@@ -51,7 +57,9 @@ from backend.app.core.error_handlers import (
 from backend.app.core.logging_config import (
     configure_logging,
 )
-from backend.app.database.session import engine
+from backend.app.database.session import (
+    engine,
+)
 
 
 configure_logging()
@@ -88,6 +96,7 @@ async def lifespan(
         logger.info(
             "database_startup_check=connected"
         )
+
     except SQLAlchemyError as exception:
         logger.warning(
             "database_startup_check=unavailable "
@@ -141,7 +150,9 @@ app.add_middleware(
     ],
 )
 
-register_exception_handlers(app)
+register_exception_handlers(
+    app
+)
 
 
 @app.middleware("http")
@@ -156,15 +167,21 @@ async def request_context_middleware(
         or uuid4().hex
     )
 
-    request.state.request_id = request_id
+    request.state.request_id = (
+        request_id
+    )
 
     started_at = perf_counter()
 
     try:
-        response = await call_next(request)
+        response = await call_next(
+            request
+        )
+
     except Exception:
         elapsed = (
-            perf_counter() - started_at
+            perf_counter()
+            - started_at
         )
 
         logger.exception(
@@ -180,7 +197,8 @@ async def request_context_middleware(
         raise
 
     elapsed = (
-        perf_counter() - started_at
+        perf_counter()
+        - started_at
     )
 
     response.headers[
@@ -205,24 +223,50 @@ async def request_context_middleware(
     return response
 
 
-app.include_router(live_router)
-app.include_router(tokens_router)
-app.include_router(scanner_router)
-app.include_router(wallet_router)
-app.include_router(solana_router)
-app.include_router(helius_router)
-app.include_router(trades_router)
+app.include_router(
+    live_router
+)
+
+app.include_router(
+    tokens_router
+)
+
+app.include_router(
+    scanner_router
+)
+
+app.include_router(
+    wallet_router
+)
+
+app.include_router(
+    solana_router
+)
+
+app.include_router(
+    helius_router
+)
+
+app.include_router(
+    trades_router
+)
+
 app.include_router(
     discovered_wallets_router
-) 
+)
 
 app.include_router(
     paper_trading_router
-) 
+)
 
 app.include_router(
     paper_autopilot_router
-) 
+)
+
+app.include_router(
+    live_trading_router
+)
+
 
 @app.get(
     "/",
@@ -231,15 +275,16 @@ app.include_router(
 def home():
     return {
         "status": "online",
-        "project": settings.APP_NAME,
-        "version": settings.APP_VERSION,
-        "environment": (
-            settings.ENVIRONMENT
-        ),
-        "docs_enabled": (
-            settings.ENABLE_DOCS
-        ),
-        "timestamp": utc_timestamp(),
+        "project":
+            settings.APP_NAME,
+        "version":
+            settings.APP_VERSION,
+        "environment":
+            settings.ENVIRONMENT,
+        "docs_enabled":
+            settings.ENABLE_DOCS,
+        "timestamp":
+            utc_timestamp(),
     }
 
 
@@ -248,18 +293,14 @@ def home():
     tags=["System"],
 )
 def health():
-    """
-    Liveness check.
-
-    Conferma che il processo API sia attivo.
-    Non interroga servizi esterni.
-    """
-
     return {
         "status": "ok",
-        "service": settings.APP_NAME,
-        "version": settings.APP_VERSION,
-        "timestamp": utc_timestamp(),
+        "service":
+            settings.APP_NAME,
+        "version":
+            settings.APP_VERSION,
+        "timestamp":
+            utc_timestamp(),
     }
 
 
@@ -268,25 +309,18 @@ def health():
     tags=["System"],
     responses={
         503: {
-            "description": (
-                "Servizio non pronto"
-            ),
+            "description":
+                "Servizio non pronto",
         },
     },
 )
 def readiness():
-    """
-    Readiness check.
-
-    Verifica che il database sia raggiungibile
-    e che le integrazioni siano configurate.
-    """
-
     try:
         with engine.connect() as connection:
             connection.execute(
                 text("SELECT 1")
             )
+
     except SQLAlchemyError as exception:
         logger.warning(
             "readiness_check=failed "
@@ -298,28 +332,31 @@ def readiness():
         return JSONResponse(
             status_code=503,
             content={
-                "status": "not_ready",
+                "status":
+                    "not_ready",
                 "dependencies": {
-                    "database": (
-                        "disconnected"
-                    ),
-                    "helius": "configured",
-                    "solana_rpc": (
-                        "configured"
-                    ),
+                    "database":
+                        "disconnected",
+                    "helius":
+                        "configured",
+                    "solana_rpc":
+                        "configured",
                 },
-                "timestamp": (
-                    utc_timestamp()
-                ),
+                "timestamp":
+                    utc_timestamp(),
             },
         )
 
     return {
         "status": "ready",
         "dependencies": {
-            "database": "connected",
-            "helius": "configured",
-            "solana_rpc": "configured",
+            "database":
+                "connected",
+            "helius":
+                "configured",
+            "solana_rpc":
+                "configured",
         },
-        "timestamp": utc_timestamp(),
+        "timestamp":
+            utc_timestamp(),
     } 
