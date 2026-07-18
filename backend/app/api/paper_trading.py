@@ -113,7 +113,7 @@ def raise_paper_http_error(
     else:
         status_code = (
             status
-            .HTTP_422_UNPROCESSABLE_ENTITY
+            .HTTP_422_UNPROCESSABLE_CONTENT
         )
 
     raise HTTPException(
@@ -140,7 +140,7 @@ def raise_oracle_http_error(
     else:
         status_code = (
             status
-            .HTTP_422_UNPROCESSABLE_ENTITY
+            .HTTP_422_UNPROCESSABLE_CONTENT
         )
 
     raise HTTPException(
