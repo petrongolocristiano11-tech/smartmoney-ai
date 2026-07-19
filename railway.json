@@ -17,6 +17,6 @@
     "healthcheckTimeout": 120,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 5,
-    "drainingSeconds": "30"
+    "drainingSeconds": 30
   }
 } 
