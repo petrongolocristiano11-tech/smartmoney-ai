@@ -25,6 +25,7 @@ from backend.app.schemas.live_trading import (
     LiveTradingPolicyResponse,
     LiveTradingPolicyUpdateRequest,
     LiveTradingStatusResponse,
+    LiveTradingWorkerStatusResponse,
 )
 from backend.app.services.jupiter_swap_client import (
     JupiterSwapClient,
@@ -44,6 +45,9 @@ from backend.app.services.live_trading_policy_service import (
     get_or_create_live_policy,
     release_kill_switch,
     update_live_policy,
+)
+from backend.app.services.live_trading_worker_state import (
+    get_live_worker_status,
 )
 from backend.app.services.solana_rpc import (
     SolanaRpcClient,
@@ -101,9 +105,31 @@ def read_live_status(
         get_solana_rpc_client
     ),
 ):
-    return get_live_trading_status(
+    payload = get_live_trading_status(
         db,
         rpc_client=rpc_client,
+    )
+
+    payload["worker"] = (
+        get_live_worker_status(
+            db
+        )
+    )
+
+    return payload
+
+
+@router.get(
+    "/worker",
+    response_model=(
+        LiveTradingWorkerStatusResponse
+    ),
+)
+def read_live_worker(
+    db: Session = Depends(get_db),
+):
+    return get_live_worker_status(
+        db
     )
 
 

@@ -23,88 +23,131 @@ LiveSizingMode = Literal[
 ]
 
 
-class LiveTradingPolicyUpdateRequest(BaseModel):
+class LiveTradingPolicyUpdateRequest(
+    BaseModel
+):
     mode: LiveTradingMode | None = None
+
     confirmation: str | None = None
+
     kill_switch: bool | None = None
-    stream_execution_enabled: bool | None = None
-    source_wallets: list[str] | None = None
+
+    stream_execution_enabled: (
+        bool | None
+    ) = None
+
+    source_wallets: (
+        list[str] | None
+    ) = None
+
     buy_enabled: bool | None = None
+
     sell_enabled: bool | None = None
-    sizing_mode: LiveSizingMode | None = None
 
-    fixed_buy_size_sol: float | None = Field(
+    sizing_mode: (
+        LiveSizingMode | None
+    ) = None
+
+    fixed_buy_size_sol: (
+        float | None
+    ) = Field(
         default=None,
         gt=0,
     )
 
-    source_trade_percentage: float | None = Field(
+    source_trade_percentage: (
+        float | None
+    ) = Field(
         default=None,
         gt=0,
         le=100,
     )
 
-    sell_position_percentage: float | None = Field(
+    sell_position_percentage: (
+        float | None
+    ) = Field(
         default=None,
         gt=0,
         le=100,
     )
 
-    max_order_size_sol: float | None = Field(
+    max_order_size_sol: (
+        float | None
+    ) = Field(
         default=None,
         gt=0,
     )
 
-    max_daily_buy_sol: float | None = Field(
+    max_daily_buy_sol: (
+        float | None
+    ) = Field(
         default=None,
         gt=0,
     )
 
-    max_daily_loss_sol: float | None = Field(
+    max_daily_loss_sol: (
+        float | None
+    ) = Field(
         default=None,
         gt=0,
     )
 
-    max_total_exposure_sol: float | None = Field(
+    max_total_exposure_sol: (
+        float | None
+    ) = Field(
         default=None,
         gt=0,
     )
 
-    min_wallet_reserve_sol: float | None = Field(
+    min_wallet_reserve_sol: (
+        float | None
+    ) = Field(
         default=None,
         ge=0,
     )
 
-    max_slippage_bps: int | None = Field(
+    max_slippage_bps: (
+        int | None
+    ) = Field(
         default=None,
         ge=1,
         le=5000,
     )
 
-    max_price_impact_percent: float | None = Field(
+    max_price_impact_percent: (
+        float | None
+    ) = Field(
         default=None,
         gt=0,
         le=100,
     )
 
-    min_source_trade_sol: float | None = Field(
+    min_source_trade_sol: (
+        float | None
+    ) = Field(
         default=None,
         ge=0,
     )
 
-    max_source_trade_age_seconds: int | None = Field(
+    max_source_trade_age_seconds: (
+        int | None
+    ) = Field(
         default=None,
         ge=1,
         le=86400,
     )
 
-    max_consecutive_failures: int | None = Field(
+    max_consecutive_failures: (
+        int | None
+    ) = Field(
         default=None,
         ge=1,
         le=100,
     )
 
-    @field_validator("source_wallets")
+    @field_validator(
+        "source_wallets"
+    )
     @classmethod
     def normalize_source_wallets(
         cls,
@@ -117,27 +160,42 @@ class LiveTradingPolicyUpdateRequest(BaseModel):
         seen: set[str] = set()
 
         for wallet in value:
-            address = str(wallet).strip()
+            address = str(
+                wallet
+            ).strip()
 
             if not address:
                 continue
 
-            if not 32 <= len(address) <= 44:
+            if not 32 <= len(
+                address
+            ) <= 44:
                 raise ValueError(
-                    f"Wallet Solana non valido: {address}"
+                    "Wallet Solana non valido: "
+                    f"{address}"
                 )
 
             if address not in seen:
-                normalized.append(address)
-                seen.add(address)
+                normalized.append(
+                    address
+                )
+                seen.add(
+                    address
+                )
 
         return normalized
 
-    @model_validator(mode="after")
-    def validate_limits(self):
+    @model_validator(
+        mode="after"
+    )
+    def validate_limits(
+        self,
+    ):
         if (
-            self.fixed_buy_size_sol is not None
-            and self.max_order_size_sol is not None
+            self.fixed_buy_size_sol
+            is not None
+            and self.max_order_size_sol
+            is not None
             and self.fixed_buy_size_sol
             > self.max_order_size_sol
         ):
@@ -147,8 +205,10 @@ class LiveTradingPolicyUpdateRequest(BaseModel):
             )
 
         if (
-            self.max_order_size_sol is not None
-            and self.max_daily_buy_sol is not None
+            self.max_order_size_sol
+            is not None
+            and self.max_daily_buy_sol
+            is not None
             and self.max_order_size_sol
             > self.max_daily_buy_sol
         ):
@@ -164,13 +224,16 @@ class LiveTradingPolicyUpdateRequest(BaseModel):
         ):
             raise ValueError(
                 "Per impostare LIVE usa "
-                "confirmation='ENABLE LIVE TRADING'."
+                "confirmation="
+                "'ENABLE LIVE TRADING'."
             )
 
         return self
 
 
-class LiveTradingPolicyResponse(BaseModel):
+class LiveTradingPolicyResponse(
+    BaseModel
+):
     model_config = ConfigDict(
         from_attributes=True
     )
@@ -202,7 +265,9 @@ class LiveTradingPolicyResponse(BaseModel):
     updated_at: datetime
 
 
-class LivePositionResponse(BaseModel):
+class LivePositionResponse(
+    BaseModel
+):
     model_config = ConfigDict(
         from_attributes=True
     )
@@ -231,7 +296,9 @@ class LivePositionResponse(BaseModel):
     updated_at: datetime
 
 
-class LiveCopyOrderResponse(BaseModel):
+class LiveCopyOrderResponse(
+    BaseModel
+):
     model_config = ConfigDict(
         from_attributes=True
     )
@@ -270,9 +337,15 @@ class LiveCopyOrderResponse(BaseModel):
     output_mint: str
     requested_input_amount_raw: Decimal
     requested_value_sol: float
-    expected_output_amount_raw: Decimal | None
-    actual_input_amount_raw: Decimal | None
-    actual_output_amount_raw: Decimal | None
+    expected_output_amount_raw: (
+        Decimal | None
+    )
+    actual_input_amount_raw: (
+        Decimal | None
+    )
+    actual_output_amount_raw: (
+        Decimal | None
+    )
     slippage_bps: int
     jupiter_request_id: str | None
     router: str | None
@@ -287,7 +360,9 @@ class LiveCopyOrderResponse(BaseModel):
     updated_at: datetime
 
 
-class LiveTradingEventResponse(BaseModel):
+class LiveTradingEventResponse(
+    BaseModel
+):
     model_config = ConfigDict(
         from_attributes=True
     )
@@ -308,24 +383,89 @@ class LiveTradingEventResponse(BaseModel):
     created_at: datetime
 
 
-class LiveTradingStatusResponse(BaseModel):
+class LiveTradingWorkerStatusResponse(
+    BaseModel
+):
+    status: Literal[
+        "STOPPED",
+        "STARTING",
+        "IDLE",
+        "CONNECTING",
+        "RUNNING",
+        "DEGRADED",
+        "ERROR",
+    ]
+
+    online: bool
+    lease_active: bool
+    worker_id: str | None
+    lease_owner: str | None
+    lease_expires_at: datetime | None
+    active_wallets: list[str]
+    monitored_wallets: int
+    active_subscriptions: int
+    queue_depth: int
+    reconnect_count: int
+    signatures_received: int
+    signatures_processed: int
+    signatures_failed: int
+    signatures_dropped: int
+    last_latency_ms: float | None
+    config_fingerprint: str | None
+    last_signature: str | None
+    last_error_code: str | None
+    last_error_message: str | None
+    started_at: datetime | None
+    heartbeat_at: datetime | None
+    connected_at: datetime | None
+    last_message_at: datetime | None
+    last_trade_at: datetime | None
+    last_error_at: datetime | None
+    seconds_since_heartbeat: (
+        float | None
+    )
+    updated_at: datetime
+
+
+class LiveTradingStatusResponse(
+    BaseModel
+):
     policy: LiveTradingPolicyResponse
+
+    worker: (
+        LiveTradingWorkerStatusResponse
+    )
+
     live_execution_configured: bool
+
     jupiter_configured: bool
+
     wallet_address: str | None
+
     wallet_balance_sol: float | None
+
     open_positions: int
+
     total_exposure_sol: float
+
     orders_today: int
+
     filled_orders_today: int
+
     realized_pnl_today_sol: float
 
 
-class KillSwitchReleaseRequest(BaseModel):
+class KillSwitchReleaseRequest(
+    BaseModel
+):
     confirmation: str
 
-    @model_validator(mode="after")
-    def validate_confirmation(self):
+    @model_validator(
+        mode="after"
+    )
+    def validate_confirmation(
+        self,
+    ):
         if (
             self.confirmation
             != "RELEASE LIVE TRADING"
@@ -339,16 +479,31 @@ class KillSwitchReleaseRequest(BaseModel):
         return self
 
 
-class LiveOrderListResponse(BaseModel):
+class LiveOrderListResponse(
+    BaseModel
+):
     count: int
-    orders: list[LiveCopyOrderResponse]
+
+    orders: list[
+        LiveCopyOrderResponse
+    ]
 
 
-class LivePositionListResponse(BaseModel):
+class LivePositionListResponse(
+    BaseModel
+):
     count: int
-    positions: list[LivePositionResponse]
+
+    positions: list[
+        LivePositionResponse
+    ]
 
 
-class LiveEventListResponse(BaseModel):
+class LiveEventListResponse(
+    BaseModel
+):
     count: int
-    events: list[LiveTradingEventResponse] 
+
+    events: list[
+        LiveTradingEventResponse
+    ]

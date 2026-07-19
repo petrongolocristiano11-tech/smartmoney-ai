@@ -1,4 +1,4 @@
-﻿from backend.app.models.discovery_job import (
+from backend.app.models.discovery_job import (
     DiscoveryJob,
 )
 from backend.app.models.discovered_wallet import (
@@ -15,6 +15,9 @@ from backend.app.models.live_trading_event import (
 )
 from backend.app.models.live_trading_policy import (
     LiveTradingPolicy,
+)
+from backend.app.models.live_trading_worker import (
+    LiveTradingWorkerState,
 )
 from backend.app.models.paper_account import (
     PaperAccount,
@@ -49,6 +52,7 @@ __all__ = [
     "LivePosition",
     "LiveTradingEvent",
     "LiveTradingPolicy",
+    "LiveTradingWorkerState",
     "PaperAccount",
     "PaperAutopilotDecision",
     "PaperAutopilotManagedPosition",

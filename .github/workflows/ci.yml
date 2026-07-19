@@ -26,6 +26,8 @@ jobs:
       HELIUS_API_KEY: ci-placeholder-key
       AUTOMATION_API_KEY: ci-automation-key-12345678901234567890
       PAPER_TRADING_API_KEY: ci-paper-key-123456789012345678901234
+      LIVE_TRADING_API_KEY: ci-live-key-12345678901234567890123456
+      JUPITER_API_KEY: ci-jupiter-placeholder
       ENVIRONMENT: test
       DEBUG: "false"
       LOG_LEVEL: INFO
@@ -64,6 +66,14 @@ jobs:
       - name: Validate FastAPI imports
         run: |
           python -c "from backend.app.main import app; assert app.title == 'SmartMoney AI'; print('FastAPI import OK')"
+
+      - name: Validate worker imports
+        run: |
+          python -c "from backend.app.workers.helius_live_trading_worker import HeliusLiveTradingWorker; assert HeliusLiveTradingWorker; print('Helius worker import OK')"
+
+      - name: Validate Railway configurations
+        run: |
+          python -c "import json; json.load(open('railway.json', encoding='utf-8')); json.load(open('railway.worker.json', encoding='utf-8')); print('Railway configs OK')"
 
       - name: Run backend test suite
         run: python -m pytest -q

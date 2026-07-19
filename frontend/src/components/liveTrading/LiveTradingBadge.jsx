@@ -33,6 +33,18 @@ const BADGE_STYLES = {
     "border-red-700 bg-red-950/60 text-red-300",
   CRITICAL:
     "border-red-500 bg-red-950 text-red-200",
+  STOPPED:
+    "border-slate-600 bg-slate-800 text-slate-300",
+  STARTING:
+    "border-indigo-700 bg-indigo-950/60 text-indigo-300",
+  IDLE:
+    "border-slate-600 bg-slate-800 text-slate-300",
+  CONNECTING:
+    "border-cyan-700 bg-cyan-950/60 text-cyan-300",
+  RUNNING:
+    "border-green-700 bg-green-950/60 text-green-300",
+  DEGRADED:
+    "border-amber-700 bg-amber-950/60 text-amber-300",
 };
 
 

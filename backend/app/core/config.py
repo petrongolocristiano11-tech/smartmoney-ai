@@ -137,6 +137,82 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # LIVE STREAM WORKER
+    # =========================
+
+    LIVE_STREAM_POLICY_REFRESH_SECONDS: int = Field(
+        default=10,
+        ge=3,
+        le=300,
+    )
+
+    LIVE_STREAM_HEARTBEAT_SECONDS: int = Field(
+        default=15,
+        ge=5,
+        le=120,
+    )
+
+    LIVE_STREAM_LEASE_SECONDS: int = Field(
+        default=60,
+        ge=20,
+        le=600,
+    )
+
+    LIVE_STREAM_RECONNECT_MIN_SECONDS: float = Field(
+        default=2.0,
+        ge=0.5,
+        le=60.0,
+    )
+
+    LIVE_STREAM_RECONNECT_MAX_SECONDS: float = Field(
+        default=60.0,
+        ge=1.0,
+        le=600.0,
+    )
+
+    LIVE_STREAM_PING_INTERVAL_SECONDS: float = Field(
+        default=45.0,
+        ge=10.0,
+        le=300.0,
+    )
+
+    LIVE_STREAM_PING_TIMEOUT_SECONDS: float = Field(
+        default=20.0,
+        ge=5.0,
+        le=120.0,
+    )
+
+    LIVE_STREAM_OPEN_TIMEOUT_SECONDS: float = Field(
+        default=20.0,
+        ge=5.0,
+        le=120.0,
+    )
+
+    LIVE_STREAM_SUBSCRIPTION_TIMEOUT_SECONDS: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=180.0,
+    )
+
+    LIVE_STREAM_QUEUE_SIZE: int = Field(
+        default=500,
+        ge=10,
+        le=10000,
+    )
+
+    LIVE_STREAM_CONSUMERS: int = Field(
+        default=4,
+        ge=1,
+        le=32,
+    )
+
+    LIVE_STREAM_RECENT_SIGNATURES: int = Field(
+        default=10000,
+        ge=100,
+        le=100000,
+    )
+
+    # =========================
     # CORS
     # =========================
 
@@ -410,6 +486,37 @@ class Settings(BaseSettings):
                     "Origine CORS non valida: "
                     f"{origin}"
                 )
+
+        return self
+
+    @model_validator(
+        mode="after"
+    )
+    def validate_live_stream_configuration(
+        self,
+    ) -> Self:
+        if (
+            self.LIVE_STREAM_RECONNECT_MAX_SECONDS
+            < self.LIVE_STREAM_RECONNECT_MIN_SECONDS
+        ):
+            raise ValueError(
+                "LIVE_STREAM_RECONNECT_MAX_SECONDS "
+                "non può essere inferiore a "
+                "LIVE_STREAM_RECONNECT_MIN_SECONDS."
+            )
+
+        if (
+            self.LIVE_STREAM_LEASE_SECONDS
+            < (
+                self.LIVE_STREAM_HEARTBEAT_SECONDS
+                * 2
+            )
+        ):
+            raise ValueError(
+                "LIVE_STREAM_LEASE_SECONDS deve "
+                "essere almeno il doppio di "
+                "LIVE_STREAM_HEARTBEAT_SECONDS."
+            )
 
         return self
 

@@ -4,7 +4,7 @@ import {
   useMemo,
   useState,
 } from "react";
-
+import LiveTradingWorkerPanel from "../components/liveTrading/LiveTradingWorkerPanel";
 import LiveTradingBadge from "../components/liveTrading/LiveTradingBadge";
 import LiveTradingEvents from "../components/liveTrading/LiveTradingEvents";
 import LiveTradingMetric from "../components/liveTrading/LiveTradingMetric";
@@ -737,9 +737,13 @@ function LiveTrading() {
         </nav>
 
         {activeTab === "control" && policy && (
-          <div className="space-y-6">
-            <LiveTradingSection
-              title="Stato sicurezza"
+  <div className="space-y-6">
+    <LiveTradingWorkerPanel
+      worker={status.worker}
+    />
+
+    <LiveTradingSection
+      title="Stato sicurezza"
               description="Controlli che devono essere verificati prima di qualunque passaggio alla modalità LIVE."
             >
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -1003,4 +1007,4 @@ function LiveTrading() {
 }
 
 
-export default LiveTrading; 
+export default LiveTrading;
