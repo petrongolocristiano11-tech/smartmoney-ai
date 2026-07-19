@@ -1,7 +1,10 @@
 import httpx
 
 from backend.app.core.config import settings
-from backend.app.services.trade_engine import normalize_swap
+from backend.app.services.trade_engine import (
+    build_trade,
+    normalize_swap,
+)
 
 
 def get_helius_rpc_url():
@@ -53,11 +56,39 @@ def get_wallet_history(address: str):
 def get_wallet_swaps(address: str):
     transactions = get_wallet_history(address)
 
-    swaps = [
-        normalize_swap(tx)
-        for tx in transactions
-        if tx.get("type") == "SWAP"
-    ]
+    swaps = []
+
+    for transaction in transactions:
+        if not isinstance(
+            transaction,
+            dict,
+        ):
+            continue
+
+        normalized_swap = normalize_swap(
+            transaction,
+            wallet_address=address,
+        )
+
+        trade = build_trade(
+            normalized_swap
+        )
+
+        if (
+            trade.get("side")
+            not in {
+                "BUY",
+                "SELL",
+            }
+            or not trade.get(
+                "token_mint"
+            )
+        ):
+            continue
+
+        swaps.append(
+            normalized_swap
+        )
 
     return {
         "wallet": address,

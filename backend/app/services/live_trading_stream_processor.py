@@ -128,24 +128,11 @@ def process_live_signature(
             ):
                 continue
 
-            if (
-                transaction.get("type")
-                != "SWAP"
-            ):
-                continue
-
-            fee_payer = str(
-                transaction.get(
-                    "feePayer"
-                )
-                or ""
-            ).strip()
-
-            if fee_payer != normalized_wallet:
-                continue
-
             normalized_swap = normalize_swap(
-                transaction
+                transaction,
+                wallet_address=(
+                    normalized_wallet
+                ),
             )
 
             trade = build_trade(
