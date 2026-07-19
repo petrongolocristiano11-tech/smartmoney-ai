@@ -22,8 +22,12 @@ class LivePosition(Base):
     __table_args__ = (
         UniqueConstraint(
             "mode",
+            "generation",
             "token_mint",
-            name="uq_live_positions_mode_token",
+            name=(
+                "uq_live_positions_"
+                "mode_generation_token"
+            ),
         ),
         CheckConstraint(
             "mode IN ('DRY_RUN', 'LIVE')",
@@ -41,6 +45,13 @@ class LivePosition(Base):
             "cost_basis_sol >= 0",
             name="ck_live_positions_cost_non_negative",
         ),
+        CheckConstraint(
+            "generation >= 1",
+            name=(
+                "ck_live_positions_"
+                "generation_positive"
+            ),
+        ),
     )
 
     id: Mapped[int] = mapped_column(
@@ -52,6 +63,14 @@ class LivePosition(Base):
     mode: Mapped[str] = mapped_column(
         String(20),
         index=True,
+    )
+
+    generation: Mapped[int] = (
+        mapped_column(
+            Integer,
+            default=1,
+            index=True,
+        )
     )
 
     token_mint: Mapped[str] = mapped_column(

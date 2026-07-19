@@ -19,6 +19,8 @@ from backend.app.models.trade import Trade
 from backend.app.schemas.live_trading import (
     KillSwitchReleaseRequest,
     LiveCopyOrderResponse,
+    LiveTradingDryRunResetRequest,
+    LiveTradingDryRunResetResponse,
     LiveEventListResponse,
     LiveOrderListResponse,
     LivePositionListResponse,
@@ -45,6 +47,9 @@ from backend.app.services.live_trading_policy_service import (
     get_or_create_live_policy,
     release_kill_switch,
     update_live_policy,
+)
+from backend.app.services.live_trading_reset_service import (
+    reset_dry_run_generation,
 )
 from backend.app.services.live_trading_worker_state import (
     get_live_worker_status,
@@ -91,6 +96,40 @@ def raise_live_http_error(
             "payload": error.payload,
         },
     ) from error
+
+
+def resolve_generation_filter(
+    db: Session,
+    *,
+    scope: str,
+    mode: str | None = None,
+) -> int | None:
+    if scope == "ALL":
+        return None
+
+    policy = get_or_create_live_policy(
+        db
+    )
+
+    target_mode = (
+        str(mode or policy.mode)
+        .strip()
+        .upper()
+    )
+
+    if target_mode == "DRY_RUN":
+        return max(
+            1,
+            int(
+                policy.dry_run_generation
+                or 1
+            ),
+        )
+
+    if target_mode == "LIVE":
+        return 1
+
+    return None
 
 
 @router.get(
@@ -171,6 +210,41 @@ def patch_live_policy(
             policy,
             payload.model_dump(
                 exclude_unset=True
+            ),
+        )
+
+    except LiveTradingError as error:
+        raise_live_http_error(
+            error
+        )
+
+
+@router.post(
+    "/dry-run/reset",
+    response_model=(
+        LiveTradingDryRunResetResponse
+    ),
+)
+def reset_dry_run(
+    payload: (
+        LiveTradingDryRunResetRequest
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return reset_dry_run_generation(
+            db,
+            source_wallets=(
+                payload.source_wallets
+            ),
+            start_stream=(
+                payload.start_stream
+            ),
+            buy_enabled=(
+                payload.buy_enabled
+            ),
+            sell_enabled=(
+                payload.sell_enabled
             ),
         )
 
@@ -333,13 +407,26 @@ def read_live_orders(
         "LIVE",
     ]
     | None = None,
+    scope: Literal[
+        "ACTIVE",
+        "ALL",
+    ] = "ACTIVE",
     db: Session = Depends(get_db),
 ):
+    generation = (
+        resolve_generation_filter(
+            db,
+            scope=scope,
+            mode=mode,
+        )
+    )
+
     orders = list_live_orders(
         db,
         limit=limit,
         status=order_status,
         mode=mode,
+        generation=generation,
     )
 
     return {
@@ -368,12 +455,25 @@ def read_live_positions(
         "LIVE",
     ]
     | None = None,
+    scope: Literal[
+        "ACTIVE",
+        "ALL",
+    ] = "ACTIVE",
     db: Session = Depends(get_db),
 ):
+    generation = (
+        resolve_generation_filter(
+            db,
+            scope=scope,
+            mode=mode,
+        )
+    )
+
     positions = list_live_positions(
         db,
         status=position_status,
         mode=mode,
+        generation=generation,
     )
 
     return {
@@ -394,11 +494,23 @@ def read_live_events(
         ge=1,
         le=1000,
     ),
+    scope: Literal[
+        "ACTIVE",
+        "ALL",
+    ] = "ACTIVE",
     db: Session = Depends(get_db),
 ):
+    generation = (
+        resolve_generation_filter(
+            db,
+            scope=scope,
+        )
+    )
+
     events = list_live_events(
         db,
         limit=limit,
+        generation=generation,
     )
 
     return {

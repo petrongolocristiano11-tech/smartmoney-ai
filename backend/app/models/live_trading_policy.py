@@ -143,6 +143,13 @@ class LiveTradingPolicy(Base):
                 "failures_non_negative"
             ),
         ),
+        CheckConstraint(
+            "dry_run_generation >= 1",
+            name=(
+                "ck_live_trading_policies_"
+                "dry_run_generation_positive"
+            ),
+        ),
     )
 
     id: Mapped[int] = mapped_column(
@@ -303,6 +310,20 @@ class LiveTradingPolicy(Base):
             Integer,
             default=0,
         )
+    )
+
+    dry_run_generation: Mapped[int] = (
+        mapped_column(
+            Integer,
+            default=1,
+        )
+    )
+
+    dry_run_started_at: Mapped[
+        datetime | None
+    ] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     created_at: Mapped[datetime] = (

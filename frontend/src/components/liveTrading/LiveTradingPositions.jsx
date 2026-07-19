@@ -134,10 +134,14 @@ function LiveTradingPositions({
                       )}
                     </p>
 
-                    <div className="mt-2">
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
                       <LiveTradingBadge
                         value={position.mode}
                       />
+
+                      <span className="rounded-full border border-slate-600 bg-slate-950 px-2.5 py-1 text-xs font-bold text-slate-400">
+                        Gen #{position.generation}
+                      </span>
                     </div>
                   </td>
 

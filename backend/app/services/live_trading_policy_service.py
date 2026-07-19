@@ -1,3 +1,8 @@
+from datetime import (
+    datetime,
+    timezone,
+)
+
 from sqlalchemy.exc import (
     IntegrityError,
 )
@@ -25,12 +30,14 @@ def record_live_event(
     message: str,
     severity: str = "INFO",
     order_id: int | None = None,
+    generation: int | None = None,
     payload: dict | None = None,
     commit: bool = False,
 ) -> LiveTradingEvent:
     event = LiveTradingEvent(
         order_id=order_id,
         event_type=event_type,
+        generation=generation,
         severity=severity,
         message=message,
         payload=payload,
@@ -243,9 +250,23 @@ def update_live_policy(
             False
         )
 
+    if (
+        policy.mode == "DRY_RUN"
+        and policy.dry_run_started_at
+        is None
+    ):
+        policy.dry_run_started_at = (
+            datetime.now(timezone.utc)
+        )
+
     record_live_event(
         db,
         event_type="POLICY_UPDATED",
+        generation=(
+            policy.dry_run_generation
+            if policy.mode == "DRY_RUN"
+            else None
+        ),
         message=(
             "Policy Live Trading "
             "aggiornata."
@@ -288,6 +309,11 @@ def engage_kill_switch(
     record_live_event(
         db,
         event_type="KILL_SWITCH_ENGAGED",
+        generation=(
+            policy.dry_run_generation
+            if policy.mode == "DRY_RUN"
+            else None
+        ),
         severity=(
             "CRITICAL"
             if automatic
@@ -316,6 +342,11 @@ def release_kill_switch(
     record_live_event(
         db,
         event_type="KILL_SWITCH_RELEASED",
+        generation=(
+            policy.dry_run_generation
+            if policy.mode == "DRY_RUN"
+            else None
+        ),
         message=(
             "Kill switch Live Trading "
             "rilasciato manualmente."

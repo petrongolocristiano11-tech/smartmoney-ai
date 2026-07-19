@@ -6,6 +6,7 @@ import {
 } from "react";
 import LiveTradingWorkerPanel from "../components/liveTrading/LiveTradingWorkerPanel";
 import LiveTradingBadge from "../components/liveTrading/LiveTradingBadge";
+import LiveTradingDryRunReset from "../components/liveTrading/LiveTradingDryRunReset";
 import LiveTradingEvents from "../components/liveTrading/LiveTradingEvents";
 import LiveTradingMetric from "../components/liveTrading/LiveTradingMetric";
 import LiveTradingOrders from "../components/liveTrading/LiveTradingOrders";
@@ -26,6 +27,7 @@ import {
   getLiveTradingPositions,
   getLiveTradingStatus,
   releaseLiveTradingKillSwitch,
+  resetLiveTradingDryRun,
   updateLiveTradingPolicy,
 } from "../services/liveTradingApi";
 
@@ -182,6 +184,9 @@ function LiveTrading() {
   const [autoRefresh, setAutoRefresh] =
     useState(true);
 
+  const [historyScope, setHistoryScope] =
+    useState("ACTIVE");
+
   const clearAccess = useCallback(
     (reason = "") => {
       sessionStorage.removeItem(
@@ -249,15 +254,22 @@ function LiveTrading() {
           getLiveTradingStatus(key),
           getLiveTradingOrders(
             key,
-            orderFilters
+            {
+              ...orderFilters,
+              scope: historyScope,
+            }
           ),
           getLiveTradingPositions(
             key,
-            positionFilters
+            {
+              ...positionFilters,
+              scope: historyScope,
+            }
           ),
           getLiveTradingEvents(
             key,
-            200
+            200,
+            historyScope
           ),
         ]);
 
@@ -299,6 +311,7 @@ function LiveTrading() {
     [
       accessKey,
       handleRequestError,
+      historyScope,
       orderFilters,
       positionFilters,
     ]
@@ -418,6 +431,28 @@ function LiveTrading() {
       "Policy Live Trading aggiornata."
     );
   }
+
+  async function handleDryRunReset(
+    payload
+  ) {
+    const resetCompleted = await runAction(
+      "dry-run-reset",
+      () =>
+        resetLiveTradingDryRun(
+          accessKey,
+          payload
+        ),
+      "Nuova generazione DRY_RUN creata. Storico precedente archiviato."
+    );
+
+    if (resetCompleted) {
+      setHistoryScope("ACTIVE");
+      setActiveTab("control");
+    }
+
+    return resetCompleted;
+  }
+
 
   async function handleKillSwitch() {
     const confirmed = window.confirm(
@@ -554,6 +589,27 @@ function LiveTrading() {
               <button
                 type="button"
                 onClick={() =>
+                  setHistoryScope(
+                    (current) =>
+                      current === "ACTIVE"
+                        ? "ALL"
+                        : "ACTIVE"
+                  )
+                }
+                className={`rounded-xl border px-4 py-2.5 text-sm font-bold transition ${
+                  historyScope === "ACTIVE"
+                    ? "border-blue-700 bg-blue-950/50 text-blue-300"
+                    : "border-amber-700 bg-amber-950/50 text-amber-300"
+                }`}
+              >
+                {historyScope === "ACTIVE"
+                  ? "Generazione attiva"
+                  : "Storico completo"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
                   setAutoRefresh(
                     (current) => !current
                   )
@@ -651,11 +707,14 @@ function LiveTrading() {
               label="Modalità"
               value={policy.mode}
               tone={modeTone}
-              subtitle={
+              subtitle={`${
                 policy.stream_execution_enabled
                   ? "Stream automatico attivo"
                   : "Stream automatico spento"
-              }
+              } · Generazione #${
+                status.active_generation
+                ?? policy.dry_run_generation
+              }`}
             />
 
             <LiveTradingMetric
@@ -915,6 +974,24 @@ function LiveTrading() {
                     : "Esegui trade sorgente"}
                 </button>
               </form>
+            </LiveTradingSection>
+
+            <LiveTradingSection
+              title="Reset controllato DRY_RUN"
+              description="Archivia il test attuale senza cancellare ordini o eventi e crea una nuova generazione con esposizione e limiti giornalieri puliti."
+            >
+              <LiveTradingDryRunReset
+                key={`dry-run-${policy.dry_run_generation}-${policy.updated_at}`}
+                policy={policy}
+                status={status}
+                resetting={
+                  busyAction
+                  === "dry-run-reset"
+                }
+                onReset={
+                  handleDryRunReset
+                }
+              />
             </LiveTradingSection>
 
             <LiveTradingSection

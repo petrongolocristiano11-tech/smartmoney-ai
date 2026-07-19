@@ -68,9 +68,12 @@ def utc_now() -> datetime:
 
 def build_idempotency_key(
     trade: Trade,
+    *,
+    generation: int,
 ) -> str:
     material = "|".join(
         (
+            str(generation),
             str(
                 trade.signature or ""
             ).strip(),
@@ -195,9 +198,22 @@ def _claim_order(
     LiveCopyOrder,
     bool,
 ]:
+    generation = (
+        max(
+            1,
+            int(
+                policy.dry_run_generation
+                or 1
+            ),
+        )
+        if policy.mode == "DRY_RUN"
+        else 1
+    )
+
     idempotency_key = (
         build_idempotency_key(
-            trade
+            trade,
+            generation=generation,
         )
     )
 
@@ -238,6 +254,7 @@ def _claim_order(
             trade.token_amount
         ),
         mode=policy.mode,
+        generation=generation,
         status="RECEIVED",
         input_mint=input_mint,
         output_mint=output_mint,
@@ -279,12 +296,15 @@ def _get_position_for_update(
     db: Session,
     *,
     mode: str,
+    generation: int,
     token_mint: str,
 ) -> LivePosition | None:
     return (
         db.query(LivePosition)
         .filter(
             LivePosition.mode == mode,
+            LivePosition.generation
+            == generation,
             LivePosition.token_mint
             == token_mint,
         )
@@ -308,6 +328,7 @@ def _apply_filled_position(
         _get_position_for_update(
             db,
             mode=order.mode,
+            generation=plan.generation,
             token_mint=(
                 plan.token_mint
             ),
@@ -318,6 +339,7 @@ def _apply_filled_position(
         if position is None:
             position = LivePosition(
                 mode=order.mode,
+                generation=plan.generation,
                 token_mint=(
                     plan.token_mint
                 ),
@@ -518,6 +540,7 @@ def _finalize_error(
     record_live_event(
         db,
         order_id=order.id,
+        generation=order.generation,
         event_type=(
             "ORDER_FAILED"
             if technical_failure
@@ -839,6 +862,7 @@ def execute_source_trade(
             record_live_event(
                 db,
                 order_id=order.id,
+                generation=order.generation,
                 event_type=(
                     "DRY_RUN_COMPLETED"
                 ),
@@ -986,6 +1010,7 @@ def execute_source_trade(
         record_live_event(
             db,
             order_id=order.id,
+            generation=order.generation,
             event_type="ORDER_FILLED",
             message=(
                 "Ordine copy-trading "
@@ -1058,6 +1083,22 @@ def get_live_trading_status(
         else None
     )
 
+    generation_filter = (
+        max(
+            1,
+            int(
+                policy.dry_run_generation
+                or 1
+            ),
+        )
+        if mode_filter == "DRY_RUN"
+        else (
+            1
+            if mode_filter == "LIVE"
+            else None
+        )
+    )
+
     positions_query = (
         db.query(LivePosition)
         .filter(
@@ -1074,6 +1115,14 @@ def get_live_trading_status(
             )
         )
 
+    if generation_filter is not None:
+        positions_query = (
+            positions_query.filter(
+                LivePosition.generation
+                == generation_filter
+            )
+        )
+
     open_positions = (
         positions_query.count()
     )
@@ -1083,6 +1132,9 @@ def get_live_trading_status(
             get_total_exposure_sol(
                 db,
                 mode=mode_filter,
+                generation=(
+                    generation_filter
+                ),
             )
         )
 
@@ -1107,28 +1159,43 @@ def get_live_trading_status(
 
     today = utc_day_start()
 
-    orders_today = (
+    orders_query = (
         db.query(LiveCopyOrder)
         .filter(
             LiveCopyOrder.created_at
             >= today
         )
-        .count()
+    )
+
+    if mode_filter:
+        orders_query = (
+            orders_query.filter(
+                LiveCopyOrder.mode
+                == mode_filter
+            )
+        )
+
+    if generation_filter is not None:
+        orders_query = (
+            orders_query.filter(
+                LiveCopyOrder.generation
+                == generation_filter
+            )
+        )
+
+    orders_today = (
+        orders_query.count()
     )
 
     filled_orders_today = (
-        db.query(LiveCopyOrder)
-        .filter(
-            LiveCopyOrder.created_at
-            >= today,
+        orders_query.filter(
             LiveCopyOrder.status.in_(
                 (
                     "DRY_RUN",
                     "FILLED",
                 )
-            ),
-        )
-        .count()
+            )
+        ).count()
     )
 
     wallet_balance_sol: (
@@ -1184,6 +1251,17 @@ def get_live_trading_status(
             get_realized_pnl_today_sol(
                 db,
                 mode=mode_filter,
+                generation=(
+                    generation_filter
+                ),
+            ),
+        "active_generation":
+            generation_filter,
+        "generation_started_at":
+            (
+                policy.dry_run_started_at
+                if mode_filter == "DRY_RUN"
+                else None
             ),
     }
 
@@ -1194,6 +1272,7 @@ def list_live_orders(
     limit: int = 100,
     status: str | None = None,
     mode: str | None = None,
+    generation: int | None = None,
 ) -> list[LiveCopyOrder]:
     query = db.query(
         LiveCopyOrder
@@ -1209,6 +1288,12 @@ def list_live_orders(
         query = query.filter(
             LiveCopyOrder.mode
             == mode.upper()
+        )
+
+    if generation is not None:
+        query = query.filter(
+            LiveCopyOrder.generation
+            == generation
         )
 
     return (
@@ -1236,6 +1321,7 @@ def list_live_positions(
     *,
     status: str | None = None,
     mode: str | None = None,
+    generation: int | None = None,
 ) -> list[LivePosition]:
     query = db.query(
         LivePosition
@@ -1253,6 +1339,12 @@ def list_live_positions(
             == mode.upper()
         )
 
+    if generation is not None:
+        query = query.filter(
+            LivePosition.generation
+            == generation
+        )
+
     return (
         query
         .order_by(
@@ -1268,11 +1360,20 @@ def list_live_events(
     db: Session,
     *,
     limit: int = 200,
+    generation: int | None = None,
 ) -> list[LiveTradingEvent]:
-    return (
-        db.query(
-            LiveTradingEvent
+    query = db.query(
+        LiveTradingEvent
+    )
+
+    if generation is not None:
+        query = query.filter(
+            LiveTradingEvent.generation
+            == generation
         )
+
+    return (
+        query
         .order_by(
             LiveTradingEvent
             .created_at

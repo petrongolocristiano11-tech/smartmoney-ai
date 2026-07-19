@@ -248,3 +248,254 @@ def test_dry_run_api_workflow(
         positions.json()["count"]
         == 1
     ) 
+
+def test_dry_run_reset_starts_clean_generation(
+    api_client,
+):
+    client, trade_id = api_client
+
+    policy_response = client.patch(
+        "/live-trading/policy",
+        headers=headers(),
+        json={
+            "mode": "DRY_RUN",
+            "source_wallets": [WALLET],
+            "fixed_buy_size_sol": 0.05,
+            "max_order_size_sol": 0.1,
+            "max_daily_buy_sol": 0.5,
+            "max_total_exposure_sol": 0.5,
+            "stream_execution_enabled": False,
+        },
+    )
+
+    assert (
+        policy_response.status_code
+        == 200
+    )
+
+    first_execution = client.post(
+        (
+            "/live-trading/"
+            "execute/trades/"
+            f"{trade_id}"
+        ),
+        headers=headers(),
+    )
+
+    assert (
+        first_execution.status_code
+        == 200
+    )
+
+    assert (
+        first_execution.json()
+        ["generation"]
+        == 1
+    )
+
+    reset_response = client.post(
+        "/live-trading/dry-run/reset",
+        headers=headers(),
+        json={
+            "confirmation":
+                "RESET DRY RUN",
+            "source_wallets":
+                [WALLET],
+            "start_stream": False,
+            "buy_enabled": True,
+            "sell_enabled": True,
+        },
+    )
+
+    assert (
+        reset_response.status_code
+        == 200
+    )
+
+    reset_payload = (
+        reset_response.json()
+    )
+
+    assert (
+        reset_payload
+        ["previous_generation"]
+        == 1
+    )
+
+    assert (
+        reset_payload
+        ["active_generation"]
+        == 2
+    )
+
+    assert (
+        reset_payload
+        ["archived_positions"]
+        == 1
+    )
+
+    assert (
+        reset_payload
+        ["archived_exposure_sol"]
+        == pytest.approx(0.05)
+    )
+
+    active_positions = client.get(
+        "/live-trading/positions",
+        headers=headers(),
+    )
+
+    assert (
+        active_positions.status_code
+        == 200
+    )
+
+    assert (
+        active_positions.json()["count"]
+        == 0
+    )
+
+    historical_positions = client.get(
+        (
+            "/live-trading/positions"
+            "?scope=ALL"
+        ),
+        headers=headers(),
+    )
+
+    assert (
+        historical_positions.json()
+        ["count"]
+        == 1
+    )
+
+    archived_position = (
+        historical_positions.json()
+        ["positions"][0]
+    )
+
+    assert (
+        archived_position["status"]
+        == "CLOSED"
+    )
+
+    assert (
+        archived_position["generation"]
+        == 1
+    )
+
+    active_orders = client.get(
+        "/live-trading/orders",
+        headers=headers(),
+    )
+
+    assert (
+        active_orders.json()["count"]
+        == 0
+    )
+
+    historical_orders = client.get(
+        "/live-trading/orders?scope=ALL",
+        headers=headers(),
+    )
+
+    assert (
+        historical_orders.json()["count"]
+        == 1
+    )
+
+    second_execution = client.post(
+        (
+            "/live-trading/"
+            "execute/trades/"
+            f"{trade_id}"
+        ),
+        headers=headers(),
+    )
+
+    assert (
+        second_execution.status_code
+        == 200
+    )
+
+    assert (
+        second_execution.json()
+        ["generation"]
+        == 2
+    )
+
+    status_response = client.get(
+        "/live-trading/status",
+        headers=headers(),
+    )
+
+    assert (
+        status_response.status_code
+        == 200
+    )
+
+    status_payload = (
+        status_response.json()
+    )
+
+    assert (
+        status_payload
+        ["active_generation"]
+        == 2
+    )
+
+    assert (
+        status_payload
+        ["open_positions"]
+        == 1
+    )
+
+    assert (
+        status_payload
+        ["total_exposure_sol"]
+        == pytest.approx(0.05)
+    )
+
+
+def test_dry_run_reset_requires_stream_off(
+    api_client,
+):
+    client, _ = api_client
+
+    response = client.patch(
+        "/live-trading/policy",
+        headers=headers(),
+        json={
+            "mode": "DRY_RUN",
+            "source_wallets": [WALLET],
+            "stream_execution_enabled": True,
+        },
+    )
+
+    assert response.status_code == 200
+
+    reset_response = client.post(
+        "/live-trading/dry-run/reset",
+        headers=headers(),
+        json={
+            "confirmation":
+                "RESET DRY RUN",
+            "source_wallets":
+                [WALLET],
+            "start_stream": False,
+        },
+    )
+
+    assert (
+        reset_response.status_code
+        == 409
+    )
+
+    assert (
+        reset_response.json()
+        ["detail"]["code"]
+        == (
+            "DRY_RUN_STREAM_"
+            "MUST_BE_DISABLED"
+        )
+    )

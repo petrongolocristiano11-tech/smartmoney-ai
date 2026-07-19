@@ -73,6 +73,13 @@ class LiveCopyOrder(Base):
                 "slippage_range"
             ),
         ),
+        CheckConstraint(
+            "generation >= 1",
+            name=(
+                "ck_live_copy_orders_"
+                "generation_positive"
+            ),
+        ),
         Index(
             "ix_live_copy_orders_"
             "created_status",
@@ -151,6 +158,14 @@ class LiveCopyOrder(Base):
     mode: Mapped[str] = mapped_column(
         String(20),
         index=True,
+    )
+
+    generation: Mapped[int] = (
+        mapped_column(
+            Integer,
+            default=1,
+            index=True,
+        )
     )
 
     status: Mapped[str] = (

@@ -33,6 +33,14 @@ class LiveTradingEvent(Base):
                 "severity"
             ),
         ),
+        CheckConstraint(
+            "generation IS NULL "
+            "OR generation >= 1",
+            name=(
+                "ck_live_trading_events_"
+                "generation_positive"
+            ),
+        ),
     )
 
     id: Mapped[int] = mapped_column(
@@ -57,6 +65,14 @@ class LiveTradingEvent(Base):
             String(80),
             index=True,
         )
+    )
+
+    generation: Mapped[
+        int | None
+    ] = mapped_column(
+        Integer,
+        nullable=True,
+        index=True,
     )
 
     severity: Mapped[str] = (

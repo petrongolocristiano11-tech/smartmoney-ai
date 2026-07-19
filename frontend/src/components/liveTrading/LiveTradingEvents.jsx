@@ -40,6 +40,12 @@ function LiveTradingEvents({
                   {event.event_type}
                 </span>
 
+                {event.generation && (
+                  <span className="text-xs font-semibold text-slate-500">
+                    Generazione #{event.generation}
+                  </span>
+                )}
+
                 {event.order_id && (
                   <span className="text-xs font-semibold text-slate-500">
                     Ordine #{event.order_id}

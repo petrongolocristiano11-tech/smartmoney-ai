@@ -231,6 +231,84 @@ class LiveTradingPolicyUpdateRequest(
         return self
 
 
+class LiveTradingDryRunResetRequest(
+    BaseModel
+):
+    confirmation: str
+
+    source_wallets: list[str] = (
+        Field(default_factory=list)
+    )
+
+    start_stream: bool = False
+
+    buy_enabled: bool = True
+
+    sell_enabled: bool = True
+
+    @field_validator(
+        "source_wallets"
+    )
+    @classmethod
+    def normalize_source_wallets(
+        cls,
+        value: list[str],
+    ) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+
+        for wallet in value:
+            address = str(
+                wallet
+            ).strip()
+
+            if not address:
+                continue
+
+            if not 32 <= len(
+                address
+            ) <= 44:
+                raise ValueError(
+                    "Wallet Solana non valido: "
+                    f"{address}"
+                )
+
+            if address not in seen:
+                normalized.append(
+                    address
+                )
+                seen.add(address)
+
+        return normalized
+
+    @model_validator(
+        mode="after"
+    )
+    def validate_reset(
+        self,
+    ):
+        if (
+            self.confirmation
+            != "RESET DRY RUN"
+        ):
+            raise ValueError(
+                "Conferma non valida. "
+                "Usa esattamente: "
+                "RESET DRY RUN"
+            )
+
+        if (
+            self.start_stream
+            and not self.source_wallets
+        ):
+            raise ValueError(
+                "Per avviare lo stream "
+                "serve almeno un wallet."
+            )
+
+        return self
+
+
 class LiveTradingPolicyResponse(
     BaseModel
 ):
@@ -261,6 +339,8 @@ class LiveTradingPolicyResponse(
     max_source_trade_age_seconds: int
     max_consecutive_failures: int
     consecutive_failures: int
+    dry_run_generation: int
+    dry_run_started_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -278,6 +358,8 @@ class LivePositionResponse(
         "DRY_RUN",
         "LIVE",
     ]
+
+    generation: int
 
     token_mint: str
 
@@ -322,6 +404,8 @@ class LiveCopyOrderResponse(
         "DRY_RUN",
         "LIVE",
     ]
+
+    generation: int
 
     status: Literal[
         "RECEIVED",
@@ -370,6 +454,7 @@ class LiveTradingEventResponse(
     id: int
     order_id: int | None
     event_type: str
+    generation: int | None
 
     severity: Literal[
         "INFO",
@@ -453,6 +538,23 @@ class LiveTradingStatusResponse(
     filled_orders_today: int
 
     realized_pnl_today_sol: float
+
+    active_generation: int | None
+
+    generation_started_at: (
+        datetime | None
+    )
+
+
+class LiveTradingDryRunResetResponse(
+    BaseModel
+):
+    policy: LiveTradingPolicyResponse
+    previous_generation: int
+    active_generation: int
+    archived_positions: int
+    archived_exposure_sol: float
+    reset_at: datetime
 
 
 class KillSwitchReleaseRequest(

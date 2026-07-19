@@ -44,6 +44,7 @@ ACTIVE_ORDER_STATUSES = {
 @dataclass(frozen=True)
 class LiveExecutionPlan:
     side: str
+    generation: int
     token_mint: str
     input_mint: str
     output_mint: str
@@ -95,8 +96,9 @@ def get_total_exposure_sol(
     db: Session,
     *,
     mode: str,
+    generation: int | None = None,
 ) -> float:
-    value = (
+    query = (
         db.query(
             func.coalesce(
                 func.sum(
@@ -112,8 +114,15 @@ def get_total_exposure_sol(
             LivePosition.mode
             == mode,
         )
-        .scalar()
     )
+
+    if generation is not None:
+        query = query.filter(
+            LivePosition.generation
+            == generation
+        )
+
+    value = query.scalar()
 
     return float(
         value or 0.0
@@ -124,6 +133,7 @@ def get_daily_buy_sol(
     db: Session,
     *,
     mode: str,
+    generation: int | None = None,
     current_order_id: int | None = None,
     now: datetime | None = None,
 ) -> float:
@@ -147,6 +157,12 @@ def get_daily_buy_sol(
         ),
     )
 
+    if generation is not None:
+        query = query.filter(
+            LiveCopyOrder.generation
+            == generation
+        )
+
     if current_order_id is not None:
         query = query.filter(
             LiveCopyOrder.id
@@ -162,6 +178,7 @@ def get_realized_pnl_today_sol(
     db: Session,
     *,
     mode: str | None = None,
+    generation: int | None = None,
     now: datetime | None = None,
 ) -> float:
     query = db.query(
@@ -187,6 +204,12 @@ def get_realized_pnl_today_sol(
         query = query.filter(
             LiveCopyOrder.mode
             == mode
+        )
+
+    if generation is not None:
+        query = query.filter(
+            LiveCopyOrder.generation
+            == generation
         )
 
     value = query.scalar()
@@ -218,6 +241,18 @@ def build_live_execution_plan(
     now: datetime | None = None,
 ) -> LiveExecutionPlan:
     now = now or utc_now()
+
+    generation = (
+        max(
+            1,
+            int(
+                policy.dry_run_generation
+                or 1
+            ),
+        )
+        if policy.mode == "DRY_RUN"
+        else 1
+    )
 
     side = str(
         trade.side or ""
@@ -342,6 +377,7 @@ def build_live_execution_plan(
         get_realized_pnl_today_sol(
             db,
             mode=policy.mode,
+            generation=generation,
             now=now,
         )
     )
@@ -400,6 +436,7 @@ def build_live_execution_plan(
         daily_buy = get_daily_buy_sol(
             db,
             mode=policy.mode,
+            generation=generation,
             current_order_id=(
                 current_order_id
             ),
@@ -421,6 +458,7 @@ def build_live_execution_plan(
             get_total_exposure_sol(
                 db,
                 mode=policy.mode,
+                generation=generation,
             )
         )
 
@@ -486,6 +524,7 @@ def build_live_execution_plan(
 
         return LiveExecutionPlan(
             side=side,
+            generation=generation,
             token_mint=token_mint,
             input_mint=SOL_MINT,
             output_mint=token_mint,
@@ -501,6 +540,8 @@ def build_live_execution_plan(
         .filter(
             LivePosition.mode
             == policy.mode,
+            LivePosition.generation
+            == generation,
             LivePosition.token_mint
             == token_mint,
             LivePosition.status
@@ -571,6 +612,7 @@ def build_live_execution_plan(
 
     return LiveExecutionPlan(
         side=side,
+        generation=generation,
         token_mint=token_mint,
         input_mint=token_mint,
         output_mint=SOL_MINT,

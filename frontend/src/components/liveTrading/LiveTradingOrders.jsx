@@ -152,6 +152,10 @@ function LiveTradingOrders({
                     <LiveTradingBadge
                       value={order.source_side}
                     />
+
+                    <span className="rounded-full border border-slate-600 bg-slate-950 px-2.5 py-1 text-xs font-bold text-slate-400">
+                      Gen #{order.generation}
+                    </span>
                   </div>
 
                   <p

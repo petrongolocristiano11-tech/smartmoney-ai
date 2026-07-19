@@ -44,6 +44,18 @@ export function updateLiveTradingPolicy(
 }
 
 
+export function resetLiveTradingDryRun(
+  accessKey,
+  payload
+) {
+  return api.post(
+    "/live-trading/dry-run/reset",
+    payload,
+    getLiveTradingConfig(accessKey)
+  );
+}
+
+
 export function engageLiveTradingKillSwitch(
   accessKey
 ) {
@@ -89,6 +101,7 @@ export function getLiveTradingOrders(
     limit = 100,
     status = "",
     mode = "",
+    scope = "ACTIVE",
   } = {}
 ) {
   return api.get(
@@ -99,6 +112,7 @@ export function getLiveTradingOrders(
         limit,
         status: status || undefined,
         mode: mode || undefined,
+        scope,
       },
     }
   );
@@ -110,6 +124,7 @@ export function getLiveTradingPositions(
   {
     status = "",
     mode = "",
+    scope = "ACTIVE",
   } = {}
 ) {
   return api.get(
@@ -119,6 +134,7 @@ export function getLiveTradingPositions(
       params: {
         status: status || undefined,
         mode: mode || undefined,
+        scope,
       },
     }
   );
@@ -127,7 +143,8 @@ export function getLiveTradingPositions(
 
 export function getLiveTradingEvents(
   accessKey,
-  limit = 200
+  limit = 200,
+  scope = "ACTIVE"
 ) {
   return api.get(
     "/live-trading/events",
@@ -135,6 +152,7 @@ export function getLiveTradingEvents(
       ...getLiveTradingConfig(accessKey),
       params: {
         limit,
+        scope,
       },
     }
   );
