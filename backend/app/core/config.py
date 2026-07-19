@@ -140,6 +140,20 @@ class Settings(BaseSettings):
     # LIVE STREAM WORKER
     # =========================
 
+    RUN_LIVE_STREAM_WORKER: bool = False
+
+    LIVE_STREAM_EMBEDDED_RESTART_SECONDS: float = Field(
+        default=5.0,
+        ge=1.0,
+        le=300.0,
+    )
+
+    LIVE_STREAM_SHUTDOWN_TIMEOUT_SECONDS: float = Field(
+        default=25.0,
+        ge=5.0,
+        le=120.0,
+    )
+
     LIVE_STREAM_POLICY_REFRESH_SECONDS: int = Field(
         default=10,
         ge=3,
@@ -538,38 +552,50 @@ class Settings(BaseSettings):
                 "contenere almeno 32 caratteri."
             )
 
-        live_values = (
+        if (
+            self.LIVE_TRADING_API_KEY
+            and len(
+                self.LIVE_TRADING_API_KEY
+            ) < 32
+        ):
+            raise ValueError(
+                "In produzione "
+                "LIVE_TRADING_API_KEY deve "
+                "contenere almeno 32 caratteri."
+            )
+
+        live_wallet_values = (
             self.LIVE_TRADING_WALLET_ADDRESS,
             self.LIVE_TRADING_PRIVATE_KEY,
-            self.LIVE_TRADING_API_KEY,
         )
 
-        if any(live_values):
-            if not all(live_values):
-                raise ValueError(
-                    "La configurazione Live Trading "
-                    "in produzione deve includere "
-                    "wallet, chiave privata e API "
-                    "key interna."
-                )
+        if (
+            any(live_wallet_values)
+            and not all(live_wallet_values)
+        ):
+            raise ValueError(
+                "La configurazione del wallet "
+                "LIVE deve includere sia "
+                "LIVE_TRADING_WALLET_ADDRESS sia "
+                "LIVE_TRADING_PRIVATE_KEY."
+            )
 
-            if len(
-                self.LIVE_TRADING_API_KEY
-            ) < 32:
+        if all(live_wallet_values):
+            if not self.LIVE_TRADING_API_KEY:
                 raise ValueError(
-                    "In produzione "
-                    "LIVE_TRADING_API_KEY deve "
-                    "contenere almeno 32 caratteri."
+                    "LIVE_TRADING_API_KEY ? "
+                    "obbligatoria quando il wallet "
+                    "LIVE ? configurato."
                 )
 
             if not self.JUPITER_API_KEY:
                 raise ValueError(
-                    "JUPITER_API_KEY è obbligatoria "
-                    "quando il Live Trading è "
-                    "configurato in produzione."
+                    "JUPITER_API_KEY ? obbligatoria "
+                    "quando il wallet LIVE ? "
+                    "configurato."
                 )
 
         return self
 
 
-settings = Settings() 
+settings = Settings()

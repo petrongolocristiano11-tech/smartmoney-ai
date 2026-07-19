@@ -2,6 +2,9 @@ import logging
 from contextlib import (
     asynccontextmanager,
 )
+from backend.app.services.live_trading_worker_runtime import (
+    live_trading_worker_runtime,
+)
 from datetime import (
     datetime,
     timezone,
@@ -104,14 +107,20 @@ async def lifespan(
             type(exception).__name__,
         )
 
-    yield
+    await live_trading_worker_runtime.start()
 
-    engine.dispose()
+    try:
+        yield
 
-    logger.info(
-        "application_stopped name=%s",
-        settings.APP_NAME,
-    )
+    finally:
+        await live_trading_worker_runtime.stop()
+
+        engine.dispose()
+
+        logger.info(
+            "application_stopped name=%s",
+            settings.APP_NAME,
+        )
 
 
 app = FastAPI(
@@ -359,4 +368,4 @@ def readiness():
         },
         "timestamp":
             utc_timestamp(),
-    } 
+    }
