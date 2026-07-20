@@ -6,6 +6,14 @@ import {
 } from "./liveTradingFormatters";
 
 
+function pnlTone(value) {
+  const number = Number(value ?? 0);
+  if (number > 0) return "text-green-300";
+  if (number < 0) return "text-red-300";
+  return "text-slate-400";
+}
+
+
 function LiveTradingPositions({
   positions,
   filters,
@@ -95,194 +103,162 @@ function LiveTradingPositions({
       )}
 
       <div className="overflow-x-auto rounded-xl border border-slate-700">
-        <table className="min-w-[1120px] w-full text-left text-sm">
+        <table className="min-w-[1680px] w-full text-left text-sm">
           <thead className="bg-slate-950/80 text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-4 py-3">
-                Token
-              </th>
-              <th className="px-4 py-3">
-                Stato
-              </th>
-              <th className="px-4 py-3 text-right">
-                Quantità raw
-              </th>
-              <th className="px-4 py-3 text-right">
-                Cost basis SOL
-              </th>
-              <th className="px-4 py-3 text-right">
-                PnL realizzato SOL
-              </th>
-              <th className="px-4 py-3">
-                Ultimo BUY
-              </th>
-              <th className="px-4 py-3">
-                Ultimo SELL
-              </th>
-              <th className="px-4 py-3">
-                Aggiornata
-              </th>
-              <th className="px-4 py-3 text-right">
-                Azione
-              </th>
+              <th className="px-4 py-3">Token</th>
+              <th className="px-4 py-3">Stato</th>
+              <th className="px-4 py-3 text-right">Quantità raw</th>
+              <th className="px-4 py-3 text-right">Cost basis</th>
+              <th className="px-4 py-3 text-right">Valore corrente</th>
+              <th className="px-4 py-3 text-right">PnL non realizzato</th>
+              <th className="px-4 py-3 text-right">ROI</th>
+              <th className="px-4 py-3 text-right">PnL realizzato</th>
+              <th className="px-4 py-3">Controllo uscita</th>
+              <th className="px-4 py-3">Ultimo BUY</th>
+              <th className="px-4 py-3">Ultimo SELL</th>
+              <th className="px-4 py-3">Aggiornata</th>
+              <th className="px-4 py-3 text-right">Azione</th>
             </tr>
           </thead>
 
           <tbody className="divide-y divide-slate-800 bg-slate-900/50">
-            {positions.map(
-              (position) => {
-                const isActiveDryRun = (
-                  position.mode === "DRY_RUN"
-                  && position.status === "OPEN"
-                  && Number(position.generation)
-                    === Number(activeGeneration)
-                );
+            {positions.map((position) => {
+              const isActiveDryRun = (
+                position.mode === "DRY_RUN"
+                && position.status === "OPEN"
+                && Number(position.generation) === Number(activeGeneration)
+              );
+              const isClosing = Number(closingPositionId) === Number(position.id);
+              const hasQuote = position.current_value_sol !== null
+                && position.current_value_sol !== undefined;
 
-                const isClosing = (
-                  Number(closingPositionId)
-                    === Number(position.id)
-                );
+              return (
+                <tr
+                  key={position.id}
+                  className="transition hover:bg-slate-800/70"
+                >
+                  <td className="px-4 py-4">
+                    <p
+                      className="font-mono text-xs text-blue-300"
+                      title={position.token_mint}
+                    >
+                      {shortenLiveAddress(position.token_mint, 9, 8)}
+                    </p>
 
-                return (
-                  <tr
-                    key={position.id}
-                    className="transition hover:bg-slate-800/70"
-                  >
-                    <td className="px-4 py-4">
-                      <p
-                        className="font-mono text-xs text-blue-300"
-                        title={position.token_mint}
-                      >
-                        {shortenLiveAddress(
-                          position.token_mint,
-                          9,
-                          8
-                        )}
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <LiveTradingBadge value={position.mode} />
+                      <span className="rounded-full border border-slate-600 bg-slate-950 px-2.5 py-1 text-xs font-bold text-slate-400">
+                        Gen #{position.generation}
+                      </span>
+                    </div>
+                  </td>
+
+                  <td className="px-4 py-4">
+                    <LiveTradingBadge value={position.status} />
+                    {position.exit_pending && (
+                      <p className="mt-2 text-xs font-bold text-amber-300">
+                        Uscita pendente
                       </p>
+                    )}
+                  </td>
 
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <LiveTradingBadge
-                          value={position.mode}
-                        />
+                  <td className="px-4 py-4 text-right font-mono text-xs text-slate-300">
+                    {formatLiveNumber(position.quantity_raw, 0)}
+                  </td>
 
-                        <span className="rounded-full border border-slate-600 bg-slate-950 px-2.5 py-1 text-xs font-bold text-slate-400">
-                          Gen #{position.generation}
-                        </span>
-                      </div>
-                    </td>
+                  <td className="px-4 py-4 text-right font-semibold text-slate-200">
+                    {formatLiveNumber(position.cost_basis_sol, 6)} SOL
+                  </td>
 
-                    <td className="px-4 py-4">
-                      <LiveTradingBadge
-                        value={position.status}
-                      />
-                    </td>
+                  <td className="px-4 py-4 text-right font-semibold text-slate-200">
+                    {hasQuote
+                      ? `${formatLiveNumber(position.current_value_sol, 6)} SOL`
+                      : "N/D"}
+                  </td>
 
-                    <td className="px-4 py-4 text-right font-mono text-xs text-slate-300">
-                      {formatLiveNumber(
-                        position.quantity_raw,
-                        0
-                      )}
-                    </td>
+                  <td className={`px-4 py-4 text-right font-bold ${pnlTone(position.unrealized_pnl_sol)}`}>
+                    {hasQuote
+                      ? `${formatLiveNumber(position.unrealized_pnl_sol, 6)} SOL`
+                      : "N/D"}
+                  </td>
 
-                    <td className="px-4 py-4 text-right font-semibold text-slate-200">
-                      {formatLiveNumber(
-                        position.cost_basis_sol,
-                        6
-                      )}
-                    </td>
+                  <td className={`px-4 py-4 text-right font-bold ${pnlTone(position.unrealized_roi_percent)}`}>
+                    {hasQuote
+                      ? `${formatLiveNumber(position.unrealized_roi_percent, 2)}%`
+                      : "N/D"}
+                  </td>
 
-                    <td
-                      className={`px-4 py-4 text-right font-bold ${
-                        Number(
-                          position.realized_pnl_sol
-                        ) > 0
-                          ? "text-green-300"
-                          : Number(
-                              position.realized_pnl_sol
-                            ) < 0
-                            ? "text-red-300"
-                            : "text-slate-400"
-                      }`}
-                    >
-                      {formatLiveNumber(
-                        position.realized_pnl_sol,
-                        6
-                      )}
-                    </td>
+                  <td className={`px-4 py-4 text-right font-bold ${pnlTone(position.realized_pnl_sol)}`}>
+                    {formatLiveNumber(position.realized_pnl_sol, 6)} SOL
+                  </td>
 
-                    <td
-                      className="px-4 py-4 font-mono text-xs text-slate-400"
-                      title={
-                        position.last_buy_signature
-                        ?? ""
-                      }
-                    >
-                      {shortenLiveAddress(
-                        position.last_buy_signature,
-                        8,
-                        6
-                      )}
-                    </td>
+                  <td className="px-4 py-4 text-xs text-slate-400">
+                    <p className={position.last_exit_reason ? "font-bold text-amber-300" : "text-slate-500"}>
+                      {position.last_exit_reason ?? "Nessun trigger"}
+                    </p>
+                    <p className="mt-1">
+                      Quota: {position.last_quote_at ? formatLiveDate(position.last_quote_at) : "mai"}
+                    </p>
+                    {position.trailing_stop_value_sol !== null
+                      && position.trailing_stop_value_sol !== undefined && (
+                      <p className="mt-1">
+                        Trailing: {formatLiveNumber(position.trailing_stop_value_sol, 6)} SOL
+                      </p>
+                    )}
+                  </td>
 
-                    <td
-                      className="px-4 py-4 font-mono text-xs text-slate-400"
-                      title={
-                        position.last_sell_signature
-                        ?? ""
-                      }
-                    >
-                      {shortenLiveAddress(
-                        position.last_sell_signature,
-                        8,
-                        6
-                      )}
-                    </td>
+                  <td
+                    className="px-4 py-4 font-mono text-xs text-slate-400"
+                    title={position.last_buy_signature ?? ""}
+                  >
+                    {shortenLiveAddress(position.last_buy_signature, 8, 6)}
+                  </td>
 
-                    <td className="px-4 py-4 text-xs text-slate-400">
-                      {formatLiveDate(
-                        position.updated_at
-                      )}
-                    </td>
+                  <td
+                    className="px-4 py-4 font-mono text-xs text-slate-400"
+                    title={position.last_sell_signature ?? ""}
+                  >
+                    {shortenLiveAddress(position.last_sell_signature, 8, 6)}
+                  </td>
 
-                    <td className="px-4 py-4 text-right">
-                      {isActiveDryRun ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onCloseDryRun(
-                              position
-                            )
-                          }
-                          disabled={
-                            loading
-                            || streamExecutionEnabled
-                            || Boolean(
-                              closingPositionId
-                            )
-                          }
-                          className="rounded-xl border border-amber-700 bg-amber-950/50 px-3 py-2 text-xs font-bold text-amber-300 transition hover:bg-amber-900/60 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {isClosing
-                            ? "Chiusura..."
-                            : streamExecutionEnabled
-                              ? "Spegni stream"
+                  <td className="px-4 py-4 text-xs text-slate-400">
+                    {formatLiveDate(position.updated_at)}
+                  </td>
+
+                  <td className="px-4 py-4 text-right">
+                    {isActiveDryRun ? (
+                      <button
+                        type="button"
+                        onClick={() => onCloseDryRun(position)}
+                        disabled={
+                          loading
+                          || streamExecutionEnabled
+                          || Boolean(closingPositionId)
+                          || position.exit_pending
+                        }
+                        className="rounded-xl border border-amber-700 bg-amber-950/50 px-3 py-2 text-xs font-bold text-amber-300 transition hover:bg-amber-900/60 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isClosing
+                          ? "Chiusura..."
+                          : streamExecutionEnabled
+                            ? "Spegni stream"
+                            : position.exit_pending
+                              ? "Uscita pendente"
                               : "Chiudi DRY_RUN"}
-                        </button>
-                      ) : (
-                        <span className="text-xs text-slate-600">
-                          —
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              }
-            )}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-slate-600">—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
 
             {positions.length === 0 && (
               <tr>
                 <td
-                  colSpan="9"
+                  colSpan="13"
                   className="px-6 py-14 text-center text-slate-500"
                 >
                   Nessuna posizione trovata con i filtri selezionati.

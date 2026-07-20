@@ -66,6 +66,7 @@ def main() -> None:
             )
 
     assert LiveRiskState.__tablename__ == "live_risk_states"
+    assert "loss_streak_reset_at" in LiveRiskState.__table__.columns
     assert LivePositionMonitorState.__tablename__ == "live_position_monitor_states"
 
     print(f"OpenAPI: {len(paths)} percorsi totali")

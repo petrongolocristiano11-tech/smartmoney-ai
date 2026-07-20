@@ -41,6 +41,7 @@ class LiveRiskStateResponse(BaseModel):
     blocked_reason: str | None
     last_loss_at: datetime | None
     last_fill_at: datetime | None
+    loss_streak_reset_at: datetime | None
     updated_at: datetime
 
 

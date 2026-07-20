@@ -9,6 +9,7 @@ import {
   formatLiveDate,
   formatLiveNumber,
   parseLiveApiError,
+  shortenLiveAddress,
 } from "./liveTradingFormatters";
 import LiveTradingMetric from "./LiveTradingMetric";
 import LiveTradingSection from "./LiveTradingSection";
@@ -22,6 +23,14 @@ function StatusCard({ label, value, detail, tone = "text-white" }) {
       {detail && <p className="mt-1 text-xs leading-5 text-slate-500">{detail}</p>}
     </div>
   );
+}
+
+
+function valueTone(value) {
+  const number = Number(value ?? 0);
+  if (number > 0) return "text-green-300";
+  if (number < 0) return "text-red-300";
+  return "text-slate-400";
 }
 
 
@@ -77,7 +86,10 @@ function LiveTradingOperations({ accessKey }) {
 
   const risk = overview?.risk;
   const monitor = overview?.monitor;
-  const cooldownActive = Boolean(risk?.cooldown_until && new Date(risk.cooldown_until) > new Date());
+  const cooldownActive = Boolean(
+    risk?.cooldown_until
+    && new Date(risk.cooldown_until) > new Date()
+  );
 
   return (
     <div className="space-y-6">
@@ -154,33 +166,52 @@ function LiveTradingOperations({ accessKey }) {
 
       <LiveTradingSection
         title="Stato rischio portafoglio"
-        description="I nuovi BUY vengono bloccati al superamento del drawdown massimo o durante il cooldown dopo perdite consecutive. Le posizioni restano visibili e gestibili."
+        description="La serie di perdite viene ricostruita dagli ordini SELL completati, comprese le chiusure manuali. I nuovi BUY vengono bloccati durante il cooldown o al superamento del drawdown massimo."
       >
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <StatusCard label="PnL realizzato" value={risk ? `${formatLiveNumber(risk.realized_pnl_sol, 6)} SOL` : "N/D"} />
-          <StatusCard label="Serie perdite" value={risk?.loss_streak ?? 0} detail={risk?.last_loss_at ? `Ultima ${formatLiveDate(risk.last_loss_at)}` : "Nessuna perdita registrata"} />
-          <StatusCard label="Cooldown" value={cooldownActive ? "ATTIVO" : "Libero"} tone={cooldownActive ? "text-amber-300" : "text-green-300"} detail={risk?.cooldown_until ? `Fino a ${formatLiveDate(risk.cooldown_until)}` : "Nessuna sospensione"} />
-          <StatusCard label="Motivo blocco" value={risk?.blocked_reason ?? "Nessuno"} />
+          <StatusCard
+            label="Serie perdite"
+            value={risk?.loss_streak ?? 0}
+            detail={risk?.last_loss_at ? `Ultima ${formatLiveDate(risk.last_loss_at)}` : "Nessuna perdita dopo l'ultimo reset"}
+          />
+          <StatusCard
+            label="Cooldown"
+            value={cooldownActive ? "ATTIVO" : "Libero"}
+            tone={cooldownActive ? "text-amber-300" : "text-green-300"}
+            detail={risk?.cooldown_until ? `Fino a ${formatLiveDate(risk.cooldown_until)}` : "Nessuna sospensione attiva"}
+          />
+          <StatusCard
+            label="Storico rischio"
+            value={risk?.loss_streak_reset_at ? "Dal reset" : "Completo"}
+            detail={risk?.loss_streak_reset_at ? `Reset ${formatLiveDate(risk.loss_streak_reset_at)}` : "Include SELL manuali, automatici e sorgente"}
+          />
         </div>
 
-        {cooldownActive && (
+        {risk?.blocked_reason && (
+          <div className="mt-4 rounded-xl border border-amber-700 bg-amber-950/40 px-4 py-3 text-sm text-amber-300">
+            Motivo blocco: <strong>{risk.blocked_reason}</strong>
+          </div>
+        )}
+
+        {(cooldownActive || Number(risk?.loss_streak ?? 0) > 0) && (
           <button
             type="button"
             disabled={busy === "reset-risk"}
             onClick={() => {
-              if (window.confirm("Azzerare manualmente cooldown e serie di perdite?")) {
+              if (window.confirm("Azzerare manualmente cooldown e serie di perdite? Le chiusure precedenti resteranno nello storico PnL ma non verranno ricontate nella serie.")) {
                 runAction("reset-risk", () => resetLiveTradingRiskCooldown(accessKey), "Cooldown rischio azzerato.");
               }
             }}
             className="mt-5 rounded-xl border border-amber-700 bg-amber-950/50 px-5 py-3 font-bold text-amber-300 transition hover:bg-amber-900/60 disabled:opacity-50"
           >
-            Azzera cooldown rischio
+            Azzera serie e cooldown
           </button>
         )}
       </LiveTradingSection>
 
       {lastCycle && (
-        <LiveTradingSection title="Ultimo ciclo manuale" description="Riepilogo dell'ultima esecuzione richiesta da questa dashboard.">
+        <LiveTradingSection title="Ultimo ciclo manuale" description="Riepilogo e dettaglio delle quotazioni eseguite dalla dashboard. Con uscite automatiche spente, il ciclo aggiorna soltanto valori, PnL e trigger potenziali.">
           <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
             <StatusCard label="Posizioni" value={lastCycle.positions_scanned} />
             <StatusCard label="Quote riuscite" value={lastCycle.quotes_succeeded} />
@@ -189,6 +220,59 @@ function LiveTradingOperations({ accessKey }) {
             <StatusCard label="Uscite completate" value={lastCycle.exits_completed} />
             <StatusCard label="Uscite fallite" value={lastCycle.exits_failed} />
           </div>
+
+          {lastCycle.items?.length > 0 && (
+            <div className="mt-5 overflow-x-auto rounded-xl border border-slate-700">
+              <table className="min-w-[1050px] w-full text-left text-sm">
+                <thead className="bg-slate-950/80 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Posizione</th>
+                    <th className="px-4 py-3">Token</th>
+                    <th className="px-4 py-3 text-right">Cost basis</th>
+                    <th className="px-4 py-3 text-right">Valore</th>
+                    <th className="px-4 py-3 text-right">PnL</th>
+                    <th className="px-4 py-3 text-right">ROI</th>
+                    <th className="px-4 py-3">Trigger</th>
+                    <th className="px-4 py-3">Esito</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800 bg-slate-900/50">
+                  {lastCycle.items.map((item) => (
+                    <tr key={`${item.position_id}-${item.token_mint}`}>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-300">#{item.position_id}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-blue-300" title={item.token_mint}>
+                        {shortenLiveAddress(item.token_mint, 9, 8)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-slate-300">
+                        {formatLiveNumber(item.cost_basis_sol, 6)} SOL
+                      </td>
+                      <td className="px-4 py-3 text-right text-slate-300">
+                        {item.current_value_sol === undefined
+                          ? "N/D"
+                          : `${formatLiveNumber(item.current_value_sol, 6)} SOL`}
+                      </td>
+                      <td className={`px-4 py-3 text-right font-bold ${valueTone(item.unrealized_pnl_sol)}`}>
+                        {item.unrealized_pnl_sol === undefined
+                          ? "N/D"
+                          : `${formatLiveNumber(item.unrealized_pnl_sol, 6)} SOL`}
+                      </td>
+                      <td className={`px-4 py-3 text-right font-bold ${valueTone(item.unrealized_roi_percent)}`}>
+                        {item.unrealized_roi_percent === undefined
+                          ? "N/D"
+                          : `${formatLiveNumber(item.unrealized_roi_percent, 2)}%`}
+                      </td>
+                      <td className="px-4 py-3 font-bold text-amber-300">
+                        {item.exit_reason ?? "Nessuno"}
+                      </td>
+                      <td className={item.status === "ERROR" || item.status === "EXIT_FAILED" ? "px-4 py-3 font-bold text-red-300" : "px-4 py-3 font-bold text-green-300"}>
+                        {item.status}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </LiveTradingSection>
       )}
     </div>

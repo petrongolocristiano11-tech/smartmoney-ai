@@ -98,6 +98,10 @@ def quote_and_update_position(
         "current_value_sol": value_sol,
         "unrealized_pnl_sol": pnl,
         "unrealized_roi_percent": roi,
+        "high_watermark_value_sol": high_value,
+        "high_watermark_roi_percent": high_roi,
+        "trailing_stop_value_sol": position.trailing_stop_value_sol,
+        "last_quote_at": position.last_quote_at,
         "exit_reason": evaluate_exit_reason(position, policy, now=now),
     }
 
@@ -152,7 +156,13 @@ def run_position_monitor_cycle(
 
     for position in positions:
         summary["positions_scanned"] += 1
-        item = {"position_id": position.id, "token_mint": position.token_mint, "status": "QUOTED"}
+        item = {
+            "position_id": position.id,
+            "token_mint": position.token_mint,
+            "source_wallet": position.source_wallet,
+            "cost_basis_sol": float(position.cost_basis_sol or 0.0),
+            "status": "QUOTED",
+        }
         try:
             result = quote_and_update_position(
                 db,
@@ -164,7 +174,12 @@ def run_position_monitor_cycle(
             item.update(
                 {
                     "current_value_sol": result["current_value_sol"],
+                    "unrealized_pnl_sol": result["unrealized_pnl_sol"],
                     "unrealized_roi_percent": result["unrealized_roi_percent"],
+                    "high_watermark_value_sol": result["high_watermark_value_sol"],
+                    "high_watermark_roi_percent": result["high_watermark_roi_percent"],
+                    "trailing_stop_value_sol": result["trailing_stop_value_sol"],
+                    "last_quote_at": result["last_quote_at"],
                     "exit_reason": result["exit_reason"],
                 }
             )
@@ -219,6 +234,7 @@ def run_position_monitor_cycle(
         db,
         mode=policy.mode,
         generation=generation,
+        policy=policy,
         commit=True,
     )
     summary["completed_at"] = utc_now()

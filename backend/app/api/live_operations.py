@@ -78,6 +78,7 @@ def get_operations_overview(db: Session = Depends(get_db)):
             db,
             mode=mode,
             generation=generation,
+            policy=policy,
             commit=True,
         )
         risk_payload = serialize_risk_state(risk)

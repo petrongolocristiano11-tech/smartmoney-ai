@@ -117,6 +117,12 @@ class LiveRiskState(Base):
         nullable=True,
     )
 
+    loss_streak_reset_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

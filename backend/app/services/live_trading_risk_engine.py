@@ -462,6 +462,7 @@ def build_live_execution_plan(
             mode=policy.mode,
             generation=generation,
             now=now,
+            policy=policy,
             commit=False,
         )
         assert_buy_risk_allowed(

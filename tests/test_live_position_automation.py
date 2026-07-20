@@ -147,3 +147,24 @@ def test_risk_state_is_updated_after_auto_exit(db):
     assert state.realized_pnl_sol == pytest.approx(0.01)
     assert state.current_equity_sol == pytest.approx(1.01)
     assert state.loss_streak == 0
+
+
+def test_monitor_quotes_without_closing_when_automatic_exits_are_disabled(db):
+    policy = configure(db)
+    policy.automatic_exits_enabled = False
+    db.commit()
+    position = create_buy(db)
+
+    summary = run_position_monitor_cycle(db, jupiter_client=ExitJupiter())
+    db.refresh(position)
+
+    assert summary["positions_scanned"] == 1
+    assert summary["quotes_succeeded"] == 1
+    assert summary["exits_triggered"] == 0
+    assert summary["exits_completed"] == 0
+    assert position.status == "OPEN"
+    assert position.current_value_sol == pytest.approx(0.06)
+    assert position.unrealized_pnl_sol == pytest.approx(0.01)
+    assert position.unrealized_roi_percent == pytest.approx(20.0)
+    assert summary["items"][0]["exit_reason"] == "TAKE_PROFIT"
+    assert summary["items"][0]["status"] == "QUOTED"
