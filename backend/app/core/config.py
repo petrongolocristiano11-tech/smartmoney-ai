@@ -126,6 +126,29 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # TOKEN SAFETY / MARKET DATA
+    # =========================
+
+    DEXSCREENER_API_URL: str = (
+        "https://api.dexscreener.com"
+    )
+
+    TOKEN_SAFETY_TIMEOUT_SECONDS: float = Field(
+        default=12.0,
+        ge=2.0,
+        le=60.0,
+    )
+
+    RUGCHECK_API_URL: str = ""
+
+    RUGCHECK_API_KEY: str = Field(
+        default="",
+        repr=False,
+    )
+
+    LIVE_TRADING_REQUIRE_SIMULATION: bool = True
+
+    # =========================
     # LIVE TRADING WALLET
     # =========================
 
@@ -332,6 +355,8 @@ class Settings(BaseSettings):
         "JUPITER_API_KEY",
         "LIVE_TRADING_WALLET_ADDRESS",
         "LIVE_TRADING_PRIVATE_KEY",
+        "RUGCHECK_API_KEY",
+        "RUGCHECK_API_URL",
         mode="before",
     )
     @classmethod
@@ -375,6 +400,7 @@ class Settings(BaseSettings):
         "SOLANA_RPC_URL",
         "JUPITER_PRICE_API_URL",
         "JUPITER_SWAP_API_URL",
+        "DEXSCREENER_API_URL",
     )
     @classmethod
     def validate_http_url(
@@ -397,6 +423,31 @@ class Settings(BaseSettings):
             raise ValueError(
                 "La variabile deve essere un URL "
                 "HTTP o HTTPS valido."
+            )
+
+        return normalized
+
+    @field_validator(
+        "RUGCHECK_API_URL"
+    )
+    @classmethod
+    def validate_optional_rugcheck_url(
+        cls,
+        value: str,
+    ):
+        if not value:
+            return ""
+
+        normalized = value.rstrip("/")
+        parsed = urlparse(normalized)
+
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+        ):
+            raise ValueError(
+                "RUGCHECK_API_URL deve essere "
+                "vuoto oppure un URL HTTP valido."
             )
 
         return normalized

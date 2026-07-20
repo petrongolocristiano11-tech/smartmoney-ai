@@ -32,6 +32,9 @@ from backend.app.api.live import (
 from backend.app.api.live_trading import (
     router as live_trading_router,
 )
+from backend.app.api.live_platform import (
+    router as live_platform_router,
+)
 from backend.app.api.paper_autopilot import (
     router as paper_autopilot_router,
 )
@@ -156,6 +159,7 @@ app.add_middleware(
     expose_headers=[
         "X-Request-ID",
         "X-Process-Time",
+        "Content-Disposition",
     ],
 )
 
@@ -274,6 +278,9 @@ app.include_router(
 
 app.include_router(
     live_trading_router
+)
+app.include_router(
+    live_platform_router
 )
 
 

@@ -44,6 +44,14 @@ from backend.app.services.live_trading_policy_service import (
     get_or_create_live_policy,
     record_live_event,
 )
+from backend.app.services.live_platform_config_service import (
+    get_or_create_platform_config,
+    is_live_armed,
+)
+from backend.app.services.token_safety_service import (
+    evaluate_token_safety,
+    get_token_safety_snapshot,
+)
 from backend.app.services.live_trading_risk_engine import (
     LAMPORTS_PER_SOL,
     LiveExecutionPlan,
@@ -675,6 +683,25 @@ def execute_source_trade(
             policy.max_slippage_bps
         )
 
+        platform_config = (
+            get_or_create_platform_config(
+                db
+            )
+        )
+
+        if (
+            policy.mode == "LIVE"
+            and not is_live_armed(
+                platform_config
+            )
+        ):
+            raise LiveTradingError(
+                "Esecuzione LIVE non armata "
+                "o finestra di armamento scaduta.",
+                code="LIVE_NOT_ARMED",
+                status_code=409,
+            )
+
         wallet_balance_sol: (
             float | None
         ) = None
@@ -706,6 +733,92 @@ def execute_source_trade(
                 )
             )
 
+        jupiter_client = (
+            jupiter_client
+            or JupiterSwapClient()
+        )
+
+        source_side = str(
+            trade.side or ""
+        ).strip().upper()
+
+        source_token_mint = str(
+            trade.token_mint or ""
+        ).strip()
+
+        safety_snapshot = None
+
+        if (
+            source_side == "BUY"
+            and platform_config
+            .token_safety_enabled
+        ):
+            try:
+                safety_rpc_client = (
+                    rpc_client
+                    or SolanaRpcClient()
+                )
+
+                safety_snapshot = (
+                    get_token_safety_snapshot(
+                        db,
+                        token_mint=(
+                            source_token_mint
+                        ),
+                        max_age_seconds=(
+                            platform_config
+                            .safety_snapshot_max_age_seconds
+                        ),
+                        rpc_client=(
+                            safety_rpc_client
+                        ),
+                        jupiter_client=(
+                            jupiter_client
+                        ),
+                    )
+                )
+
+            except LiveTradingError:
+                if (
+                    platform_config
+                    .token_safety_fail_closed
+                ):
+                    raise
+
+        token_allowed, token_reasons = (
+            evaluate_token_safety(
+                platform_config,
+                token_mint=(
+                    source_token_mint
+                ),
+                snapshot=(
+                    safety_snapshot
+                ),
+                side=source_side,
+            )
+        )
+
+        if not token_allowed:
+            raise LiveTradingError(
+                "Token rifiutato dai filtri "
+                "di sicurezza configurati.",
+                code="TOKEN_SAFETY_REJECTED",
+                status_code=409,
+                payload={
+                    "token_mint": (
+                        source_token_mint
+                    ),
+                    "reasons": token_reasons,
+                    "risk_score": (
+                        safety_snapshot
+                        .risk_score
+                        if safety_snapshot
+                        is not None
+                        else None
+                    ),
+                },
+            )
+
         plan = build_live_execution_plan(
             db,
             policy=policy,
@@ -732,11 +845,6 @@ def execute_source_trade(
 
         order.requested_value_sol = (
             plan.requested_value_sol
-        )
-
-        jupiter_client = (
-            jupiter_client
-            or JupiterSwapClient()
         )
 
         taker = (
@@ -907,6 +1015,30 @@ def execute_source_trade(
                 quote.transaction
             )
         )
+
+        if (
+            settings
+            .LIVE_TRADING_REQUIRE_SIMULATION
+        ):
+            if rpc_client is None:
+                rpc_client = (
+                    SolanaRpcClient()
+                )
+
+            simulation = (
+                rpc_client
+                .simulate_transaction_base64(
+                    signed_transaction
+                )
+            )
+
+            order.order_response = {
+                **(
+                    order.order_response
+                    or {}
+                ),
+                "simulation": simulation,
+            }
 
         order.status = "SUBMITTED"
 

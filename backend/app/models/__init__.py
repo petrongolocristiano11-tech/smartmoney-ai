@@ -1,3 +1,12 @@
+from backend.app.models.live_platform_config import (
+    LivePlatformConfig,
+)
+from backend.app.models.live_wallet_score import (
+    LiveWalletScore,
+)
+from backend.app.models.token_safety_snapshot import (
+    TokenSafetySnapshot,
+)
 from backend.app.models.discovery_job import (
     DiscoveryJob,
 )
@@ -47,6 +56,9 @@ from backend.app.models.wallet_profile import (
 
 __all__ = [
     "DiscoveryJob",
+    "TokenSafetySnapshot",
+    "LiveWalletScore",
+    "LivePlatformConfig",
     "DiscoveredWallet",
     "LiveCopyOrder",
     "LivePosition",

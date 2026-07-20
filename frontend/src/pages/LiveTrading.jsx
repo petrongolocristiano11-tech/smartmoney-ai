@@ -12,6 +12,7 @@ import LiveTradingMetric from "../components/liveTrading/LiveTradingMetric";
 import LiveTradingOrders from "../components/liveTrading/LiveTradingOrders";
 import LiveTradingPolicyForm from "../components/liveTrading/LiveTradingPolicyForm";
 import LiveTradingPositions from "../components/liveTrading/LiveTradingPositions";
+import LiveTradingPlatform from "../components/liveTrading/LiveTradingPlatform";
 import LiveTradingSection from "../components/liveTrading/LiveTradingSection";
 import {
   formatLiveDate,
@@ -40,6 +41,7 @@ const AUTO_REFRESH_MS = 15_000;
 
 const TABS = [
   ["control", "Controllo e policy"],
+  ["platform", "Analytics e sicurezza"],
   ["orders", "Ordini"],
   ["positions", "Posizioni"],
   ["events", "Eventi"],
@@ -1052,6 +1054,17 @@ function LiveTrading() {
               />
             </LiveTradingSection>
           </div>
+        )}
+
+        {activeTab === "platform" && policy && (
+          <LiveTradingPlatform
+            accessKey={accessKey}
+            activeGeneration={
+              status.active_generation
+              ?? policy.dry_run_generation
+            }
+            mode={policy.mode}
+          />
         )}
 
         {activeTab === "orders" && (

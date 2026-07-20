@@ -183,6 +183,12 @@ class LiveTradingPolicyUpdateRequest(
                     address
                 )
 
+        if len(normalized) > 50:
+            raise ValueError(
+                "Sono supportati al massimo "
+                "50 wallet sorgente."
+            )
+
         return normalized
 
     @model_validator(
@@ -278,6 +284,12 @@ class LiveTradingDryRunResetRequest(
                     address
                 )
                 seen.add(address)
+
+        if len(normalized) > 50:
+            raise ValueError(
+                "Sono supportati al massimo "
+                "50 wallet sorgente."
+            )
 
         return normalized
 

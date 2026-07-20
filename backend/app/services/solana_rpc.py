@@ -171,6 +171,52 @@ class SolanaRpcClient:
             / LAMPORTS_PER_SOL
         )
 
+    def simulate_transaction_base64(
+        self,
+        transaction_base64: str,
+    ) -> dict:
+        result = self.call(
+            "simulateTransaction",
+            [
+                transaction_base64,
+                {
+                    "encoding": "base64",
+                    "commitment": "confirmed",
+                    "sigVerify": True,
+                    "replaceRecentBlockhash": False,
+                },
+            ],
+        )
+
+        value = (
+            result.get("value")
+            if isinstance(result, dict)
+            else None
+        )
+
+        if not isinstance(value, dict):
+            raise SolanaRpcError(
+                "Risposta di simulazione Solana non valida.",
+                code="SOLANA_SIMULATION_INVALID_RESPONSE",
+                status_code=502,
+            )
+
+        if value.get("err") is not None:
+            raise SolanaRpcError(
+                "La simulazione della transazione LIVE è fallita.",
+                code="SOLANA_SIMULATION_FAILED",
+                status_code=409,
+                payload={
+                    "simulation_error": value.get("err"),
+                    "logs": (value.get("logs") or [])[-20:],
+                },
+            )
+
+        return {
+            "units_consumed": value.get("unitsConsumed"),
+            "logs": (value.get("logs") or [])[-20:],
+        }
+
 
 def solana_rpc_call(
     method: str,

@@ -173,3 +173,163 @@ export function getLiveTradingEvents(
     }
   );
 } 
+
+export function getLivePlatformConfig(
+  accessKey
+) {
+  return api.get(
+    "/live-trading/platform/config",
+    getLiveTradingConfig(accessKey)
+  );
+}
+
+
+export function updateLivePlatformConfig(
+  accessKey,
+  payload
+) {
+  return api.patch(
+    "/live-trading/platform/config",
+    payload,
+    getLiveTradingConfig(accessKey)
+  );
+}
+
+
+export function getLiveTradingAnalytics(
+  accessKey,
+  {
+    days = 30,
+    mode = "DRY_RUN",
+    generation,
+  } = {}
+) {
+  return api.get(
+    "/live-trading/platform/analytics",
+    {
+      ...getLiveTradingConfig(accessKey),
+      params: {
+        days,
+        mode,
+        generation,
+      },
+    }
+  );
+}
+
+
+export function downloadLiveTradingAnalyticsCsv(
+  accessKey,
+  {
+    days = 30,
+    mode = "DRY_RUN",
+    generation,
+  } = {}
+) {
+  return api.get(
+    "/live-trading/platform/analytics/export.csv",
+    {
+      ...getLiveTradingConfig(accessKey),
+      params: {
+        days,
+        mode,
+        generation,
+      },
+      responseType: "blob",
+    }
+  );
+}
+
+
+export function getLiveWalletRanking(
+  accessKey
+) {
+  return api.get(
+    "/live-trading/platform/wallet-ranking",
+    getLiveTradingConfig(accessKey)
+  );
+}
+
+
+export function refreshLiveWalletRanking(
+  accessKey
+) {
+  return api.post(
+    "/live-trading/platform/wallet-ranking/refresh",
+    null,
+    getLiveTradingConfig(accessKey)
+  );
+}
+
+
+export function applyLiveTradingWalletRanking(
+  accessKey,
+  payload
+) {
+  return api.post(
+    "/live-trading/platform/wallet-ranking/apply",
+    payload,
+    getLiveTradingConfig(accessKey)
+  );
+}
+
+
+export function getLiveTokenSafety(
+  accessKey,
+  limit = 100
+) {
+  return api.get(
+    "/live-trading/platform/token-safety",
+    {
+      ...getLiveTradingConfig(accessKey),
+      params: { limit },
+    }
+  );
+}
+
+
+export function refreshLiveTokenSafety(
+  accessKey,
+  tokenMint
+) {
+  return api.post(
+    `/live-trading/platform/token-safety/${encodeURIComponent(
+      tokenMint
+    )}/refresh`,
+    null,
+    getLiveTradingConfig(accessKey)
+  );
+}
+
+
+export function getLiveTradingReadiness(
+  accessKey
+) {
+  return api.get(
+    "/live-trading/platform/readiness",
+    getLiveTradingConfig(accessKey)
+  );
+}
+
+
+export function armLiveTrading(
+  accessKey,
+  confirmation
+) {
+  return api.post(
+    "/live-trading/platform/live/arm",
+    { confirmation },
+    getLiveTradingConfig(accessKey)
+  );
+}
+
+
+export function disarmLiveTrading(
+  accessKey
+) {
+  return api.post(
+    "/live-trading/platform/live/disarm",
+    null,
+    getLiveTradingConfig(accessKey)
+  );
+}

@@ -12,6 +12,9 @@ from backend.app.core.config import settings
 from backend.app.models.live_trading_event import (
     LiveTradingEvent,
 )
+from backend.app.models.live_platform_config import (
+    LivePlatformConfig,
+)
 from backend.app.models.live_trading_policy import (
     LiveTradingPolicy,
 )
@@ -100,6 +103,22 @@ def get_or_create_live_policy(
         policy.source_wallets = []
 
     return policy
+
+
+def _disarm_existing_platform_config(
+    db: Session,
+) -> None:
+    config = (
+        db.query(LivePlatformConfig)
+        .filter(
+            LivePlatformConfig.name
+            == "default"
+        )
+        .first()
+    )
+
+    if config is not None:
+        config.live_armed_until = None
 
 
 def _validate_merged_limits(
@@ -259,6 +278,14 @@ def update_live_policy(
             datetime.now(timezone.utc)
         )
 
+    if (
+        policy.mode != "LIVE"
+        or policy.kill_switch
+    ):
+        _disarm_existing_platform_config(
+            db
+        )
+
     record_live_event(
         db,
         event_type="POLICY_UPDATED",
@@ -304,6 +331,10 @@ def engage_kill_switch(
 
     policy.stream_execution_enabled = (
         False
+    )
+
+    _disarm_existing_platform_config(
+        db
     )
 
     record_live_event(

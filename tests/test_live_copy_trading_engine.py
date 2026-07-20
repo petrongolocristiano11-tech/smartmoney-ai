@@ -376,3 +376,157 @@ def test_manual_dry_run_close_requires_stream_disabled(
         error_info.value.code
         == "STREAM_MUST_BE_DISABLED"
     )
+
+
+def test_token_safety_rejects_unsafe_dry_run_buy(
+    db,
+):
+    from backend.app.models.token_safety_snapshot import TokenSafetySnapshot
+    from backend.app.services.live_platform_config_service import get_or_create_platform_config
+
+    configure_policy(db)
+    config = get_or_create_platform_config(db)
+    config.token_safety_enabled = True
+    config.token_safety_fail_closed = True
+    config.min_token_liquidity_usd = 10_000
+    config.max_token_risk_score = 60
+
+    db.add(
+        TokenSafetySnapshot(
+            token_mint=TOKEN,
+            liquidity_usd=100,
+            market_cap_usd=1_000,
+            volume_24h_usd=50,
+            top_holder_percent=90,
+            risk_score=95,
+            honeypot=True,
+            mint_authority_enabled=True,
+            freeze_authority_enabled=True,
+            source="TEST",
+            reasons=["UNSAFE"],
+        )
+    )
+    db.commit()
+
+    order = execute_source_trade(
+        db,
+        trade=create_trade(db, signature="unsafe-buy"),
+        jupiter_client=FakeJupiter(),
+    )
+
+    assert order.status == "REJECTED"
+    assert order.error_code == "TOKEN_SAFETY_REJECTED"
+    assert db.query(LivePosition).count() == 0
+
+
+def test_live_execution_requires_active_arm_window(
+    db,
+    monkeypatch,
+):
+    from backend.app.core.config import settings
+
+    policy = configure_policy(db)
+    policy.mode = "LIVE"
+    db.commit()
+
+    monkeypatch.setattr(settings, "LIVE_TRADING_API_KEY", "k" * 40)
+    monkeypatch.setattr(settings, "JUPITER_API_KEY", "jupiter")
+    monkeypatch.setattr(settings, "LIVE_TRADING_WALLET_ADDRESS", WALLET)
+    monkeypatch.setattr(settings, "LIVE_TRADING_PRIVATE_KEY", "configured")
+
+    order = execute_source_trade(
+        db,
+        trade=create_trade(db, signature="live-not-armed"),
+        jupiter_client=FakeJupiter(),
+    )
+
+    assert order.status == "REJECTED"
+    assert order.error_code == "LIVE_NOT_ARMED"
+
+
+def test_live_execution_simulates_before_submit(
+    db,
+    monkeypatch,
+):
+    from datetime import timedelta
+
+    from backend.app.core.config import settings
+    from backend.app.models.live_platform_config import LivePlatformConfig
+    from backend.app.services.jupiter_swap_client import (
+        JupiterExecuteResult,
+        JupiterOrderResult,
+    )
+    from backend.app.services.live_platform_config_service import utc_now
+
+    class LiveJupiter:
+        def get_order(self, **kwargs):
+            return JupiterOrderResult(
+                raw={"requestId": "live-request", "transaction": "unsigned"},
+                request_id="live-request",
+                transaction="unsigned",
+                in_amount=kwargs["amount_raw"],
+                out_amount=2_000_000,
+                slippage_bps=20,
+                router="iris",
+                price_impact_percent=0.1,
+                last_valid_block_height="123",
+            )
+
+        def execute_order(self, **kwargs):
+            assert kwargs["signed_transaction"] == "signed"
+            return JupiterExecuteResult(
+                raw={"status": "Success", "signature": "chain-signature"},
+                success=True,
+                signature="chain-signature",
+                code=0,
+                error=None,
+                input_amount=50_000_000,
+                output_amount=2_000_000,
+            )
+
+    class LiveRpc:
+        simulated = False
+
+        def get_balance_sol(self, address):
+            return 10.0
+
+        def simulate_transaction_base64(self, transaction):
+            assert transaction == "signed"
+            self.simulated = True
+            return {"units_consumed": 999, "logs": ["ok"]}
+
+    class LiveSigner:
+        def sign_base64_versioned_transaction(self, transaction):
+            assert transaction == "unsigned"
+            return "signed"
+
+    policy = configure_policy(db)
+    policy.mode = "LIVE"
+    db.add(
+        LivePlatformConfig(
+            name="default",
+            token_safety_enabled=False,
+            live_armed_until=utc_now() + timedelta(minutes=15),
+        )
+    )
+    db.commit()
+
+    monkeypatch.setattr(settings, "LIVE_TRADING_API_KEY", "k" * 40)
+    monkeypatch.setattr(settings, "JUPITER_API_KEY", "jupiter")
+    monkeypatch.setattr(settings, "LIVE_TRADING_WALLET_ADDRESS", WALLET)
+    monkeypatch.setattr(settings, "LIVE_TRADING_PRIVATE_KEY", "configured")
+    monkeypatch.setattr(settings, "LIVE_TRADING_REQUIRE_SIMULATION", True)
+
+    rpc = LiveRpc()
+    order = execute_source_trade(
+        db,
+        trade=create_trade(db, signature="live-simulated"),
+        jupiter_client=LiveJupiter(),
+        rpc_client=rpc,
+        signer=LiveSigner(),
+    )
+
+    assert rpc.simulated is True
+    assert order.status == "FILLED"
+    assert order.transaction_signature == "chain-signature"
+    assert order.order_response["simulation"]["units_consumed"] == 999
