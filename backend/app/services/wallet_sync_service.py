@@ -10,37 +10,30 @@ from backend.app.services.wallet_service import update_wallet_last_sync
 
 
 def sync_wallet(db: Session, wallet_address: str):
-    """
-    Sincronizza un wallet.
+    """Sincronizza un wallet e lascia la sessione riutilizzabile in caso di errore."""
 
-    - usa cache se possibile
-    - importa gli swap se necessario
-    - aggiorna Smart Score
-    - aggiorna last_sync
-    """
+    try:
+        wallet = (
+            db.query(Wallet)
+            .filter(Wallet.address == wallet_address)
+            .first()
+        )
 
-    wallet = (
-        db.query(Wallet)
-        .filter(Wallet.address == wallet_address)
-        .first()
-    )
+        if wallet and not needs_sync(wallet):
+            return calculate_smart_score(db, wallet_address)
 
-    if wallet and not needs_sync(wallet):
+        swaps = get_wallet_swaps(wallet_address)
+
+        for swap in swaps["swaps"]:
+            trade = build_trade(swap)
+            trade_data = build_trade_data(wallet_address, trade)
+            create_trade_if_not_exists(db, trade_data)
+
+        update_wallet_last_sync(db, wallet_address)
         return calculate_smart_score(db, wallet_address)
-
-    swaps = get_wallet_swaps(wallet_address)
-
-    for swap in swaps["swaps"]:
-        trade = build_trade(swap)
-        trade_data = build_trade_data(wallet_address, trade)
-        create_trade_if_not_exists(db, trade_data)
-
-    update_wallet_last_sync(
-        db,
-        wallet_address,
-    )
-
-    return calculate_smart_score(
-        db,
-        wallet_address,
-    ) 
+    except Exception:
+        # Alcuni servizi sottostanti eseguono commit autonomi. Il rollback qui
+        # non annulla i commit già conclusi, ma ripristina la Session SQLAlchemy
+        # dopo un errore e permette alla Discovery di continuare sugli altri wallet.
+        db.rollback()
+        raise

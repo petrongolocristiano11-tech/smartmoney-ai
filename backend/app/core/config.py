@@ -65,6 +65,31 @@ class Settings(BaseSettings):
         repr=False,
     )
 
+    HELIUS_REQUEST_TIMEOUT_SECONDS: float = Field(
+        default=20.0,
+        ge=2.0,
+        le=120.0,
+    )
+
+    # Numero di nuovi tentativi dopo la prima richiesta.
+    HELIUS_MAX_RETRIES: int = Field(
+        default=3,
+        ge=0,
+        le=10,
+    )
+
+    HELIUS_RETRY_BASE_SECONDS: float = Field(
+        default=0.75,
+        ge=0.1,
+        le=10.0,
+    )
+
+    HELIUS_RETRY_MAX_SECONDS: float = Field(
+        default=8.0,
+        ge=1.0,
+        le=60.0,
+    )
+
     # =========================
     # AUTOMATION / SECURITY
     # =========================

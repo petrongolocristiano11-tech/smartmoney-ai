@@ -1,0 +1,30 @@
+SMARTMONEY AI — RISULTATI DI VERIFICA DEL PACCHETTO
+===================================================
+
+Ricostruzione di riferimento applicata nell'ordine:
+- smartmoney-live-current
+- fix parser Helius swap
+- generazioni DRY_RUN
+- chiusura manuale DRY_RUN
+- fasi 1/2/3
+- consolidamento analytics/ranking/token safety
+- fix Discovery/Helius/cron
+
+Controlli eseguiti:
+- python -m compileall backend: SUPERATO
+- python -m pytest -q: 154 PASSED
+- node --check automation/run.mjs: SUPERATO
+- node --test automation/run.test.mjs: 11 PASSED
+
+Test coperti dal nuovo pacchetto:
+- Helius HTTP 500 seguito da recupero;
+- timeout Helius seguito da recupero;
+- esaurimento retry con errore sanificato;
+- HTTP 401 senza retry inutile;
+- errore di un wallet senza arrestare la Discovery;
+- errore del seed trasformato in risultato FAILED sicuro;
+- errore di un token trasformato in risultato PARTIAL;
+- rimozione delle chiavi dai messaggi;
+- Discovery fallita + Autopilot riuscito => DEGRADED senza eccezione.
+
+Il pacchetto non modifica il frontend e non richiede migrazioni database.

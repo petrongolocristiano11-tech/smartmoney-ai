@@ -183,6 +183,21 @@ function sleep(
 }
 
 
+export function redactSecrets(
+  value
+) {
+  return String(value ?? "")
+    .replace(
+      /(api-key=)[^&\s'"]+/gi,
+      "$1REDACTED"
+    )
+    .replace(
+      /(x-automation-key[=:]\s*)[^&\s'"]+/gi,
+      "$1REDACTED"
+    );
+}
+
+
 export async function requestJson(
   url,
   {
@@ -248,7 +263,7 @@ export async function requestJson(
             );
 
       throw new Error(
-        `HTTP ${response.status}: ${errorDetails}`
+        `HTTP ${response.status}: ${redactSecrets(errorDetails)}`
       );
     }
 
@@ -316,37 +331,72 @@ export function summarizeDiscoveryResult(
   wallet,
   result
 ) {
+  const rawStatus = String(
+    result?.status ?? "COMPLETED"
+  ).toUpperCase();
+
+  const status = [
+    "COMPLETED",
+    "PARTIAL",
+    "FAILED",
+  ].includes(rawStatus)
+    ? rawStatus
+    : "PARTIAL";
+
   return {
     wallet,
+    status,
+
+    seedSyncStatus:
+      result?.seed_sync_status
+      ?? null,
 
     seedTradesImported:
-      result
-        ?.seed_trades_imported
+      result?.seed_trades_imported
       ?? null,
 
     seedTokensFound:
-      result
-        ?.seed_tokens_found
+      result?.seed_tokens_found
       ?? null,
 
+    tokensAttempted:
+      result?.tokens_attempted
+      ?? result?.tokens_processed
+      ?? 0,
+
     tokensProcessed:
-      result
-        ?.tokens_processed
+      result?.tokens_processed
+      ?? 0,
+
+    tokensFailed:
+      result?.tokens_failed
       ?? 0,
 
     walletsDiscovered:
-      result
-        ?.wallets_discovered
+      result?.wallets_discovered
+      ?? 0,
+
+    walletsAnalyzed:
+      result?.wallets_analyzed
+      ?? (
+        Array.isArray(result?.ranking)
+          ? result.ranking.length
+          : 0
+      ),
+
+    walletsFailed:
+      result?.wallets_failed
       ?? 0,
 
     rankingEntries:
-      Array.isArray(
-        result?.ranking
-      )
-        ? result
-            .ranking
-            .length
+      Array.isArray(result?.ranking)
+        ? result.ranking.length
         : 0,
+
+    errors:
+      Array.isArray(result?.errors)
+        ? result.errors
+        : [],
   };
 }
 
@@ -357,31 +407,112 @@ export function summarizeAutopilotResult(
   return {
     processedAccounts:
       Number(
-        result
-          ?.processed_accounts
+        result?.processed_accounts
         ?? 0
       ),
 
     successfulRuns:
       Number(
-        result
-          ?.successful_runs
+        result?.successful_runs
         ?? 0
       ),
 
     failedRuns:
       Number(
-        result
-          ?.failed_runs
+        result?.failed_runs
         ?? 0
       ),
 
     results:
-      Array.isArray(
-        result?.results
-      )
+      Array.isArray(result?.results)
         ? result.results
         : [],
+  };
+}
+
+
+export function classifyDiscoverySummary(
+  summary
+) {
+  const warnings = [];
+
+  if (!summary?.due) {
+    return warnings;
+  }
+
+  const partialRuns =
+    summary?.partialRuns?.length
+    ?? 0;
+
+  const failedRuns =
+    summary?.failedRuns?.length
+    ?? 0;
+
+  if (partialRuns > 0) {
+    warnings.push(
+      "Discovery completate parzialmente: "
+      + String(partialRuns)
+      + "."
+    );
+  }
+
+  if (failedRuns > 0) {
+    warnings.push(
+      "Discovery non completate: "
+      + String(failedRuns)
+      + "."
+    );
+  }
+
+  return warnings;
+}
+
+
+export function classifyAutopilotSummary(
+  summary
+) {
+  const warnings = [];
+  const criticalFailures = [];
+
+  if (!summary) {
+    return {
+      warnings,
+      criticalFailures,
+    };
+  }
+
+  const processed =
+    Number(summary.processedAccounts ?? 0);
+  const successful =
+    Number(summary.successfulRuns ?? 0);
+  const failed =
+    Number(summary.failedRuns ?? 0);
+
+  if (
+    processed > 0
+    && successful === 0
+    && failed > 0
+  ) {
+    criticalFailures.push(
+      "Autopilot completamente fallito: "
+      + `${failed} esecuzioni fallite.`
+    );
+  } else if (failed > 0) {
+    warnings.push(
+      "Autopilot completato parzialmente: "
+      + `${failed} esecuzioni fallite.`
+    );
+  }
+
+  if (processed === 0) {
+    warnings.push(
+      "Autopilot completato senza account da processare."
+    );
+  }
+
+  return {
+    warnings,
+    criticalFailures,
   };
 }
 
@@ -396,26 +527,22 @@ async function runDiscovery({
   delayMs,
 }) {
   const successfulRuns = [];
+  const partialRuns = [];
   const failedRuns = [];
 
   for (
     let index = 0;
-    index
-      < seedWallets.length;
+    index < seedWallets.length;
     index += 1
   ) {
-    const wallet =
-      seedWallets[index];
+    const wallet = seedWallets[index];
 
     console.log(
       JSON.stringify({
-        event:
-          "discovery_started",
+        event: "discovery_started",
         wallet,
-        position:
-          index + 1,
-        total:
-          seedWallets.length,
+        position: index + 1,
+        total: seedWallets.length,
       })
     );
 
@@ -447,57 +574,69 @@ async function runDiscovery({
           result
         );
 
-      successfulRuns.push(
-        summary
-      );
-
-      console.log(
-        JSON.stringify({
-          event:
-            "discovery_completed",
-          ...summary,
-        })
-      );
+      if (summary.status === "FAILED") {
+        failedRuns.push(summary);
+        console.error(
+          JSON.stringify({
+            event: "discovery_failed",
+            ...summary,
+          })
+        );
+      } else if (
+        summary.status === "PARTIAL"
+      ) {
+        partialRuns.push(summary);
+        console.warn(
+          JSON.stringify({
+            event: "discovery_partial",
+            ...summary,
+          })
+        );
+      } else {
+        successfulRuns.push(summary);
+        console.log(
+          JSON.stringify({
+            event: "discovery_completed",
+            ...summary,
+          })
+        );
+      }
     } catch (error) {
       const failure = {
         wallet,
-
+        status: "FAILED",
         error:
-          error instanceof Error
-            ? error.message
-            : String(error),
+          redactSecrets(
+            error instanceof Error
+              ? error.message
+              : String(error)
+          ),
       };
 
-      failedRuns.push(
-        failure
-      );
+      failedRuns.push(failure);
 
       console.error(
         JSON.stringify({
-          event:
-            "discovery_failed",
+          event: "discovery_failed",
           ...failure,
         })
       );
     }
 
     const hasAnotherWallet =
-      index
-      < seedWallets.length
-        - 1;
+      index < seedWallets.length - 1;
 
     if (
       hasAnotherWallet
       && delayMs > 0
     ) {
-      await sleep(
-        delayMs
-      );
+      await sleep(delayMs);
     }
   }
 
   return {
     successfulRuns,
+    partialRuns,
     failedRuns,
   };
 }
@@ -510,19 +649,14 @@ async function runAutopilot({
 }) {
   console.log(
     JSON.stringify({
-      event:
-        "autopilot_started",
-      timestamp:
-        new Date()
-          .toISOString(),
+      event: "autopilot_started",
+      timestamp: new Date().toISOString(),
     })
   );
 
   const result =
     await requestJson(
-      buildAutopilotUrl(
-        backendUrl
-      ),
+      buildAutopilotUrl(backendUrl),
       {
         method: "POST",
         timeoutMs,
@@ -534,14 +668,11 @@ async function runAutopilot({
     );
 
   const summary =
-    summarizeAutopilotResult(
-      result
-    );
+    summarizeAutopilotResult(result);
 
   console.log(
     JSON.stringify({
-      event:
-        "autopilot_completed",
+      event: "autopilot_completed",
       ...summary,
     })
   );
@@ -553,8 +684,7 @@ async function runAutopilot({
 export async function main(
   environment = process.env
 ) {
-  const startedAt =
-    new Date();
+  const startedAt = new Date();
 
   const backendUrl =
     normalizeBackendUrl(
@@ -591,8 +721,7 @@ export async function main(
     throw new Error(
       "DISCOVERY_ENABLED e "
       + "AUTOPILOT_ENABLED non "
-      + "possono essere entrambi "
-      + "false."
+      + "possono essere entrambi false."
     );
   }
 
@@ -614,8 +743,7 @@ export async function main(
 
   const seedWallets =
     parseSeedWallets(
-      environment
-        .SEED_WALLETS
+      environment.SEED_WALLETS
     );
 
   const maxTokens =
@@ -656,23 +784,13 @@ export async function main(
 
   console.log(
     JSON.stringify({
-      event:
-        "automation_started",
-
-      timestamp:
-        startedAt
-          .toISOString(),
-
-      authentication:
-        "x-automation-key",
-
+      event: "automation_started",
+      timestamp: startedAt.toISOString(),
+      authentication: "x-automation-key",
       discoveryEnabled,
       discoveryDue,
       discoveryIntervalHours,
-
-      seedWallets:
-        seedWallets.length,
-
+      seedWallets: seedWallets.length,
       maxTokens,
       maxWalletsPerToken,
       autopilotEnabled,
@@ -681,72 +799,54 @@ export async function main(
 
   const readiness =
     await requestJson(
-      new URL(
-        "/ready",
-        backendUrl
-      ),
+      new URL("/ready", backendUrl),
       {
         timeoutMs: 60_000,
       }
     );
 
-  if (
-    readiness?.status
-    !== "ready"
-  ) {
+  if (readiness?.status !== "ready") {
     throw new Error(
       "Backend non pronto: "
-      + JSON.stringify(
-          readiness
-        )
+      + JSON.stringify(readiness)
     );
   }
 
   console.log(
     JSON.stringify({
-      event:
-        "backend_ready",
-
+      event: "backend_ready",
       database:
-        readiness
-          ?.dependencies
-          ?.database
+        readiness?.dependencies?.database
         ?? "unknown",
     })
   );
 
+  const warnings = [];
   const criticalFailures = [];
 
   let discoverySummary = {
     due: discoveryDue,
     successfulRuns: [],
+    partialRuns: [],
     failedRuns: [],
   };
 
   if (discoveryDue) {
-    if (
-      seedWallets.length
-      === 0
-    ) {
+    if (seedWallets.length === 0) {
       const message =
-        "SEED_WALLETS non "
-        + "contiene wallet validi.";
+        "SEED_WALLETS non contiene wallet validi.";
 
-      discoverySummary
-        .failedRuns
-        .push({
-          wallet: null,
-          error: message,
-        });
+      discoverySummary.failedRuns.push({
+        wallet: null,
+        status: "FAILED",
+        error: message,
+      });
 
-      criticalFailures.push(
-        message
-      );
+      criticalFailures.push(message);
 
       console.error(
         JSON.stringify({
-          event:
-            "discovery_failed",
+          event: "discovery_failed",
           wallet: null,
           error: message,
         })
@@ -768,29 +868,20 @@ export async function main(
         ...result,
       };
 
-      if (
-        result
-          .successfulRuns
-          .length
-        === 0
-      ) {
-        criticalFailures.push(
-          "Nessuna Discovery "
-          + "completata."
-        );
-      }
+      warnings.push(
+        ...classifyDiscoverySummary(
+          discoverySummary
+        )
+      );
     }
   } else {
     console.log(
       JSON.stringify({
-        event:
-          "discovery_skipped",
-
+        event: "discovery_skipped",
         reason:
           discoveryEnabled
             ? "INTERVAL_NOT_DUE"
             : "DISABLED",
-
         intervalHours:
           discoveryEnabled
             ? discoveryIntervalHours
@@ -810,32 +901,33 @@ export async function main(
           timeoutMs,
         });
 
-      if (
-        autopilotSummary
-          .failedRuns
-        > 0
-      ) {
-        criticalFailures.push(
-          "Autopilot ha riportato "
-          + `${autopilotSummary.failedRuns} `
-          + "esecuzioni fallite."
+      const classification =
+        classifyAutopilotSummary(
+          autopilotSummary
         );
-      }
+
+      warnings.push(
+        ...classification.warnings
+      );
+      criticalFailures.push(
+        ...classification.criticalFailures
+      );
     } catch (error) {
       const message =
-        error instanceof Error
-          ? error.message
-          : String(error);
+        redactSecrets(
+          error instanceof Error
+            ? error.message
+            : String(error)
+        );
 
       criticalFailures.push(
-        "Autopilot non "
-        + `completato: ${message}`
+        "Autopilot non completato: "
+        + message
       );
 
       console.error(
         JSON.stringify({
-          event:
-            "autopilot_failed",
+          event: "autopilot_failed",
           error: message,
         })
       );
@@ -843,28 +935,31 @@ export async function main(
   } else {
     console.log(
       JSON.stringify({
-        event:
-          "autopilot_skipped",
+        event: "autopilot_skipped",
         reason: "DISABLED",
       })
     );
   }
 
-  const finishedAt =
-    new Date();
+  const finishedAt = new Date();
+  const status =
+    criticalFailures.length > 0
+      ? "FAILED"
+      : warnings.length > 0
+        ? "DEGRADED"
+        : "COMPLETED";
+
+  const discoveryResults = [
+    ...discoverySummary.successfulRuns,
+    ...discoverySummary.partialRuns,
+    ...discoverySummary.failedRuns,
+  ];
 
   const report = {
-    event:
-      "automation_completed",
-
-    startedAt:
-      startedAt
-        .toISOString(),
-
-    finishedAt:
-      finishedAt
-        .toISOString(),
-
+    event: "automation_completed",
+    status,
+    startedAt: startedAt.toISOString(),
+    finishedAt: finishedAt.toISOString(),
     durationSeconds:
       Math.round(
         (
@@ -872,46 +967,26 @@ export async function main(
           - startedAt.getTime()
         ) / 1000
       ),
-
     discovery: {
-      due:
-        discoverySummary.due,
-
+      due: discoverySummary.due,
       successfulRuns:
-        discoverySummary
-          .successfulRuns
-          .length,
-
+        discoverySummary.successfulRuns.length,
+      partialRuns:
+        discoverySummary.partialRuns.length,
       failedRuns:
-        discoverySummary
-          .failedRuns
-          .length,
-
-      results:
-        discoverySummary
-          .successfulRuns,
+        discoverySummary.failedRuns.length,
+      results: discoveryResults,
     },
-
-    autopilot:
-      autopilotSummary,
-
+    autopilot: autopilotSummary,
+    warnings,
     criticalFailures,
   };
 
-  console.log(
-    JSON.stringify(
-      report
-    )
-  );
+  console.log(JSON.stringify(report));
 
-  if (
-    criticalFailures.length
-    > 0
-  ) {
+  if (criticalFailures.length > 0) {
     throw new Error(
-      criticalFailures.join(
-        " | "
-      )
+      criticalFailures.join(" | ")
     );
   }
 
@@ -920,9 +995,7 @@ export async function main(
 
 
 const executedDirectly =
-  Boolean(
-    process.argv[1]
-  )
+  Boolean(process.argv[1])
   && import.meta.url
   === pathToFileURL(
     process.argv[1]
@@ -934,21 +1007,18 @@ if (executedDirectly) {
     (error) => {
       console.error(
         JSON.stringify({
-          event:
-            "automation_crashed",
-
-          timestamp:
-            new Date()
-              .toISOString(),
-
+          event: "automation_crashed",
+          timestamp: new Date().toISOString(),
           error:
-            error instanceof Error
-              ? error.message
-              : String(error),
+            redactSecrets(
+              error instanceof Error
+                ? error.message
+                : String(error)
+            ),
         })
       );
 
       process.exitCode = 1;
     }
   );
-} 
+}
