@@ -15,6 +15,17 @@ const NUMERIC_FIELDS = [
   "min_source_trade_sol",
   "max_source_trade_age_seconds",
   "max_consecutive_failures",
+  "take_profit_percent",
+  "stop_loss_percent",
+  "trailing_stop_percent",
+  "max_position_age_minutes",
+  "auto_exit_position_percentage",
+  "max_open_positions",
+  "max_token_exposure_sol",
+  "max_daily_orders",
+  "max_portfolio_drawdown_percent",
+  "loss_streak_cooldown_threshold",
+  "cooldown_after_loss_minutes",
 ];
 
 
@@ -91,6 +102,31 @@ const FIELD_GROUPS = [
     ],
   },
   {
+    title: "Uscite automatiche",
+    description:
+      "Parametri usati dal monitor per take profit, stop loss, trailing stop e chiusura temporale.",
+    fields: [
+      { name: "take_profit_percent", label: "Take profit (%)", step: "0.1" },
+      { name: "stop_loss_percent", label: "Stop loss (%)", step: "0.1" },
+      { name: "trailing_stop_percent", label: "Trailing stop (%)", step: "0.1" },
+      { name: "max_position_age_minutes", label: "Durata massima posizione (min)", step: "1" },
+      { name: "auto_exit_position_percentage", label: "Quota venduta all'uscita (%)", step: "0.1" },
+    ],
+  },
+  {
+    title: "Rischio portafoglio",
+    description:
+      "Limiti su posizioni, token, ordini, drawdown e cooldown dopo perdite consecutive.",
+    fields: [
+      { name: "max_open_positions", label: "Posizioni aperte massime", step: "1" },
+      { name: "max_token_exposure_sol", label: "Esposizione massima per token (SOL)", step: "0.001" },
+      { name: "max_daily_orders", label: "Ordini giornalieri massimi", step: "1" },
+      { name: "max_portfolio_drawdown_percent", label: "Drawdown portafoglio massimo (%)", step: "0.1" },
+      { name: "loss_streak_cooldown_threshold", label: "Perdite consecutive prima cooldown", step: "1" },
+      { name: "cooldown_after_loss_minutes", label: "Durata cooldown (min)", step: "1" },
+    ],
+  },
+  {
     title: "Qualità esecuzione",
     description:
       "Scarta segnali vecchi, trade troppo piccoli e quotazioni Jupiter con impatto eccessivo.",
@@ -131,6 +167,11 @@ function policyToForm(policy) {
       Boolean(policy.buy_enabled),
     sell_enabled:
       Boolean(policy.sell_enabled),
+    automatic_exits_enabled: Boolean(policy.automatic_exits_enabled),
+    take_profit_enabled: Boolean(policy.take_profit_enabled),
+    stop_loss_enabled: Boolean(policy.stop_loss_enabled),
+    trailing_stop_enabled: Boolean(policy.trailing_stop_enabled),
+    time_exit_enabled: Boolean(policy.time_exit_enabled),
     sizing_mode:
       policy.sizing_mode,
     source_wallets: (
@@ -183,6 +224,11 @@ function buildPayload(
       Boolean(form.buy_enabled),
     sell_enabled:
       Boolean(form.sell_enabled),
+    automatic_exits_enabled: Boolean(form.automatic_exits_enabled),
+    take_profit_enabled: Boolean(form.take_profit_enabled),
+    stop_loss_enabled: Boolean(form.stop_loss_enabled),
+    trailing_stop_enabled: Boolean(form.trailing_stop_enabled),
+    time_exit_enabled: Boolean(form.time_exit_enabled),
     sizing_mode:
       form.sizing_mode,
   };
@@ -424,6 +470,20 @@ function LiveTradingPolicyForm({
             className="mt-3 w-full resize-y rounded-xl border border-slate-600 bg-slate-950 px-3 py-3 font-mono text-sm text-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
           />
         </label>
+      </div>
+
+      <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-5">
+        <h3 className="font-bold text-white">Motore automatico di uscita</h3>
+        <p className="mt-1 text-sm leading-6 text-slate-500">
+          Inizia disattivato. Dopo i test DRY_RUN puoi abilitare il monitor e scegliere le condizioni operative.
+        </p>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <ToggleField checked={form.automatic_exits_enabled} label="Uscite automatiche" description="Permette al monitor di generare ordini SELL autonomi." onChange={(value) => updateField("automatic_exits_enabled", value)} />
+          <ToggleField checked={form.take_profit_enabled} label="Take profit" description="Chiude quando il ROI raggiunge la soglia positiva." onChange={(value) => updateField("take_profit_enabled", value)} />
+          <ToggleField checked={form.stop_loss_enabled} label="Stop loss" description="Chiude quando il ROI scende sotto la perdita massima." onChange={(value) => updateField("stop_loss_enabled", value)} />
+          <ToggleField checked={form.trailing_stop_enabled} label="Trailing stop" description="Segue il massimo valore raggiunto dalla posizione." onChange={(value) => updateField("trailing_stop_enabled", value)} />
+          <ToggleField checked={form.time_exit_enabled} label="Chiusura temporale" description="Chiude le posizioni oltre la durata massima." onChange={(value) => updateField("time_exit_enabled", value)} />
+        </div>
       </div>
 
       {FIELD_GROUPS.map((group) => (

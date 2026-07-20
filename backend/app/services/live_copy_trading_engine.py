@@ -1,6 +1,7 @@
 import hashlib
 from datetime import (
     datetime,
+    timedelta,
     timezone,
 )
 from decimal import Decimal
@@ -54,6 +55,9 @@ from backend.app.services.live_platform_config_service import (
 from backend.app.services.token_safety_service import (
     evaluate_token_safety,
     get_token_safety_snapshot,
+)
+from backend.app.services.live_risk_state_service import (
+    register_filled_order,
 )
 from backend.app.services.live_trading_risk_engine import (
     LAMPORTS_PER_SOL,
@@ -258,6 +262,7 @@ def _claim_order(
         ),
         source_side=side,
         source_token_mint=token_mint,
+        execution_origin="SOURCE_TRADE",
         source_sol_amount=(
             trade.sol_amount
         ),
@@ -358,6 +363,7 @@ def _apply_filled_position(
                 quantity_raw=Decimal(0),
                 cost_basis_sol=0.0,
                 realized_pnl_sol=0.0,
+                source_wallet=order.source_wallet,
             )
 
             db.add(position)
@@ -373,7 +379,18 @@ def _apply_filled_position(
 
             position.opened_at = now
             position.closed_at = None
+            position.current_value_sol = None
+            position.unrealized_pnl_sol = None
+            position.unrealized_roi_percent = None
+            position.high_watermark_value_sol = None
+            position.high_watermark_roi_percent = None
+            position.trailing_stop_value_sol = None
+            position.exit_pending = False
+            position.exit_attempts = 0
+            position.last_exit_reason = None
+            position.next_exit_retry_at = None
 
+        position.source_wallet = order.source_wallet
         position.quantity_raw = (
             Decimal(
                 position.quantity_raw
@@ -487,6 +504,11 @@ def _apply_filled_position(
         position.cost_basis_sol = 0.0
         position.status = "CLOSED"
         position.closed_at = now
+        position.current_value_sol = 0.0
+        position.unrealized_pnl_sol = 0.0
+        position.unrealized_roi_percent = 0.0
+        position.exit_pending = False
+        position.next_exit_retry_at = None
 
     return realized_pnl
 
@@ -969,6 +991,9 @@ def execute_source_trade(
             order.executed_at = now
 
             policy.consecutive_failures = 0
+            register_filled_order(
+                db, policy=policy, order=order, now=now
+            )
 
             record_live_event(
                 db,
@@ -1137,10 +1162,14 @@ def execute_source_trade(
         )
 
         order.status = "FILLED"
-
+        order.reconciliation_status = "PENDING"
+        order.confirmation_status = "processed"
         order.executed_at = utc_now()
 
         policy.consecutive_failures = 0
+        register_filled_order(
+            db, policy=policy, order=order, now=order.executed_at
+        )
 
         record_live_event(
             db,
@@ -1398,6 +1427,8 @@ def close_dry_run_position(
         source_token_mint=(
             position.token_mint
         ),
+        execution_origin="MANUAL_CLOSE",
+        exit_reason="MANUAL_CLOSE",
         source_sol_amount=float(
             position.cost_basis_sol
             or 0.0
@@ -1615,6 +1646,9 @@ def close_dry_run_position(
         order.status = "DRY_RUN"
         order.executed_at = now
         policy.consecutive_failures = 0
+        register_filled_order(
+            db, policy=policy, order=order, now=now
+        )
 
         record_live_event(
             db,
@@ -1679,6 +1713,360 @@ def close_dry_run_position(
             error=error,
         )
 
+
+
+def close_live_position(
+    db: Session,
+    *,
+    position_id: int,
+    reason: str,
+    percentage: float | None = None,
+    execution_origin: str = "AUTO_EXIT",
+    jupiter_client: JupiterSwapClient | None = None,
+    rpc_client: SolanaRpcClient | None = None,
+    signer: SolanaTransactionSigner | None = None,
+    retry_seconds: int = 60,
+) -> LiveCopyOrder:
+    """Close a DRY_RUN or LIVE position using a real Jupiter quote.
+
+    The operation is idempotent while an exit is pending and protects the
+    position with a row lock. LIVE keeps the existing arm, signer and
+    simulation safeguards used by source-trade execution.
+    """
+    normalized_reason = str(reason or "AUTO_EXIT").strip().upper()[:80]
+    normalized_origin = str(execution_origin or "AUTO_EXIT").strip().upper()
+    if normalized_origin not in {"AUTO_EXIT", "MANUAL_CLOSE"}:
+        raise LiveTradingError(
+            "Origine chiusura posizione non valida.",
+            code="INVALID_EXIT_ORIGIN",
+            status_code=422,
+        )
+
+    policy = _get_locked_policy(db)
+    if policy.mode not in {"DRY_RUN", "LIVE"}:
+        raise LiveTradingError(
+            "La policy non è in DRY_RUN o LIVE.",
+            code="LIVE_TRADING_DISABLED",
+            status_code=409,
+        )
+    if policy.kill_switch:
+        raise LiveTradingError(
+            "Il kill switch è attivo.",
+            code="KILL_SWITCH_ACTIVE",
+            status_code=409,
+        )
+    if not policy.sell_enabled:
+        raise LiveTradingError(
+            "Le vendite sono disabilitate dalla policy.",
+            code="SELL_DISABLED",
+            status_code=409,
+        )
+
+    generation = max(1, int(policy.dry_run_generation or 1)) if policy.mode == "DRY_RUN" else 1
+    position = (
+        db.query(LivePosition)
+        .filter(
+            LivePosition.id == position_id,
+            LivePosition.mode == policy.mode,
+            LivePosition.generation == generation,
+        )
+        .with_for_update()
+        .first()
+    )
+    if position is None:
+        raise LiveTradingError(
+            "Posizione della generazione attiva non trovata.",
+            code="POSITION_NOT_FOUND",
+            status_code=404,
+        )
+
+    quantity = int(Decimal(position.quantity_raw or 0))
+    if position.status != "OPEN" or quantity <= 0:
+        raise LiveTradingError(
+            "La posizione non è aperta.",
+            code="POSITION_NOT_OPEN",
+            status_code=409,
+        )
+
+    if position.exit_pending:
+        existing = (
+            db.query(LiveCopyOrder)
+            .filter(
+                LiveCopyOrder.mode == position.mode,
+                LiveCopyOrder.generation == position.generation,
+                LiveCopyOrder.source_token_mint == position.token_mint,
+                LiveCopyOrder.execution_origin == normalized_origin,
+                LiveCopyOrder.status.in_(("RECEIVED", "QUOTED", "SUBMITTED")),
+            )
+            .order_by(LiveCopyOrder.id.desc())
+            .first()
+        )
+        if existing is not None:
+            db.rollback()
+            return existing
+        position.exit_pending = False
+
+    now = utc_now()
+    retry_at = position.next_exit_retry_at
+    if retry_at is not None:
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=timezone.utc)
+        if retry_at > now:
+            raise LiveTradingError(
+                "La posizione è in attesa del prossimo tentativo di uscita.",
+                code="EXIT_RETRY_COOLDOWN",
+                status_code=409,
+                payload={"next_retry_at": retry_at.isoformat()},
+            )
+
+    exit_percentage = float(
+        percentage
+        if percentage is not None
+        else policy.auto_exit_position_percentage
+    )
+    if not 0 < exit_percentage <= 100:
+        raise LiveTradingError(
+            "Percentuale di uscita non valida.",
+            code="INVALID_EXIT_PERCENTAGE",
+            status_code=422,
+        )
+    input_amount = max(1, int(Decimal(quantity) * Decimal(str(exit_percentage)) / Decimal("100")))
+    input_amount = min(input_amount, quantity)
+    fraction = input_amount / quantity
+    requested_value = float(position.cost_basis_sol or 0.0) * fraction
+
+    attempt = int(position.exit_attempts or 0) + 1
+    material = "|".join(
+        (
+            normalized_origin,
+            position.mode,
+            str(position.generation),
+            str(position.id),
+            normalized_reason,
+            str(attempt),
+            str(input_amount),
+        )
+    )
+    idempotency_key = hashlib.sha256(material.encode("utf-8")).hexdigest()
+    source_wallet = (
+        position.source_wallet
+        or find_latest_buy_source_wallet(
+            db,
+            mode=position.mode,
+            generation=position.generation,
+            token_mint=position.token_mint,
+        )
+        or "AUTOMATIC_EXIT"
+    )
+    source_signature = (
+        f"{normalized_origin}:{position.mode}:{position.generation}:"
+        f"{position.id}:{normalized_reason}:{attempt}"
+    )
+    order = LiveCopyOrder(
+        idempotency_key=idempotency_key,
+        source_trade_id=None,
+        source_signature=source_signature,
+        source_wallet=source_wallet,
+        source_side="SELL",
+        source_token_mint=position.token_mint,
+        execution_origin=normalized_origin,
+        exit_reason=normalized_reason,
+        source_sol_amount=requested_value,
+        source_token_amount=None,
+        mode=position.mode,
+        generation=position.generation,
+        status="RECEIVED",
+        input_mint=position.token_mint,
+        output_mint=SOL_MINT,
+        requested_input_amount_raw=Decimal(input_amount),
+        requested_value_sol=requested_value,
+        slippage_bps=policy.max_slippage_bps,
+    )
+    position.exit_pending = True
+    position.exit_attempts = attempt
+    position.last_exit_reason = normalized_reason
+    position.last_exit_evaluation_at = now
+    db.add(order)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return (
+            db.query(LiveCopyOrder)
+            .filter(LiveCopyOrder.idempotency_key == idempotency_key)
+            .one()
+        )
+    db.refresh(order)
+
+    try:
+        policy = _get_locked_policy(db)
+        position = (
+            db.query(LivePosition)
+            .filter(LivePosition.id == position_id)
+            .with_for_update()
+            .one()
+        )
+        if position.status != "OPEN" or int(Decimal(position.quantity_raw or 0)) < input_amount:
+            raise LiveTradingError(
+                "La posizione è cambiata prima dell'uscita automatica.",
+                code="POSITION_CHANGED",
+                status_code=409,
+            )
+
+        platform_config = get_or_create_platform_config(db)
+        if policy.mode == "LIVE":
+            if not is_live_armed(platform_config):
+                raise LiveTradingError(
+                    "Esecuzione LIVE non armata o scaduta.",
+                    code="LIVE_NOT_ARMED",
+                    status_code=409,
+                )
+            if not settings.is_live_trading_configured:
+                raise LiveTradingError(
+                    "Esecuzione LIVE non configurata completamente.",
+                    code="LIVE_EXECUTION_NOT_CONFIGURED",
+                    status_code=503,
+                )
+
+        jupiter_client = jupiter_client or JupiterSwapClient()
+        quote = jupiter_client.get_order(
+            input_mint=position.token_mint,
+            output_mint=SOL_MINT,
+            amount_raw=input_amount,
+            taker=(settings.LIVE_TRADING_WALLET_ADDRESS if policy.mode == "LIVE" else None),
+            slippage_bps=policy.max_slippage_bps,
+        )
+        if quote.slippage_bps > policy.max_slippage_bps:
+            raise LiveTradingError(
+                "Slippage Jupiter superiore al limite configurato.",
+                code="MAX_SLIPPAGE_EXCEEDED",
+                status_code=409,
+            )
+        if quote.price_impact_percent > policy.max_price_impact_percent:
+            raise LiveTradingError(
+                "Price impact Jupiter superiore al limite configurato.",
+                code="MAX_PRICE_IMPACT_EXCEEDED",
+                status_code=409,
+                payload={"price_impact_percent": quote.price_impact_percent},
+            )
+
+        order = db.query(LiveCopyOrder).filter(LiveCopyOrder.id == order.id).with_for_update().one()
+        order.status = "QUOTED"
+        order.jupiter_request_id = quote.request_id
+        order.router = quote.router
+        order.expected_output_amount_raw = Decimal(quote.out_amount)
+        order.order_response = sanitize_jupiter_payload(quote.raw)
+        order.quoted_at = utc_now()
+        plan = LiveExecutionPlan(
+            side="SELL",
+            generation=position.generation,
+            token_mint=position.token_mint,
+            input_mint=position.token_mint,
+            output_mint=SOL_MINT,
+            input_amount_raw=input_amount,
+            requested_value_sol=requested_value,
+            position_id=position.id,
+        )
+
+        if policy.mode == "DRY_RUN":
+            actual_input = quote.in_amount
+            actual_output = quote.out_amount
+            signature = f"DRY_RUN_{normalized_origin}:{position.generation}:{position.id}:{order.id}"
+            order.status = "DRY_RUN"
+            order.reconciliation_status = "NOT_REQUIRED"
+        else:
+            if not quote.transaction:
+                raise JupiterSwapError(
+                    "Jupiter non ha restituito la transazione da firmare.",
+                    code="JUPITER_TRANSACTION_MISSING",
+                    status_code=502,
+                )
+            signer = signer or SolanaTransactionSigner()
+            signed = signer.sign_base64_versioned_transaction(quote.transaction)
+            rpc_client = rpc_client or SolanaRpcClient()
+            if settings.LIVE_TRADING_REQUIRE_SIMULATION:
+                simulation = rpc_client.simulate_transaction_base64(signed)
+                order.order_response = {**(order.order_response or {}), "simulation": simulation}
+            order.status = "SUBMITTED"
+            order.submitted_at = utc_now()
+            execution = jupiter_client.execute_order(
+                signed_transaction=signed,
+                request_id=quote.request_id,
+                last_valid_block_height=quote.last_valid_block_height,
+            )
+            order.execute_response = sanitize_jupiter_payload(execution.raw)
+            order.transaction_signature = execution.signature
+            if not execution.success:
+                raise JupiterSwapError(
+                    execution.error or "Jupiter non ha confermato l'uscita.",
+                    code="JUPITER_EXECUTION_FAILED",
+                    status_code=502,
+                    payload={"jupiter_code": execution.code, "signature": execution.signature},
+                )
+            actual_input = execution.input_amount or quote.in_amount
+            actual_output = execution.output_amount or quote.out_amount
+            signature = execution.signature or source_signature
+            order.status = "FILLED"
+            order.reconciliation_status = "PENDING"
+            order.confirmation_status = "processed"
+
+        order.actual_input_amount_raw = Decimal(actual_input)
+        order.actual_output_amount_raw = Decimal(actual_output)
+        order.realized_pnl_sol = _apply_filled_position(
+            db,
+            order=order,
+            plan=plan,
+            input_amount_raw=actual_input,
+            output_amount_raw=actual_output,
+            execution_signature=signature,
+        )
+        order.executed_at = utc_now()
+        position.exit_pending = False
+        position.next_exit_retry_at = None
+        policy.consecutive_failures = 0
+        register_filled_order(db, policy=policy, order=order, now=order.executed_at)
+        record_live_event(
+            db,
+            order_id=order.id,
+            generation=order.generation,
+            event_type="AUTOMATIC_EXIT_COMPLETED" if normalized_origin == "AUTO_EXIT" else "POSITION_CLOSE_COMPLETED",
+            message="Uscita posizione completata con quotazione Jupiter.",
+            payload={
+                "position_id": position.id,
+                "token_mint": position.token_mint,
+                "reason": normalized_reason,
+                "percentage": exit_percentage,
+                "realized_pnl_sol": order.realized_pnl_sol,
+                "router": quote.router,
+            },
+        )
+        db.commit()
+        db.refresh(order)
+        return order
+
+    except LiveTradingError as error:
+        failed = _finalize_error(db, order_id=order.id, error=error)
+        position = db.query(LivePosition).filter(LivePosition.id == position_id).first()
+        if position is not None and position.status == "OPEN":
+            position.exit_pending = False
+            position.next_exit_retry_at = utc_now() + timedelta(seconds=max(1, int(retry_seconds)))
+            position.last_exit_reason = normalized_reason
+            db.commit()
+        return failed
+    except Exception as exception:
+        error = LiveTradingError(
+            "Errore interno durante la chiusura automatica.",
+            code="AUTO_EXIT_INTERNAL_ERROR",
+            status_code=500,
+            payload={"error_type": type(exception).__name__},
+        )
+        failed = _finalize_error(db, order_id=order.id, error=error)
+        position = db.query(LivePosition).filter(LivePosition.id == position_id).first()
+        if position is not None and position.status == "OPEN":
+            position.exit_pending = False
+            position.next_exit_retry_at = utc_now() + timedelta(seconds=max(1, int(retry_seconds)))
+            db.commit()
+        return failed
 
 def get_live_trading_status(
     db: Session,

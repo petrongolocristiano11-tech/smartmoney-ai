@@ -145,6 +145,23 @@ class LiveTradingPolicyUpdateRequest(
         le=100,
     )
 
+    automatic_exits_enabled: bool | None = None
+    take_profit_enabled: bool | None = None
+    take_profit_percent: float | None = Field(default=None, gt=0, le=10000)
+    stop_loss_enabled: bool | None = None
+    stop_loss_percent: float | None = Field(default=None, gt=0, le=100)
+    trailing_stop_enabled: bool | None = None
+    trailing_stop_percent: float | None = Field(default=None, gt=0, le=100)
+    time_exit_enabled: bool | None = None
+    max_position_age_minutes: int | None = Field(default=None, ge=1, le=525600)
+    auto_exit_position_percentage: float | None = Field(default=None, gt=0, le=100)
+    max_open_positions: int | None = Field(default=None, ge=1, le=1000)
+    max_token_exposure_sol: float | None = Field(default=None, gt=0)
+    max_daily_orders: int | None = Field(default=None, ge=1, le=10000)
+    max_portfolio_drawdown_percent: float | None = Field(default=None, gt=0, le=100)
+    loss_streak_cooldown_threshold: int | None = Field(default=None, ge=1, le=100)
+    cooldown_after_loss_minutes: int | None = Field(default=None, ge=1, le=10080)
+
     @field_validator(
         "source_wallets"
     )
@@ -379,6 +396,22 @@ class LiveTradingPolicyResponse(
     max_source_trade_age_seconds: int
     max_consecutive_failures: int
     consecutive_failures: int
+    automatic_exits_enabled: bool
+    take_profit_enabled: bool
+    take_profit_percent: float
+    stop_loss_enabled: bool
+    stop_loss_percent: float
+    trailing_stop_enabled: bool
+    trailing_stop_percent: float
+    time_exit_enabled: bool
+    max_position_age_minutes: int
+    auto_exit_position_percentage: float
+    max_open_positions: int
+    max_token_exposure_sol: float
+    max_daily_orders: int
+    max_portfolio_drawdown_percent: float
+    loss_streak_cooldown_threshold: int
+    cooldown_after_loss_minutes: int
     dry_run_generation: int
     dry_run_started_at: datetime | None
     created_at: datetime
@@ -402,6 +435,7 @@ class LivePositionResponse(
     generation: int
 
     token_mint: str
+    source_wallet: str | None
 
     status: Literal[
         "OPEN",
@@ -411,6 +445,18 @@ class LivePositionResponse(
     quantity_raw: Decimal
     cost_basis_sol: float
     realized_pnl_sol: float
+    current_value_sol: float | None
+    unrealized_pnl_sol: float | None
+    unrealized_roi_percent: float | None
+    high_watermark_value_sol: float | None
+    high_watermark_roi_percent: float | None
+    trailing_stop_value_sol: float | None
+    exit_pending: bool
+    exit_attempts: int
+    last_exit_reason: str | None
+    next_exit_retry_at: datetime | None
+    last_quote_at: datetime | None
+    last_exit_evaluation_at: datetime | None
     last_buy_signature: str | None
     last_sell_signature: str | None
     opened_at: datetime
@@ -437,6 +483,8 @@ class LiveCopyOrderResponse(
     ]
 
     source_token_mint: str
+    execution_origin: Literal["SOURCE_TRADE", "MANUAL_CLOSE", "AUTO_EXIT"]
+    exit_reason: str | None
     source_sol_amount: float | None
     source_token_amount: float | None
 
@@ -477,6 +525,12 @@ class LiveCopyOrderResponse(
     error_code: str | None
     error_message: str | None
     realized_pnl_sol: float
+    reconciliation_status: Literal["NOT_REQUIRED", "PENDING", "CONFIRMED", "FAILED", "UNKNOWN"]
+    reconciliation_attempts: int
+    confirmation_status: str | None
+    on_chain_error: dict | None
+    last_reconciled_at: datetime | None
+    confirmed_at: datetime | None
     quoted_at: datetime | None
     submitted_at: datetime | None
     executed_at: datetime | None

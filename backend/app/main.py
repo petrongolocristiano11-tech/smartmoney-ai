@@ -5,6 +5,9 @@ from contextlib import (
 from backend.app.services.live_trading_worker_runtime import (
     live_trading_worker_runtime,
 )
+from backend.app.services.live_position_monitor_runtime import (
+    live_position_monitor_runtime,
+)
 from datetime import (
     datetime,
     timezone,
@@ -34,6 +37,9 @@ from backend.app.api.live_trading import (
 )
 from backend.app.api.live_platform import (
     router as live_platform_router,
+)
+from backend.app.api.live_operations import (
+    router as live_operations_router,
 )
 from backend.app.api.paper_autopilot import (
     router as paper_autopilot_router,
@@ -111,11 +117,13 @@ async def lifespan(
         )
 
     await live_trading_worker_runtime.start()
+    await live_position_monitor_runtime.start()
 
     try:
         yield
 
     finally:
+        await live_position_monitor_runtime.stop()
         await live_trading_worker_runtime.stop()
 
         engine.dispose()
@@ -281,6 +289,9 @@ app.include_router(
 )
 app.include_router(
     live_platform_router
+)
+app.include_router(
+    live_operations_router
 )
 
 

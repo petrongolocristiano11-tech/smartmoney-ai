@@ -150,6 +150,55 @@ class LiveTradingPolicy(Base):
                 "dry_run_generation_positive"
             ),
         ),
+        CheckConstraint(
+            "take_profit_percent > 0 "
+            "AND take_profit_percent <= 10000",
+            name="ck_live_policy_take_profit",
+        ),
+        CheckConstraint(
+            "stop_loss_percent > 0 "
+            "AND stop_loss_percent <= 100",
+            name="ck_live_policy_stop_loss",
+        ),
+        CheckConstraint(
+            "trailing_stop_percent > 0 "
+            "AND trailing_stop_percent <= 100",
+            name="ck_live_policy_trailing_stop",
+        ),
+        CheckConstraint(
+            "max_position_age_minutes BETWEEN 1 AND 525600",
+            name="ck_live_policy_position_age",
+        ),
+        CheckConstraint(
+            "auto_exit_position_percentage > 0 "
+            "AND auto_exit_position_percentage <= 100",
+            name="ck_live_policy_auto_exit_percentage",
+        ),
+        CheckConstraint(
+            "max_open_positions BETWEEN 1 AND 1000",
+            name="ck_live_policy_max_open_positions",
+        ),
+        CheckConstraint(
+            "max_token_exposure_sol > 0",
+            name="ck_live_policy_token_exposure",
+        ),
+        CheckConstraint(
+            "max_daily_orders BETWEEN 1 AND 10000",
+            name="ck_live_policy_daily_orders",
+        ),
+        CheckConstraint(
+            "max_portfolio_drawdown_percent > 0 "
+            "AND max_portfolio_drawdown_percent <= 100",
+            name="ck_live_policy_drawdown",
+        ),
+        CheckConstraint(
+            "loss_streak_cooldown_threshold BETWEEN 1 AND 100",
+            name="ck_live_policy_loss_streak_threshold",
+        ),
+        CheckConstraint(
+            "cooldown_after_loss_minutes BETWEEN 1 AND 10080",
+            name="ck_live_policy_cooldown_minutes",
+        ),
     )
 
     id: Mapped[int] = mapped_column(
@@ -310,6 +359,87 @@ class LiveTradingPolicy(Base):
             Integer,
             default=0,
         )
+    )
+
+    automatic_exits_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        index=True,
+    )
+
+    take_profit_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+    )
+
+    take_profit_percent: Mapped[float] = mapped_column(
+        Float,
+        default=25.0,
+    )
+
+    stop_loss_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+    )
+
+    stop_loss_percent: Mapped[float] = mapped_column(
+        Float,
+        default=15.0,
+    )
+
+    trailing_stop_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+    )
+
+    trailing_stop_percent: Mapped[float] = mapped_column(
+        Float,
+        default=10.0,
+    )
+
+    time_exit_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+    )
+
+    max_position_age_minutes: Mapped[int] = mapped_column(
+        Integer,
+        default=1440,
+    )
+
+    auto_exit_position_percentage: Mapped[float] = mapped_column(
+        Float,
+        default=100.0,
+    )
+
+    max_open_positions: Mapped[int] = mapped_column(
+        Integer,
+        default=5,
+    )
+
+    max_token_exposure_sol: Mapped[float] = mapped_column(
+        Float,
+        default=0.10,
+    )
+
+    max_daily_orders: Mapped[int] = mapped_column(
+        Integer,
+        default=50,
+    )
+
+    max_portfolio_drawdown_percent: Mapped[float] = mapped_column(
+        Float,
+        default=20.0,
+    )
+
+    loss_streak_cooldown_threshold: Mapped[int] = mapped_column(
+        Integer,
+        default=3,
+    )
+
+    cooldown_after_loss_minutes: Mapped[int] = mapped_column(
+        Integer,
+        default=30,
     )
 
     dry_run_generation: Mapped[int] = (

@@ -275,6 +275,36 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # POSITION MONITOR / RECONCILIATION
+    # =========================
+
+    RUN_LIVE_POSITION_MONITOR: bool = False
+
+    LIVE_POSITION_MONITOR_INTERVAL_SECONDS: float = Field(
+        default=30.0, ge=5.0, le=3600.0
+    )
+
+    LIVE_POSITION_MONITOR_LEASE_SECONDS: int = Field(
+        default=120, ge=30, le=3600
+    )
+
+    LIVE_POSITION_MONITOR_RESTART_SECONDS: float = Field(
+        default=5.0, ge=1.0, le=300.0
+    )
+
+    LIVE_POSITION_MONITOR_SHUTDOWN_TIMEOUT_SECONDS: float = Field(
+        default=25.0, ge=5.0, le=120.0
+    )
+
+    LIVE_POSITION_MONITOR_BATCH_SIZE: int = Field(
+        default=100, ge=1, le=500
+    )
+
+    LIVE_ORDER_RECONCILE_BATCH_SIZE: int = Field(
+        default=50, ge=1, le=500
+    )
+
+    # =========================
     # CORS
     # =========================
 

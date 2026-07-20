@@ -157,6 +157,45 @@ def _validate_merged_limits(
             status_code=422,
         )
 
+    if (
+        values["max_token_exposure_sol"]
+        > values["max_total_exposure_sol"]
+    ):
+        raise LiveTradingError(
+            "max_token_exposure_sol non può "
+            "superare max_total_exposure_sol.",
+            code="INVALID_LIVE_TRADING_LIMITS",
+            status_code=422,
+        )
+
+    if (
+        values["automatic_exits_enabled"]
+        and not values["sell_enabled"]
+    ):
+        raise LiveTradingError(
+            "Le uscite automatiche richiedono sell_enabled=true.",
+            code="AUTOMATIC_EXITS_REQUIRE_SELLS",
+            status_code=422,
+        )
+
+    if (
+        values["automatic_exits_enabled"]
+        and not any(
+            values[name]
+            for name in (
+                "take_profit_enabled",
+                "stop_loss_enabled",
+                "trailing_stop_enabled",
+                "time_exit_enabled",
+            )
+        )
+    ):
+        raise LiveTradingError(
+            "Attiva almeno una strategia di uscita automatica.",
+            code="AUTOMATIC_EXIT_STRATEGY_REQUIRED",
+            status_code=422,
+        )
+
 
 def update_live_policy(
     db: Session,
@@ -213,6 +252,20 @@ def update_live_policy(
             policy.max_daily_buy_sol,
         "max_total_exposure_sol":
             policy.max_total_exposure_sol,
+        "max_token_exposure_sol":
+            policy.max_token_exposure_sol,
+        "automatic_exits_enabled":
+            policy.automatic_exits_enabled,
+        "sell_enabled":
+            policy.sell_enabled,
+        "take_profit_enabled":
+            policy.take_profit_enabled,
+        "stop_loss_enabled":
+            policy.stop_loss_enabled,
+        "trailing_stop_enabled":
+            policy.trailing_stop_enabled,
+        "time_exit_enabled":
+            policy.time_exit_enabled,
     }
 
     merged.update(

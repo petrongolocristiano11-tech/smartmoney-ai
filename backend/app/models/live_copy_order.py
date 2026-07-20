@@ -2,6 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -80,6 +81,28 @@ class LiveCopyOrder(Base):
                 "generation_positive"
             ),
         ),
+        CheckConstraint(
+            "execution_origin IN ("
+            "'SOURCE_TRADE', "
+            "'MANUAL_CLOSE', "
+            "'AUTO_EXIT'"
+            ")",
+            name="ck_live_copy_orders_execution_origin",
+        ),
+        CheckConstraint(
+            "reconciliation_status IN ("
+            "'NOT_REQUIRED', "
+            "'PENDING', "
+            "'CONFIRMED', "
+            "'FAILED', "
+            "'UNKNOWN'"
+            ")",
+            name="ck_live_copy_orders_reconciliation_status",
+        ),
+        CheckConstraint(
+            "reconciliation_attempts >= 0",
+            name="ck_live_copy_orders_reconciliation_attempts",
+        ),
         Index(
             "ix_live_copy_orders_"
             "created_status",
@@ -139,6 +162,18 @@ class LiveCopyOrder(Base):
             String(64),
             index=True,
         )
+    )
+
+    execution_origin: Mapped[str] = mapped_column(
+        String(30),
+        default="SOURCE_TRADE",
+        index=True,
+    )
+
+    exit_reason: Mapped[str | None] = mapped_column(
+        String(80),
+        nullable=True,
+        index=True,
     )
 
     source_sol_amount: Mapped[
@@ -285,6 +320,38 @@ class LiveCopyOrder(Base):
             Float,
             default=0.0,
         )
+    )
+
+    reconciliation_status: Mapped[str] = mapped_column(
+        String(20),
+        default="NOT_REQUIRED",
+        index=True,
+    )
+
+    reconciliation_attempts: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+    )
+
+    confirmation_status: Mapped[str | None] = mapped_column(
+        String(40),
+        nullable=True,
+    )
+
+    on_chain_error: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
+    last_reconciled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
+
+    confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     quoted_at: Mapped[

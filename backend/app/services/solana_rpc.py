@@ -171,6 +171,38 @@ class SolanaRpcClient:
             / LAMPORTS_PER_SOL
         )
 
+    def get_signature_status(
+        self,
+        signature: str,
+    ) -> dict:
+        result = self.call(
+            "getSignatureStatuses",
+            [[signature], {"searchTransactionHistory": True}],
+        )
+        values = result.get("value") if isinstance(result, dict) else None
+        value = values[0] if isinstance(values, list) and values else None
+        if value is None:
+            return {
+                "found": False,
+                "confirmation_status": None,
+                "confirmations": None,
+                "error": None,
+                "slot": None,
+            }
+        if not isinstance(value, dict):
+            raise SolanaRpcError(
+                "Stato firma Solana non valido.",
+                code="SOLANA_SIGNATURE_STATUS_INVALID",
+                status_code=502,
+            )
+        return {
+            "found": True,
+            "confirmation_status": value.get("confirmationStatus"),
+            "confirmations": value.get("confirmations"),
+            "error": value.get("err"),
+            "slot": value.get("slot"),
+        }
+
     def simulate_transaction_base64(
         self,
         transaction_base64: str,

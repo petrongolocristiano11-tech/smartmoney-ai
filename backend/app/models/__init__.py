@@ -1,6 +1,12 @@
 from backend.app.models.live_platform_config import (
     LivePlatformConfig,
 )
+from backend.app.models.live_position_monitor import (
+    LivePositionMonitorState,
+)
+from backend.app.models.live_risk_state import (
+    LiveRiskState,
+)
 from backend.app.models.live_wallet_score import (
     LiveWalletScore,
 )
@@ -59,6 +65,8 @@ __all__ = [
     "TokenSafetySnapshot",
     "LiveWalletScore",
     "LivePlatformConfig",
+    "LivePositionMonitorState",
+    "LiveRiskState",
     "DiscoveredWallet",
     "LiveCopyOrder",
     "LivePosition",

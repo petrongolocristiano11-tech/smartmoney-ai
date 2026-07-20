@@ -333,3 +333,34 @@ export function disarmLiveTrading(
     getLiveTradingConfig(accessKey)
   );
 }
+
+export function getLiveTradingOperationsOverview(accessKey) {
+  return api.get(
+    "/live-trading/operations/overview",
+    getLiveTradingConfig(accessKey)
+  );
+}
+
+export function runLiveTradingOperationsOnce(accessKey, payload = {}) {
+  return api.post(
+    "/live-trading/operations/run-once",
+    payload,
+    getLiveTradingConfig(accessKey)
+  );
+}
+
+export function reconcileLiveTradingOrders(accessKey, limit = 50) {
+  return api.post(
+    "/live-trading/operations/reconcile",
+    { limit },
+    getLiveTradingConfig(accessKey)
+  );
+}
+
+export function resetLiveTradingRiskCooldown(accessKey) {
+  return api.post(
+    "/live-trading/operations/risk/cooldown/reset",
+    { confirmation: "RESET RISK COOLDOWN" },
+    getLiveTradingConfig(accessKey)
+  );
+}

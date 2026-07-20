@@ -1,0 +1,25 @@
+SMARTMONEY AI - AUTONOMOUS RISK & OPERATIONS
+Data verifica: 2026-07-20
+
+Backend
+- compileall backend/alembic/tests: PASS
+- pytest completo: 168 passed
+- OpenAPI: 94 percorsi totali
+- endpoint /live-trading/operations: 4/4
+
+Database
+- Alembic PostgreSQL offline SQL: PASS
+- chain verificata: c7d9e1f2a603 -> d8a4f7c2e915
+- tabelle create: live_risk_states, live_position_monitor_states
+
+Automation
+- node --test: 11 passed
+
+Frontend
+- ESLint sui 4 file modificati: PASS
+- Vite build: PASS
+- moduli trasformati: 801
+
+Nota trasparente
+- Il lint globale del repository presenta segnalazioni preesistenti in file non modificati.
+  Il pacchetto usa come gate ESLint mirato sui file toccati e build di produzione completa.

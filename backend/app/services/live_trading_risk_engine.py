@@ -28,6 +28,10 @@ from backend.app.models.trade import Trade
 from backend.app.services.live_trading_errors import (
     LiveTradingError,
 )
+from backend.app.services.live_risk_state_service import (
+    assert_buy_risk_allowed,
+    refresh_risk_state,
+)
 
 
 LAMPORTS_PER_SOL = 1_000_000_000
@@ -171,6 +175,64 @@ def get_daily_buy_sol(
 
     return float(
         query.scalar() or 0.0
+    )
+
+
+def get_daily_order_count(
+    db: Session,
+    *,
+    mode: str,
+    generation: int,
+    current_order_id: int | None = None,
+    now: datetime | None = None,
+) -> int:
+    query = db.query(func.count(LiveCopyOrder.id)).filter(
+        LiveCopyOrder.created_at >= utc_day_start(now),
+        LiveCopyOrder.mode == mode,
+        LiveCopyOrder.generation == generation,
+        LiveCopyOrder.status.in_(ACTIVE_ORDER_STATUSES),
+    )
+    if current_order_id is not None:
+        query = query.filter(LiveCopyOrder.id != current_order_id)
+    return int(query.scalar() or 0)
+
+
+def get_open_position_count(
+    db: Session,
+    *,
+    mode: str,
+    generation: int,
+) -> int:
+    return int(
+        db.query(func.count(LivePosition.id))
+        .filter(
+            LivePosition.mode == mode,
+            LivePosition.generation == generation,
+            LivePosition.status == "OPEN",
+            LivePosition.quantity_raw > 0,
+        )
+        .scalar()
+        or 0
+    )
+
+
+def get_token_exposure_sol(
+    db: Session,
+    *,
+    mode: str,
+    generation: int,
+    token_mint: str,
+) -> float:
+    return float(
+        db.query(func.coalesce(func.sum(LivePosition.cost_basis_sol), 0.0))
+        .filter(
+            LivePosition.mode == mode,
+            LivePosition.generation == generation,
+            LivePosition.token_mint == token_mint,
+            LivePosition.status == "OPEN",
+        )
+        .scalar()
+        or 0.0
     )
 
 
@@ -395,6 +457,50 @@ def build_live_execution_plan(
         )
 
     if side == "BUY":
+        risk_state = refresh_risk_state(
+            db,
+            mode=policy.mode,
+            generation=generation,
+            now=now,
+            commit=False,
+        )
+        assert_buy_risk_allowed(
+            policy,
+            risk_state,
+            now=now,
+        )
+
+        daily_orders = get_daily_order_count(
+            db,
+            mode=policy.mode,
+            generation=generation,
+            current_order_id=current_order_id,
+            now=now,
+        )
+        if daily_orders + 1 > int(policy.max_daily_orders):
+            _reject(
+                "Numero massimo di ordini giornalieri raggiunto.",
+                "MAX_DAILY_ORDERS",
+            )
+
+        existing_position = (
+            db.query(LivePosition)
+            .filter(
+                LivePosition.mode == policy.mode,
+                LivePosition.generation == generation,
+                LivePosition.token_mint == token_mint,
+                LivePosition.status == "OPEN",
+            )
+            .first()
+        )
+        if existing_position is None and get_open_position_count(
+            db, mode=policy.mode, generation=generation
+        ) >= int(policy.max_open_positions):
+            _reject(
+                "Numero massimo di posizioni aperte raggiunto.",
+                "MAX_OPEN_POSITIONS",
+            )
+
         if (
             policy.sizing_mode
             == "FIXED"
@@ -472,6 +578,20 @@ def build_live_execution_plan(
                 "Esposizione massima "
                 "Live Trading superata.",
                 "MAX_TOTAL_EXPOSURE",
+            )
+
+        token_exposure = get_token_exposure_sol(
+            db,
+            mode=policy.mode,
+            generation=generation,
+            token_mint=token_mint,
+        )
+        if token_exposure + requested_value_sol > float(
+            policy.max_token_exposure_sol
+        ):
+            _reject(
+                "Esposizione massima per token superata.",
+                "MAX_TOKEN_EXPOSURE",
             )
 
         if policy.mode == "LIVE":

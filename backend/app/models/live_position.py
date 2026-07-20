@@ -2,6 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -52,6 +53,10 @@ class LivePosition(Base):
                 "generation_positive"
             ),
         ),
+        CheckConstraint(
+            "exit_attempts >= 0",
+            name="ck_live_positions_exit_attempts",
+        ),
     )
 
     id: Mapped[int] = mapped_column(
@@ -78,6 +83,12 @@ class LivePosition(Base):
         index=True,
     )
 
+    source_wallet: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+    )
+
     status: Mapped[str] = mapped_column(
         String(20),
         default="OPEN",
@@ -97,6 +108,69 @@ class LivePosition(Base):
     realized_pnl_sol: Mapped[float] = mapped_column(
         Float,
         default=0.0,
+    )
+
+    current_value_sol: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    unrealized_pnl_sol: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    unrealized_roi_percent: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    high_watermark_value_sol: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    high_watermark_roi_percent: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    trailing_stop_value_sol: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    exit_pending: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        index=True,
+    )
+
+    exit_attempts: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+    )
+
+    last_exit_reason: Mapped[str | None] = mapped_column(
+        String(80),
+        nullable=True,
+    )
+
+    next_exit_retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
+
+    last_quote_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
+
+    last_exit_evaluation_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     last_buy_signature: Mapped[str | None] = mapped_column(

@@ -10,6 +10,7 @@ import LiveTradingDryRunReset from "../components/liveTrading/LiveTradingDryRunR
 import LiveTradingEvents from "../components/liveTrading/LiveTradingEvents";
 import LiveTradingMetric from "../components/liveTrading/LiveTradingMetric";
 import LiveTradingOrders from "../components/liveTrading/LiveTradingOrders";
+import LiveTradingOperations from "../components/liveTrading/LiveTradingOperations";
 import LiveTradingPolicyForm from "../components/liveTrading/LiveTradingPolicyForm";
 import LiveTradingPositions from "../components/liveTrading/LiveTradingPositions";
 import LiveTradingPlatform from "../components/liveTrading/LiveTradingPlatform";
@@ -42,6 +43,7 @@ const AUTO_REFRESH_MS = 15_000;
 const TABS = [
   ["control", "Controllo e policy"],
   ["platform", "Analytics e sicurezza"],
+  ["operations", "Automazione e rischio"],
   ["orders", "Ordini"],
   ["positions", "Posizioni"],
   ["events", "Eventi"],
@@ -1065,6 +1067,10 @@ function LiveTrading() {
             }
             mode={policy.mode}
           />
+        )}
+
+        {activeTab === "operations" && (
+          <LiveTradingOperations accessKey={accessKey} />
         )}
 
         {activeTab === "orders" && (
