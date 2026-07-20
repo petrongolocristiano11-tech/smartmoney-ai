@@ -28,6 +28,10 @@ class LivePlatformConfig(Base):
             name="ck_live_platform_min_wallet_score",
         ),
         CheckConstraint(
+            "min_wallet_closed_trades BETWEEN 1 AND 100",
+            name="ck_live_platform_min_wallet_sample",
+        ),
+        CheckConstraint(
             "max_top_holder_percent BETWEEN 0 AND 100",
             name="ck_live_platform_max_holder",
         ),
@@ -72,6 +76,11 @@ class LivePlatformConfig(Base):
     min_wallet_smart_score: Mapped[float] = mapped_column(
         Float,
         default=60.0,
+    )
+
+    min_wallet_closed_trades: Mapped[int] = mapped_column(
+        Integer,
+        default=3,
     )
 
     token_safety_enabled: Mapped[bool] = mapped_column(

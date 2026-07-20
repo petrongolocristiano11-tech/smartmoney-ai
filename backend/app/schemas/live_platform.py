@@ -13,6 +13,7 @@ class LivePlatformConfigUpdateRequest(BaseModel):
     auto_wallet_selection_enabled: bool | None = None
     max_source_wallets: int | None = Field(default=None, ge=1, le=50)
     min_wallet_smart_score: float | None = Field(default=None, ge=0, le=100)
+    min_wallet_closed_trades: int | None = Field(default=None, ge=1, le=100)
 
     token_safety_enabled: bool | None = None
     token_safety_fail_closed: bool | None = None
@@ -65,6 +66,7 @@ class LivePlatformConfigResponse(PlatformResponseModel):
     auto_wallet_selection_enabled: bool
     max_source_wallets: int
     min_wallet_smart_score: float
+    min_wallet_closed_trades: int
     token_safety_enabled: bool
     token_safety_fail_closed: bool
     token_allowlist_mode: bool

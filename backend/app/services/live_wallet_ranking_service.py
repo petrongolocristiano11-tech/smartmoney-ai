@@ -6,6 +6,10 @@ from sqlalchemy.orm import Session
 from backend.app.models.live_copy_order import LiveCopyOrder
 from backend.app.models.live_wallet_score import LiveWalletScore
 from backend.app.models.wallet_profile import WalletProfile
+from backend.app.services.live_order_attribution import (
+    MANUAL_DRY_RUN_CLOSE_WALLET,
+    is_manual_close_wallet,
+)
 from backend.app.services.live_platform_config_service import get_or_create_platform_config
 from backend.app.services.live_trading_errors import LiveTradingError
 from backend.app.services.live_trading_policy_service import (
@@ -15,6 +19,8 @@ from backend.app.services.live_trading_policy_service import (
 
 
 PNL_EPSILON = 1e-12
+MAX_RANKING_ROWS = 50
+COMPLETED_STATUSES = ("DRY_RUN", "FILLED")
 
 
 def utc_now() -> datetime:
@@ -54,9 +60,49 @@ def normalize_performance_score(
     )
 
 
+def _resolved_order_wallets(
+    orders: list[LiveCopyOrder],
+) -> dict[int, str]:
+    latest_buy_wallet: dict[tuple[str, int, str], str] = {}
+
+    for order in sorted(orders, key=lambda item: (item.created_at, item.id)):
+        wallet = str(order.source_wallet or "").strip()
+        token = str(order.source_token_mint or "").strip()
+        if (
+            order.source_side == "BUY"
+            and wallet
+            and token
+            and not is_manual_close_wallet(wallet)
+        ):
+            latest_buy_wallet[(order.mode, int(order.generation), token)] = wallet
+
+    resolved: dict[int, str] = {}
+    for order in orders:
+        wallet = str(order.source_wallet or "").strip()
+        if is_manual_close_wallet(wallet):
+            wallet = latest_buy_wallet.get(
+                (
+                    order.mode,
+                    int(order.generation),
+                    str(order.source_token_mint or "").strip(),
+                ),
+                wallet,
+            )
+        resolved[order.id] = wallet
+    return resolved
+
+
 def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
     policy = get_or_create_live_policy(db)
     config = get_or_create_platform_config(db)
+
+    completed_orders = (
+        db.query(LiveCopyOrder)
+        .filter(LiveCopyOrder.status.in_(COMPLETED_STATUSES))
+        .order_by(LiveCopyOrder.created_at.asc(), LiveCopyOrder.id.asc())
+        .all()
+    )
+    resolved_wallets = _resolved_order_wallets(completed_orders)
 
     candidate_wallets: set[str] = {
         str(wallet).strip()
@@ -65,12 +111,9 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
     }
 
     candidate_wallets.update(
-        address
-        for (address,) in db.query(LiveCopyOrder.source_wallet)
-        .filter(LiveCopyOrder.source_wallet != "MANUAL_DRY_RUN_CLOSE")
-        .distinct()
-        .all()
-        if address
+        wallet
+        for wallet in resolved_wallets.values()
+        if wallet and wallet != MANUAL_DRY_RUN_CLOSE_WALLET
     )
 
     candidate_wallets.update(
@@ -85,22 +128,13 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
         if 32 <= len(wallet) <= 44
     }
 
-    stale_query = db.query(
-        LiveWalletScore
-    )
-
+    stale_query = db.query(LiveWalletScore)
     if candidate_wallets:
         stale_query.filter(
-            ~LiveWalletScore.wallet_address.in_(
-                candidate_wallets
-            )
-        ).delete(
-            synchronize_session=False
-        )
+            ~LiveWalletScore.wallet_address.in_(candidate_wallets)
+        ).delete(synchronize_session=False)
     else:
-        stale_query.delete(
-            synchronize_session=False
-        )
+        stale_query.delete(synchronize_session=False)
 
     profile_map = {
         profile.wallet_address: profile
@@ -108,15 +142,6 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
         .filter(WalletProfile.wallet_address.in_(candidate_wallets or ["__none__"]))
         .all()
     }
-
-    order_rows = (
-        db.query(LiveCopyOrder)
-        .filter(
-            LiveCopyOrder.source_wallet.in_(candidate_wallets or ["__none__"]),
-            LiveCopyOrder.status.in_(("DRY_RUN", "FILLED")),
-        )
-        .all()
-    )
 
     stats: dict[str, dict] = defaultdict(
         lambda: {
@@ -128,13 +153,16 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
         }
     )
 
-    for order in order_rows:
-        wallet = str(order.source_wallet or "").strip()
-        if not wallet:
+    for order in completed_orders:
+        wallet = resolved_wallets.get(order.id, "")
+        if wallet not in candidate_wallets:
             continue
 
         if order.source_side == "BUY":
-            stats[wallet]["buy_value"] += max(0.0, safe_float(order.requested_value_sol))
+            stats[wallet]["buy_value"] += max(
+                0.0,
+                safe_float(order.requested_value_sol),
+            )
             continue
 
         pnl = safe_float(order.realized_pnl_sol)
@@ -147,6 +175,7 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
 
     calculated_at = utc_now()
     calculated_rows: list[LiveWalletScore] = []
+    minimum_sample = max(1, int(config.min_wallet_closed_trades or 1))
 
     for wallet in sorted(candidate_wallets):
         profile = profile_map.get(wallet)
@@ -179,7 +208,9 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
         reasons: list[str] = []
         if profile is None:
             reasons.append("PROFILE_NOT_AVAILABLE")
-        if closed < 3:
+        if closed == 0:
+            reasons.append("NO_LIVE_SAMPLE")
+        elif closed < minimum_sample:
             reasons.append("LIMITED_LIVE_SAMPLE")
         if smart_score < config.min_wallet_smart_score:
             reasons.append("SMART_SCORE_BELOW_MINIMUM")
@@ -200,7 +231,10 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
         row.roi_percent = roi
         row.realized_pnl_sol = round(wallet_stats["pnl"], 8)
         row.closed_trades = closed
-        row.eligible = smart_score >= config.min_wallet_smart_score
+        row.eligible = (
+            smart_score >= config.min_wallet_smart_score
+            and closed >= minimum_sample
+        )
         row.reasons = reasons
         row.calculated_at = calculated_at
         calculated_rows.append(row)
@@ -218,7 +252,9 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
         row.rank = rank
         if rank > config.max_source_wallets:
             row.eligible = False
-            row.reasons = list(dict.fromkeys([*(row.reasons or []), "OUTSIDE_WALLET_LIMIT"]))
+            row.reasons = list(
+                dict.fromkeys([*(row.reasons or []), "OUTSIDE_WALLET_LIMIT"])
+            )
 
     record_live_event(
         db,
@@ -226,24 +262,31 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
         message="Ranking automatico dei wallet sorgente aggiornato.",
         payload={
             "wallets_scored": len(calculated_rows),
+            "wallets_returned": min(len(calculated_rows), MAX_RANKING_ROWS),
             "eligible_wallets": sum(1 for row in calculated_rows if row.eligible),
             "minimum_score": config.min_wallet_smart_score,
+            "minimum_closed_trades": minimum_sample,
         },
     )
 
     db.commit()
     for row in calculated_rows:
         db.refresh(row)
-    return calculated_rows
+    return calculated_rows[:MAX_RANKING_ROWS]
 
 
-def list_live_wallet_ranking(db: Session, *, refresh: bool = False) -> list[LiveWalletScore]:
+def list_live_wallet_ranking(
+    db: Session,
+    *,
+    refresh: bool = False,
+) -> list[LiveWalletScore]:
     if refresh or db.query(LiveWalletScore).count() == 0:
         return refresh_live_wallet_ranking(db)
 
     return (
         db.query(LiveWalletScore)
         .order_by(LiveWalletScore.rank.asc(), LiveWalletScore.smart_score.desc())
+        .limit(MAX_RANKING_ROWS)
         .all()
     )
 
@@ -265,8 +308,7 @@ def apply_ranked_wallets(
 
     if not config.auto_wallet_selection_enabled:
         raise LiveTradingError(
-            "Abilita prima la selezione wallet "
-            "automatica nella configurazione.",
+            "Abilita prima la selezione wallet automatica nella configurazione.",
             code="AUTO_WALLET_SELECTION_DISABLED",
             status_code=409,
         )
@@ -278,7 +320,7 @@ def apply_ranked_wallets(
     selected = [row.wallet_address for row in ranking if row.eligible][:resolved_limit]
     if not selected:
         raise LiveTradingError(
-            "Nessun wallet supera i criteri configurati.",
+            "Nessun wallet ha sia lo Smart Score richiesto sia il campione minimo di trade chiusi.",
             code="NO_ELIGIBLE_SOURCE_WALLETS",
             status_code=409,
         )
@@ -292,6 +334,7 @@ def apply_ranked_wallets(
         payload={
             "selected_count": len(selected),
             "wallets": selected,
+            "minimum_closed_trades": config.min_wallet_closed_trades,
         },
     )
     db.commit()

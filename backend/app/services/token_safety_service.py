@@ -239,6 +239,11 @@ def _parse_rugcheck(report: dict[str, Any] | None) -> tuple[bool | None, bool | 
     return rugged, passed, risk_score
 
 
+def _error_name(exception: Exception) -> str:
+    code = getattr(exception, "code", None)
+    return str(code or type(exception).__name__)
+
+
 def refresh_token_safety_snapshot(
     db: Session,
     *,
@@ -248,6 +253,12 @@ def refresh_token_safety_snapshot(
     dex_client: DexScreenerClient | None = None,
     rugcheck_client: RugCheckClient | None = None,
 ) -> TokenSafetySnapshot:
+    """Refresh a token snapshot without losing all results on one provider error.
+
+    Manual scans must always produce a visible, conservative snapshot. Every
+    unavailable source is recorded in ``reasons``/``raw_payload`` and increases
+    risk so fail-closed BUY policy remains safe.
+    """
     token_mint = str(token_mint or "").strip()
     if not 32 <= len(token_mint) <= 44 or token_mint == SOL_MINT:
         raise LiveTradingError(
@@ -261,9 +272,41 @@ def refresh_token_safety_snapshot(
     dex_client = dex_client or DexScreenerClient()
     rugcheck_client = rugcheck_client or RugCheckClient()
 
-    decimals, mint_authority_enabled, freeze_authority_enabled = _mint_info(rpc_client, token_mint)
-    top_holder_percent = _top_holder_percent(rpc_client, token_mint)
-    market = dex_client.get_token_metrics(token_mint)
+    provider_errors: dict[str, str] = {}
+    successful_sources: list[str] = []
+
+    decimals = 6
+    mint_authority_enabled = False
+    freeze_authority_enabled = False
+    try:
+        (
+            decimals,
+            mint_authority_enabled,
+            freeze_authority_enabled,
+        ) = _mint_info(rpc_client, token_mint)
+        successful_sources.append("ONCHAIN_MINT")
+    except Exception as exception:
+        provider_errors["mint_info"] = _error_name(exception)
+
+    top_holder_percent = 100.0
+    try:
+        top_holder_percent = _top_holder_percent(rpc_client, token_mint)
+        successful_sources.append("ONCHAIN_HOLDERS")
+    except Exception as exception:
+        provider_errors["holders"] = _error_name(exception)
+
+    market = TokenMarketMetrics(
+        liquidity_usd=0.0,
+        market_cap_usd=0.0,
+        volume_24h_usd=0.0,
+        pair_count=0,
+        raw=[],
+    )
+    try:
+        market = dex_client.get_token_metrics(token_mint)
+        successful_sources.append("DEXSCREENER")
+    except Exception as exception:
+        provider_errors["dexscreener"] = _error_name(exception)
 
     honeypot = False
     sell_quote_error: str | None = None
@@ -276,18 +319,43 @@ def refresh_token_safety_snapshot(
             taker=None,
             slippage_bps=500,
         )
+        successful_sources.append("JUPITER")
         if sell_quote.out_amount <= 0:
             honeypot = True
             sell_quote_error = "ZERO_SELL_OUTPUT"
     except Exception as exception:
         honeypot = True
-        sell_quote_error = type(exception).__name__
+        sell_quote_error = _error_name(exception)
+        provider_errors["jupiter"] = sell_quote_error
 
-    rugcheck_report = rugcheck_client.get_report(token_mint)
-    rugged, rugcheck_passed, external_risk_score = _parse_rugcheck(rugcheck_report)
+    rugcheck_report = None
+    try:
+        rugcheck_report = rugcheck_client.get_report(token_mint)
+        if rugcheck_report is not None:
+            successful_sources.append("RUGCHECK")
+    except Exception as exception:
+        provider_errors["rugcheck"] = _error_name(exception)
+
+    rugged, rugcheck_passed, external_risk_score = _parse_rugcheck(
+        rugcheck_report
+    )
 
     risk_score = 0
     reasons: list[str] = []
+
+    if "mint_info" in provider_errors:
+        risk_score += 15
+        reasons.append("MINT_INFO_UNAVAILABLE")
+    if "holders" in provider_errors:
+        risk_score += 25
+        reasons.append("HOLDER_DATA_UNAVAILABLE")
+    if "dexscreener" in provider_errors:
+        risk_score += 20
+        reasons.append("MARKET_DATA_UNAVAILABLE")
+    if "jupiter" in provider_errors:
+        reasons.append("JUPITER_SELL_CHECK_UNAVAILABLE")
+    if "rugcheck" in provider_errors:
+        reasons.append("RUGCHECK_UNAVAILABLE")
 
     if mint_authority_enabled:
         risk_score += 20
@@ -320,8 +388,7 @@ def refresh_token_safety_snapshot(
         risk_score = max(risk_score, min(100, external_risk_score))
 
     risk_score = max(0, min(100, risk_score))
-    if not reasons:
-        reasons.append("NO_MAJOR_RISK_SIGNAL")
+    reasons = list(dict.fromkeys(reasons or ["NO_MAJOR_RISK_SIGNAL"]))
 
     snapshot = (
         db.query(TokenSafetySnapshot)
@@ -342,20 +409,26 @@ def refresh_token_safety_snapshot(
     snapshot.freeze_authority_enabled = freeze_authority_enabled
     snapshot.rugged = rugged
     snapshot.rugcheck_passed = rugcheck_passed
-    snapshot.source = "ONCHAIN+DEXSCREENER+JUPITER" + ("+RUGCHECK" if rugcheck_report else "")
+    snapshot.source = (
+        "+".join(successful_sources)
+        if not provider_errors
+        else "PARTIAL:" + ("+".join(successful_sources) or "NO_PROVIDER")
+    )
     snapshot.reasons = reasons
     snapshot.raw_payload = {
         "pair_count": market.pair_count,
         "pairs": market.raw,
         "sell_quote_error": sell_quote_error,
         "rugcheck": rugcheck_report,
+        "provider_errors": provider_errors,
+        "sell_amount_raw": sell_amount_raw,
+        "decimals": decimals,
     }
     snapshot.fetched_at = utc_now()
 
     db.commit()
     db.refresh(snapshot)
     return snapshot
-
 
 def get_token_safety_snapshot(
     db: Session,

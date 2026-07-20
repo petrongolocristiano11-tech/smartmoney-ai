@@ -70,6 +70,7 @@ def test_ranking_combines_profile_and_live_performance(db):
     config = get_or_create_platform_config(db)
     config.min_wallet_smart_score = 60
     config.max_source_wallets = 1
+    config.min_wallet_closed_trades = 1
 
     db.add_all([
         WalletProfile(wallet_address=WALLET_HIGH, smart_score=90, roi=20, win_rate=80),
@@ -95,7 +96,10 @@ def test_apply_ranking_requires_feature_and_confirmation(db):
     policy.source_wallets = [WALLET_HIGH]
     config = get_or_create_platform_config(db)
     config.min_wallet_smart_score = 0
+    config.min_wallet_closed_trades = 1
     db.add(WalletProfile(wallet_address=WALLET_HIGH, smart_score=90))
+    add_completed_order(db, WALLET_HIGH, "apply-buy", "BUY")
+    add_completed_order(db, WALLET_HIGH, "apply-sell", "SELL", 0.01)
     db.commit()
 
     with pytest.raises(LiveTradingError) as disabled:
@@ -111,3 +115,69 @@ def test_apply_ranking_requires_feature_and_confirmation(db):
 
     result = apply_ranked_wallets(db, confirmation="APPLY SMART WALLETS", limit=1)
     assert result["source_wallets"] == [WALLET_HIGH]
+
+
+def test_ranking_requires_minimum_closed_trade_sample(db):
+    policy = get_or_create_live_policy(db)
+    policy.source_wallets = [WALLET_HIGH]
+    config = get_or_create_platform_config(db)
+    config.min_wallet_smart_score = 0
+    config.min_wallet_closed_trades = 3
+    db.add(WalletProfile(wallet_address=WALLET_HIGH, smart_score=90))
+    add_completed_order(db, WALLET_HIGH, "sample-buy", "BUY")
+    add_completed_order(db, WALLET_HIGH, "sample-sell", "SELL", 0.01)
+    db.commit()
+
+    ranking = refresh_live_wallet_ranking(db)
+
+    assert ranking[0].closed_trades == 1
+    assert ranking[0].eligible is False
+    assert "LIMITED_LIVE_SAMPLE" in ranking[0].reasons
+
+
+def test_ranking_response_is_limited_to_fifty_rows(db):
+    policy = get_or_create_live_policy(db)
+    config = get_or_create_platform_config(db)
+    config.min_wallet_smart_score = 0
+    config.min_wallet_closed_trades = 1
+
+    wallets = [f"{index:032d}" for index in range(60)]
+    policy.source_wallets = wallets
+    for index, wallet in enumerate(wallets):
+        db.add(
+            WalletProfile(
+                wallet_address=wallet,
+                smart_score=100 - index,
+            )
+        )
+    db.commit()
+
+    ranking = refresh_live_wallet_ranking(db)
+
+    assert len(ranking) == 50
+    assert ranking[0].rank == 1
+    assert ranking[-1].rank == 50
+
+
+def test_manual_close_pnl_contributes_to_original_wallet_ranking(db):
+    policy = get_or_create_live_policy(db)
+    policy.source_wallets = [WALLET_HIGH]
+    config = get_or_create_platform_config(db)
+    config.min_wallet_smart_score = 0
+    config.min_wallet_closed_trades = 1
+    db.add(WalletProfile(wallet_address=WALLET_HIGH, smart_score=90))
+    add_completed_order(db, WALLET_HIGH, "manual-buy", "BUY")
+    add_completed_order(
+        db,
+        "MANUAL_DRY_RUN_CLOSE",
+        "manual-sell",
+        "SELL",
+        -0.02,
+    )
+    db.commit()
+
+    ranking = refresh_live_wallet_ranking(db)
+
+    row = next(item for item in ranking if item.wallet_address == WALLET_HIGH)
+    assert row.closed_trades == 1
+    assert row.realized_pnl_sol == pytest.approx(-0.02)

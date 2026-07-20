@@ -47,11 +47,12 @@ def add_order(
     value_sol: float,
     pnl_sol: float,
     when: datetime,
+    wallet: str = WALLET,
 ):
     order = LiveCopyOrder(
         idempotency_key=key,
         source_signature=key,
-        source_wallet=WALLET,
+        source_wallet=wallet,
         source_side=side,
         source_token_mint=token,
         mode="DRY_RUN",
@@ -138,3 +139,46 @@ def test_analytics_csv_contains_daily_equity_rows(db):
 
     assert "date,mode,generation" in csv_content
     assert csv_content.count("DRY_RUN,2") == 3
+
+
+def test_manual_close_pnl_is_attributed_to_original_wallet(db):
+    now = datetime.now(timezone.utc)
+    policy = get_or_create_live_policy(db)
+    policy.mode = "DRY_RUN"
+    policy.dry_run_generation = 2
+
+    add_order(
+        db,
+        key="original-buy",
+        side="BUY",
+        token=TOKEN_A,
+        value_sol=0.05,
+        pnl_sol=0,
+        when=now - timedelta(hours=2),
+    )
+    add_order(
+        db,
+        key="manual-close",
+        side="SELL",
+        token=TOKEN_A,
+        value_sol=0.05,
+        pnl_sol=-0.01,
+        when=now - timedelta(hours=1),
+        wallet="MANUAL_DRY_RUN_CLOSE",
+    )
+    db.commit()
+
+    payload = build_live_trading_analytics(
+        db,
+        days=7,
+        mode="DRY_RUN",
+        generation=2,
+        now=now,
+    )
+
+    assert len(payload["wallet_performance"]) == 1
+    row = payload["wallet_performance"][0]
+    assert row["source_wallet"] == WALLET
+    assert row["orders"] == 2
+    assert row["sells"] == 1
+    assert row["realized_pnl_sol"] == pytest.approx(-0.01)

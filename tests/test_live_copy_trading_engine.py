@@ -328,6 +328,7 @@ def test_manual_dry_run_close_closes_position_and_is_idempotent(
     assert first.status == "DRY_RUN"
     assert first.source_side == "SELL"
     assert first.source_trade_id is None
+    assert first.source_wallet == WALLET
     assert first.realized_pnl_sol == pytest.approx(
         -0.01
     )

@@ -145,3 +145,40 @@ def test_token_safety_policy_rejects_unsafe_buy_but_never_blocks_sell(db):
     )
     assert sell_allowed is True
     assert sell_reasons == []
+
+
+class FailingProvider:
+    configured = True
+
+    def call(self, method, params=None):
+        raise RuntimeError(f"rpc failed: {method}")
+
+    def get_token_metrics(self, token_mint):
+        raise RuntimeError("dex failed")
+
+    def get_order(self, **kwargs):
+        raise RuntimeError("jupiter failed")
+
+    def get_report(self, token_mint):
+        raise RuntimeError("rugcheck failed")
+
+
+def test_token_safety_persists_conservative_partial_snapshot(db):
+    failing = FailingProvider()
+
+    snapshot = refresh_token_safety_snapshot(
+        db,
+        token_mint=TOKEN,
+        rpc_client=failing,
+        dex_client=failing,
+        jupiter_client=failing,
+        rugcheck_client=failing,
+    )
+
+    assert snapshot.source == "PARTIAL:NO_PROVIDER"
+    assert snapshot.honeypot is True
+    assert snapshot.risk_score == 100
+    assert "MINT_INFO_UNAVAILABLE" in snapshot.reasons
+    assert "HOLDER_DATA_UNAVAILABLE" in snapshot.reasons
+    assert "MARKET_DATA_UNAVAILABLE" in snapshot.reasons
+    assert db.query(TokenSafetySnapshot).count() == 1

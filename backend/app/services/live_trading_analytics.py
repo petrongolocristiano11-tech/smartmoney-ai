@@ -8,6 +8,10 @@ from sqlalchemy.orm import Session
 from backend.app.models.live_copy_order import LiveCopyOrder
 from backend.app.models.live_position import LivePosition
 from backend.app.services.live_platform_config_service import get_or_create_platform_config
+from backend.app.services.live_order_attribution import (
+    build_buy_source_wallet_lookup,
+    resolve_order_source_wallet,
+)
 
 
 PNL_EPSILON = 1e-12
@@ -93,6 +97,11 @@ def build_live_trading_analytics(
 
     completed_statuses = {"DRY_RUN", "FILLED"}
     completed_orders = [order for order in orders if order.status in completed_statuses]
+    buy_source_wallet_lookup = build_buy_source_wallet_lookup(
+        db,
+        mode=mode,
+        generation=active_generation,
+    )
     sell_orders = [
         order
         for order in completed_orders
@@ -185,7 +194,10 @@ def build_live_trading_analytics(
     )
 
     for order in completed_orders:
-        wallet_key = str(order.source_wallet or "UNKNOWN")
+        wallet_key = resolve_order_source_wallet(
+            order,
+            buy_source_wallet_lookup,
+        )
         token_key = str(order.source_token_mint or "UNKNOWN")
         pnl = safe_float(order.realized_pnl_sol)
 

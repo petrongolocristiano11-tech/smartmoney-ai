@@ -52,6 +52,7 @@ const NUMBER_FIELDS = [
   "analytics_starting_equity_sol",
   "max_source_wallets",
   "min_wallet_smart_score",
+  "min_wallet_closed_trades",
   "min_token_liquidity_usd",
   "min_token_market_cap_usd",
   "min_token_volume_24h_usd",
@@ -165,6 +166,35 @@ function configToForm(config) {
   result.token_allowlist = (config.token_allowlist ?? []).join("\n");
   result.token_blocklist = (config.token_blocklist ?? []).join("\n");
   return result;
+}
+
+
+function getRankingStatus(row, minimumSample) {
+  if (row.closed_trades === 0) {
+    return {
+      label: "SOLO STORICO",
+      className: "bg-blue-950 text-blue-300",
+    };
+  }
+
+  if (row.closed_trades < minimumSample) {
+    return {
+      label: "CAMPIONE LIMITATO",
+      className: "bg-amber-950 text-amber-300",
+    };
+  }
+
+  if (row.eligible) {
+    return {
+      label: "IDONEO",
+      className: "bg-green-950 text-green-300",
+    };
+  }
+
+  return {
+    label: "ESCLUSO",
+    className: "bg-slate-800 text-slate-400",
+  };
 }
 
 
@@ -368,13 +398,27 @@ function LiveTradingPlatform({
       return;
     }
 
-    const completed = await runAction(
-      "safety-scan",
-      () => refreshLiveTokenSafety(accessKey, mint),
-      "Controllo di sicurezza token completato."
-    );
-    if (completed) {
+    setBusy("safety-scan");
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await refreshLiveTokenSafety(accessKey, mint);
+      const snapshot = response.data;
+      setSafety((current) => [
+        snapshot,
+        ...current.filter((row) => row.token_mint !== snapshot.token_mint),
+      ]);
       setTokenMint("");
+      setMessage(
+        snapshot.source?.startsWith("PARTIAL:")
+          ? "Analisi salvata con dati parziali: controlla la colonna Dettagli."
+          : "Controllo di sicurezza token completato."
+      );
+    } catch (requestError) {
+      setError(parseLiveApiError(requestError));
+    } finally {
+      setBusy("");
     }
   }
 
@@ -628,9 +672,17 @@ function LiveTradingPlatform({
                   </td>
                   <td className="px-4 py-3 text-slate-300">{row.closed_trades}</td>
                   <td className="px-4 py-3">
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${row.eligible ? "bg-green-950 text-green-300" : "bg-slate-800 text-slate-400"}`}>
-                      {row.eligible ? "IDONEO" : "ESCLUSO"}
-                    </span>
+                    {(() => {
+                      const status = getRankingStatus(
+                        row,
+                        Number(config?.min_wallet_closed_trades ?? 3)
+                      );
+                      return (
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${status.className}`}>
+                          {status.label}
+                        </span>
+                      );
+                    })()}
                   </td>
                 </tr>
               ))}
@@ -663,7 +715,7 @@ function LiveTradingPlatform({
             disabled={busy === "safety-scan" || !tokenMint.trim()}
             className="rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white disabled:opacity-50"
           >
-            Analizza token
+            {busy === "safety-scan" ? "Analisi in corso..." : "Analizza token"}
           </button>
         </form>
 
@@ -678,6 +730,7 @@ function LiveTradingPlatform({
                 <th className="px-4 py-3">Top holder</th>
                 <th className="px-4 py-3">Rischio</th>
                 <th className="px-4 py-3">Vendibilità</th>
+                <th className="px-4 py-3">Dettagli</th>
                 <th className="px-4 py-3">Aggiornato</th>
               </tr>
             </thead>
@@ -697,12 +750,15 @@ function LiveTradingPlatform({
                   <td className={`px-4 py-3 font-bold ${row.honeypot ? "text-red-300" : "text-green-300"}`}>
                     {row.honeypot ? "BLOCCATA" : "OK"}
                   </td>
+                  <td className="max-w-xs px-4 py-3 text-xs text-slate-400">
+                    {(row.reasons ?? []).join(", ") || "-"}
+                  </td>
                   <td className="px-4 py-3 text-xs text-slate-400">{formatLiveDate(row.fetched_at)}</td>
                 </tr>
               ))}
               {!safety.length && (
                 <tr>
-                  <td colSpan="8" className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan="9" className="px-4 py-8 text-center text-slate-500">
                     Nessuna analisi token ancora salvata.
                   </td>
                 </tr>
@@ -722,6 +778,7 @@ function LiveTradingPlatform({
               <NumberField label="Equity iniziale analytics (SOL)" value={configForm.analytics_starting_equity_sol} onChange={(value) => updateForm("analytics_starting_equity_sol", value)} min="0.000001" step="0.01" />
               <NumberField label="Wallet sorgente massimi" value={configForm.max_source_wallets} onChange={(value) => updateForm("max_source_wallets", value)} min="1" max="50" step="1" />
               <NumberField label="Smart Score minimo" value={configForm.min_wallet_smart_score} onChange={(value) => updateForm("min_wallet_smart_score", value)} max="100" step="0.1" />
+              <NumberField label="Trade chiusi minimi per wallet" value={configForm.min_wallet_closed_trades} onChange={(value) => updateForm("min_wallet_closed_trades", value)} min="1" max="100" step="1" />
               <NumberField label="Durata armamento LIVE (min)" value={configForm.live_arm_ttl_minutes} onChange={(value) => updateForm("live_arm_ttl_minutes", value)} min="1" max="60" step="1" />
               <NumberField label="Liquidità minima USD" value={configForm.min_token_liquidity_usd} onChange={(value) => updateForm("min_token_liquidity_usd", value)} step="100" />
               <NumberField label="Market cap minimo USD" value={configForm.min_token_market_cap_usd} onChange={(value) => updateForm("min_token_market_cap_usd", value)} step="1000" />

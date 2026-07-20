@@ -34,6 +34,9 @@ from backend.app.services.jupiter_swap_client import (
     JupiterSwapError,
     sanitize_jupiter_payload,
 )
+from backend.app.services.live_order_attribution import (
+    find_latest_buy_source_wallet,
+)
 from backend.app.services.live_trading_errors import (
     LiveTradingError,
     SolanaRpcError,
@@ -1383,7 +1386,13 @@ def close_dry_run_position(
             source_signature
         ),
         source_wallet=(
-            "MANUAL_DRY_RUN_CLOSE"
+            find_latest_buy_source_wallet(
+                db,
+                mode="DRY_RUN",
+                generation=generation,
+                token_mint=position.token_mint,
+            )
+            or "MANUAL_DRY_RUN_CLOSE"
         ),
         source_side="SELL",
         source_token_mint=(
