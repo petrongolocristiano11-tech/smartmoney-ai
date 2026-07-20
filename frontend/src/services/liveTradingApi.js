@@ -95,6 +95,22 @@ export function executeLiveTradingSourceTrade(
 }
 
 
+export function closeLiveTradingDryRunPosition(
+  accessKey,
+  positionId
+) {
+  return api.post(
+    `/live-trading/positions/${encodeURIComponent(
+      positionId
+    )}/close-dry-run`,
+    {
+      confirmation: "CLOSE DRY RUN POSITION",
+    },
+    getLiveTradingConfig(accessKey)
+  );
+}
+
+
 export function getLiveTradingOrders(
   accessKey,
   {

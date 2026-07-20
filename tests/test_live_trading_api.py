@@ -499,3 +499,94 @@ def test_dry_run_reset_requires_stream_off(
             "MUST_BE_DISABLED"
         )
     )
+
+
+def test_api_can_close_active_dry_run_position(
+    api_client,
+):
+    client, trade_id = api_client
+
+    policy_response = client.patch(
+        "/live-trading/policy",
+        headers=headers(),
+        json={
+            "mode": "DRY_RUN",
+            "source_wallets": [WALLET],
+            "fixed_buy_size_sol": 0.05,
+            "max_order_size_sol": 0.1,
+            "max_daily_buy_sol": 0.5,
+            "max_total_exposure_sol": 0.5,
+            "stream_execution_enabled": False,
+        },
+    )
+
+    assert policy_response.status_code == 200
+
+    buy_response = client.post(
+        f"/live-trading/execute/trades/{trade_id}",
+        headers=headers(),
+    )
+
+    assert buy_response.status_code == 200
+
+    positions_response = client.get(
+        "/live-trading/positions",
+        headers=headers(),
+    )
+
+    position_id = (
+        positions_response.json()
+        ["positions"][0]["id"]
+    )
+
+    close_response = client.post(
+        (
+            "/live-trading/positions/"
+            f"{position_id}/close-dry-run"
+        ),
+        headers=headers(),
+        json={
+            "confirmation":
+                "CLOSE DRY RUN POSITION",
+        },
+    )
+
+    assert close_response.status_code == 200
+    assert close_response.json()["status"] == "DRY_RUN"
+    assert close_response.json()["source_side"] == "SELL"
+
+    closed_positions = client.get(
+        "/live-trading/positions",
+        headers=headers(),
+    )
+
+    assert (
+        closed_positions.json()
+        ["positions"][0]["status"]
+        == "CLOSED"
+    )
+
+    status_response = client.get(
+        "/live-trading/status",
+        headers=headers(),
+    )
+
+    assert status_response.status_code == 200
+    assert status_response.json()["open_positions"] == 0
+    assert status_response.json()["realized_pnl_today_sol"] != 0
+
+
+def test_api_rejects_invalid_dry_run_close_confirmation(
+    api_client,
+):
+    client, _ = api_client
+
+    response = client.post(
+        "/live-trading/positions/1/close-dry-run",
+        headers=headers(),
+        json={
+            "confirmation": "CLOSE",
+        },
+    )
+
+    assert response.status_code == 422

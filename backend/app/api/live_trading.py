@@ -19,6 +19,7 @@ from backend.app.models.trade import Trade
 from backend.app.schemas.live_trading import (
     KillSwitchReleaseRequest,
     LiveCopyOrderResponse,
+    LiveTradingDryRunCloseRequest,
     LiveTradingDryRunResetRequest,
     LiveTradingDryRunResetResponse,
     LiveEventListResponse,
@@ -33,6 +34,7 @@ from backend.app.services.jupiter_swap_client import (
     JupiterSwapClient,
 )
 from backend.app.services.live_copy_trading_engine import (
+    close_dry_run_position,
     execute_source_trade,
     get_live_trading_status,
     list_live_events,
@@ -375,6 +377,40 @@ def execute_trade_manually(
         )
 
     return order
+
+
+@router.post(
+    "/positions/{position_id}/close-dry-run",
+    response_model=(
+        LiveCopyOrderResponse
+    ),
+    status_code=(
+        status.HTTP_200_OK
+    ),
+)
+def close_position_dry_run(
+    position_id: int,
+    payload: (
+        LiveTradingDryRunCloseRequest
+    ),
+    db: Session = Depends(get_db),
+    jupiter_client: JupiterSwapClient = Depends(
+        get_jupiter_client
+    ),
+):
+    try:
+        return close_dry_run_position(
+            db,
+            position_id=position_id,
+            jupiter_client=(
+                jupiter_client
+            ),
+        )
+
+    except LiveTradingError as error:
+        raise_live_http_error(
+            error
+        )
 
 
 @router.get(

@@ -20,6 +20,7 @@ import {
   shortenLiveAddress,
 } from "../components/liveTrading/liveTradingFormatters";
 import {
+  closeLiveTradingDryRunPosition,
   engageLiveTradingKillSwitch,
   executeLiveTradingSourceTrade,
   getLiveTradingEvents,
@@ -451,6 +452,49 @@ function LiveTrading() {
     }
 
     return resetCompleted;
+  }
+
+
+  async function handleDryRunPositionClose(
+    position
+  ) {
+    if (
+      !position
+      || !Number.isInteger(
+        Number(position.id)
+      )
+    ) {
+      setError(
+        "Posizione DRY_RUN non valida."
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Chiudere completamente in DRY_RUN la posizione ${shortenLiveAddress(
+        position.token_mint,
+        9,
+        8
+      )}? Verrà usata una quotazione Jupiter reale senza firmare o inviare transazioni.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const closed = await runAction(
+      `close-position-${position.id}`,
+      () =>
+        closeLiveTradingDryRunPosition(
+          accessKey,
+          position.id
+        ),
+      "Posizione DRY_RUN chiusa. PnL realizzato aggiornato."
+    );
+
+    if (closed) {
+      setActiveTab("positions");
+    }
   }
 
 
@@ -1046,6 +1090,26 @@ function LiveTrading() {
               positions={positions}
               filters={positionFilters}
               loading={loading}
+              activeGeneration={
+                status.active_generation
+                ?? policy.dry_run_generation
+              }
+              streamExecutionEnabled={
+                policy.stream_execution_enabled
+              }
+              closingPositionId={
+                busyAction.startsWith(
+                  "close-position-"
+                )
+                  ? busyAction.replace(
+                      "close-position-",
+                      ""
+                    )
+                  : ""
+              }
+              onCloseDryRun={
+                handleDryRunPositionClose
+              }
               onFilterChange={(
                 field,
                 value

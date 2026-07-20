@@ -11,6 +11,9 @@ from sqlalchemy.orm import (
 from sqlalchemy.pool import StaticPool
 
 from backend.app.database.base import Base
+from backend.app.models.live_copy_order import (
+    LiveCopyOrder,
+)
 from backend.app.models.live_position import (
     LivePosition,
 )
@@ -19,7 +22,11 @@ from backend.app.services.jupiter_swap_client import (
     JupiterOrderResult,
 )
 from backend.app.services.live_copy_trading_engine import (
+    close_dry_run_position,
     execute_source_trade,
+)
+from backend.app.services.live_trading_errors import (
+    LiveTradingError,
 )
 from backend.app.services.live_trading_policy_service import (
     get_or_create_live_policy,
@@ -284,3 +291,88 @@ def test_dry_run_sell_closes_half_and_records_pnl(
         order.realized_pnl_sol
         == pytest.approx(0.015)
     ) 
+
+def test_manual_dry_run_close_closes_position_and_is_idempotent(
+    db,
+):
+    configure_policy(db)
+
+    buy = create_trade(db)
+
+    execute_source_trade(
+        db,
+        trade=buy,
+        jupiter_client=FakeJupiter(),
+    )
+
+    position = (
+        db.query(LivePosition)
+        .one()
+    )
+
+    first = close_dry_run_position(
+        db,
+        position_id=position.id,
+        jupiter_client=FakeJupiter(),
+    )
+
+    second = close_dry_run_position(
+        db,
+        position_id=position.id,
+        jupiter_client=FakeJupiter(),
+    )
+
+    db.refresh(position)
+
+    assert first.id == second.id
+    assert first.status == "DRY_RUN"
+    assert first.source_side == "SELL"
+    assert first.source_trade_id is None
+    assert first.realized_pnl_sol == pytest.approx(
+        -0.01
+    )
+
+    assert position.status == "CLOSED"
+    assert int(position.quantity_raw) == 0
+    assert position.cost_basis_sol == 0
+    assert position.realized_pnl_sol == pytest.approx(
+        -0.01
+    )
+
+    assert (
+        db.query(LiveCopyOrder).count()
+        == 2
+    )
+
+
+def test_manual_dry_run_close_requires_stream_disabled(
+    db,
+):
+    policy = configure_policy(db)
+
+    buy = create_trade(db)
+
+    execute_source_trade(
+        db,
+        trade=buy,
+        jupiter_client=FakeJupiter(),
+    )
+
+    position = db.query(LivePosition).one()
+
+    policy.stream_execution_enabled = True
+    db.commit()
+
+    with pytest.raises(
+        LiveTradingError
+    ) as error_info:
+        close_dry_run_position(
+            db,
+            position_id=position.id,
+            jupiter_client=FakeJupiter(),
+        )
+
+    assert (
+        error_info.value.code
+        == "STREAM_MUST_BE_DISABLED"
+    )

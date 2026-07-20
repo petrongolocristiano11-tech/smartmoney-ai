@@ -1063,6 +1063,482 @@ def execute_source_trade(
         )
 
 
+
+def _manual_close_signature_prefix(
+    *,
+    generation: int,
+    position_id: int,
+) -> str:
+    return (
+        "MANUAL_DRY_RUN_CLOSE:"
+        f"{generation}:"
+        f"{position_id}:"
+    )
+
+
+def _validate_dry_run_manual_close_policy(
+    policy: LiveTradingPolicy,
+) -> int:
+    if policy.mode != "DRY_RUN":
+        raise LiveTradingError(
+            "La chiusura manuale è "
+            "disponibile soltanto in "
+            "modalità DRY_RUN.",
+            code="DRY_RUN_CLOSE_ONLY",
+            status_code=409,
+        )
+
+    if policy.stream_execution_enabled:
+        raise LiveTradingError(
+            "Disattiva e salva lo stream "
+            "automatico prima di chiudere "
+            "manualmente una posizione.",
+            code="STREAM_MUST_BE_DISABLED",
+            status_code=409,
+        )
+
+    if policy.kill_switch:
+        raise LiveTradingError(
+            "Il kill switch è attivo.",
+            code="KILL_SWITCH_ACTIVE",
+            status_code=409,
+        )
+
+    if not policy.sell_enabled:
+        raise LiveTradingError(
+            "Abilita Copy SELL nella policy "
+            "prima della chiusura manuale.",
+            code="SELL_DISABLED",
+            status_code=409,
+        )
+
+    return max(
+        1,
+        int(
+            policy.dry_run_generation
+            or 1
+        ),
+    )
+
+
+def close_dry_run_position(
+    db: Session,
+    *,
+    position_id: int,
+    jupiter_client: (
+        JupiterSwapClient | None
+    ) = None,
+) -> LiveCopyOrder:
+    policy = _get_locked_policy(db)
+    generation = (
+        _validate_dry_run_manual_close_policy(
+            policy
+        )
+    )
+
+    signature_prefix = (
+        _manual_close_signature_prefix(
+            generation=generation,
+            position_id=position_id,
+        )
+    )
+
+    existing = (
+        db.query(LiveCopyOrder)
+        .filter(
+            LiveCopyOrder.mode
+            == "DRY_RUN",
+            LiveCopyOrder.generation
+            == generation,
+            LiveCopyOrder.source_signature.like(
+                f"{signature_prefix}%"
+            ),
+            LiveCopyOrder.status.in_(
+                (
+                    "RECEIVED",
+                    "QUOTED",
+                    "DRY_RUN",
+                )
+            ),
+        )
+        .order_by(
+            LiveCopyOrder.id.desc()
+        )
+        .first()
+    )
+
+    if existing is not None:
+        db.rollback()
+        return existing
+
+    position = (
+        db.query(LivePosition)
+        .filter(
+            LivePosition.id
+            == position_id,
+            LivePosition.mode
+            == "DRY_RUN",
+            LivePosition.generation
+            == generation,
+        )
+        .with_for_update()
+        .first()
+    )
+
+    if position is None:
+        raise LiveTradingError(
+            "Posizione DRY_RUN della "
+            "generazione attiva non trovata.",
+            code="POSITION_NOT_FOUND",
+            status_code=404,
+        )
+
+    quantity_raw = int(
+        Decimal(
+            position.quantity_raw
+            or 0
+        )
+    )
+
+    if (
+        position.status != "OPEN"
+        or quantity_raw <= 0
+    ):
+        raise LiveTradingError(
+            "La posizione non è aperta.",
+            code="POSITION_NOT_OPEN",
+            status_code=409,
+        )
+
+    previous_attempts = (
+        db.query(LiveCopyOrder)
+        .filter(
+            LiveCopyOrder.mode
+            == "DRY_RUN",
+            LiveCopyOrder.generation
+            == generation,
+            LiveCopyOrder.source_signature.like(
+                f"{signature_prefix}%"
+            ),
+        )
+        .count()
+    )
+
+    attempt = previous_attempts + 1
+
+    source_signature = (
+        f"{signature_prefix}{attempt}"
+    )
+
+    idempotency_material = "|".join(
+        (
+            "MANUAL_DRY_RUN_CLOSE",
+            str(generation),
+            str(position.id),
+            str(quantity_raw),
+            str(attempt),
+        )
+    )
+
+    order = LiveCopyOrder(
+        idempotency_key=hashlib.sha256(
+            idempotency_material.encode(
+                "utf-8"
+            )
+        ).hexdigest(),
+        source_trade_id=None,
+        source_signature=(
+            source_signature
+        ),
+        source_wallet=(
+            "MANUAL_DRY_RUN_CLOSE"
+        ),
+        source_side="SELL",
+        source_token_mint=(
+            position.token_mint
+        ),
+        source_sol_amount=float(
+            position.cost_basis_sol
+            or 0.0
+        ),
+        source_token_amount=None,
+        mode="DRY_RUN",
+        generation=generation,
+        status="RECEIVED",
+        input_mint=(
+            position.token_mint
+        ),
+        output_mint=SOL_MINT,
+        requested_input_amount_raw=(
+            Decimal(quantity_raw)
+        ),
+        requested_value_sol=float(
+            position.cost_basis_sol
+            or 0.0
+        ),
+        slippage_bps=(
+            policy.max_slippage_bps
+        ),
+    )
+
+    db.add(order)
+
+    try:
+        db.commit()
+
+    except IntegrityError:
+        db.rollback()
+
+        return (
+            db.query(LiveCopyOrder)
+            .filter(
+                LiveCopyOrder.idempotency_key
+                == order.idempotency_key
+            )
+            .one()
+        )
+
+    db.refresh(order)
+
+    try:
+        policy = _get_locked_policy(db)
+        active_generation = (
+            _validate_dry_run_manual_close_policy(
+                policy
+            )
+        )
+
+        if active_generation != generation:
+            raise LiveTradingError(
+                "La generazione DRY_RUN è "
+                "cambiata durante la chiusura.",
+                code="DRY_RUN_GENERATION_CHANGED",
+                status_code=409,
+            )
+
+        position = (
+            db.query(LivePosition)
+            .filter(
+                LivePosition.id
+                == position_id,
+                LivePosition.mode
+                == "DRY_RUN",
+                LivePosition.generation
+                == generation,
+            )
+            .with_for_update()
+            .first()
+        )
+
+        if (
+            position is None
+            or position.status != "OPEN"
+            or int(
+                Decimal(
+                    position.quantity_raw
+                    or 0
+                )
+            ) != quantity_raw
+        ):
+            raise LiveTradingError(
+                "La posizione è cambiata prima "
+                "della quotazione. Aggiorna la "
+                "dashboard e riprova.",
+                code="POSITION_CHANGED",
+                status_code=409,
+            )
+
+        jupiter_client = (
+            jupiter_client
+            or JupiterSwapClient()
+        )
+
+        quote = jupiter_client.get_order(
+            input_mint=(
+                position.token_mint
+            ),
+            output_mint=SOL_MINT,
+            amount_raw=quantity_raw,
+            taker=None,
+            slippage_bps=(
+                policy.max_slippage_bps
+            ),
+        )
+
+        if (
+            quote.slippage_bps
+            > policy.max_slippage_bps
+        ):
+            raise LiveTradingError(
+                "Slippage Jupiter superiore "
+                "al limite configurato.",
+                code="MAX_SLIPPAGE_EXCEEDED",
+                status_code=409,
+            )
+
+        if (
+            quote.price_impact_percent
+            > policy.max_price_impact_percent
+        ):
+            raise LiveTradingError(
+                "Price impact Jupiter "
+                "superiore al limite "
+                "configurato.",
+                code="MAX_PRICE_IMPACT_EXCEEDED",
+                status_code=409,
+                payload={
+                    "price_impact_percent": (
+                        quote
+                        .price_impact_percent
+                    ),
+                },
+            )
+
+        now = utc_now()
+
+        order = (
+            db.query(LiveCopyOrder)
+            .filter(
+                LiveCopyOrder.id
+                == order.id
+            )
+            .with_for_update()
+            .one()
+        )
+
+        order.status = "QUOTED"
+        order.jupiter_request_id = (
+            quote.request_id
+        )
+        order.router = quote.router
+        order.expected_output_amount_raw = (
+            Decimal(quote.out_amount)
+        )
+        order.actual_input_amount_raw = (
+            Decimal(quote.in_amount)
+        )
+        order.actual_output_amount_raw = (
+            Decimal(quote.out_amount)
+        )
+        order.order_response = (
+            sanitize_jupiter_payload(
+                quote.raw
+            )
+        )
+        order.quoted_at = now
+
+        plan = LiveExecutionPlan(
+            side="SELL",
+            generation=generation,
+            token_mint=(
+                position.token_mint
+            ),
+            input_mint=(
+                position.token_mint
+            ),
+            output_mint=SOL_MINT,
+            input_amount_raw=(
+                quantity_raw
+            ),
+            requested_value_sol=float(
+                position.cost_basis_sol
+                or 0.0
+            ),
+            position_id=position.id,
+        )
+
+        execution_signature = (
+            "DRY_RUN_MANUAL_CLOSE:"
+            f"{generation}:"
+            f"{position.id}:"
+            f"{order.id}"
+        )
+
+        order.realized_pnl_sol = (
+            _apply_filled_position(
+                db,
+                order=order,
+                plan=plan,
+                input_amount_raw=(
+                    quote.in_amount
+                ),
+                output_amount_raw=(
+                    quote.out_amount
+                ),
+                execution_signature=(
+                    execution_signature
+                ),
+            )
+        )
+
+        order.status = "DRY_RUN"
+        order.executed_at = now
+        policy.consecutive_failures = 0
+
+        record_live_event(
+            db,
+            order_id=order.id,
+            generation=generation,
+            event_type=(
+                "DRY_RUN_POSITION_CLOSED"
+            ),
+            message=(
+                "Posizione DRY_RUN chiusa "
+                "manualmente con quotazione "
+                "Jupiter reale."
+            ),
+            payload={
+                "position_id": position.id,
+                "token_mint": (
+                    position.token_mint
+                ),
+                "input_amount_raw": (
+                    quote.in_amount
+                ),
+                "output_amount_raw": (
+                    quote.out_amount
+                ),
+                "realized_pnl_sol": (
+                    order.realized_pnl_sol
+                ),
+                "router": quote.router,
+            },
+        )
+
+        db.commit()
+        db.refresh(order)
+
+        return order
+
+    except LiveTradingError as error:
+        return _finalize_error(
+            db,
+            order_id=order.id,
+            error=error,
+        )
+
+    except Exception as exception:
+        error = LiveTradingError(
+            "Errore interno durante la "
+            "chiusura DRY_RUN.",
+            code=(
+                "DRY_RUN_CLOSE_INTERNAL_ERROR"
+            ),
+            status_code=500,
+            payload={
+                "error_type": type(
+                    exception
+                ).__name__,
+            },
+        )
+
+        return _finalize_error(
+            db,
+            order_id=order.id,
+            error=error,
+        )
+
+
 def get_live_trading_status(
     db: Session,
     *,

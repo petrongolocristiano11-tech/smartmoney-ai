@@ -309,6 +309,34 @@ class LiveTradingDryRunResetRequest(
         return self
 
 
+class LiveTradingDryRunCloseRequest(
+    BaseModel
+):
+    confirmation: str
+
+    @field_validator(
+        "confirmation"
+    )
+    @classmethod
+    def validate_confirmation(
+        cls,
+        value: str,
+    ) -> str:
+        normalized = str(value).strip()
+
+        if (
+            normalized
+            != "CLOSE DRY RUN POSITION"
+        ):
+            raise ValueError(
+                "Conferma non valida. "
+                "Usa esattamente: "
+                "CLOSE DRY RUN POSITION"
+            )
+
+        return normalized
+
+
 class LiveTradingPolicyResponse(
     BaseModel
 ):
