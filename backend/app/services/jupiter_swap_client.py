@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from typing import Any
+import time
+from typing import Any, Callable
 
 import httpx
 
@@ -40,6 +41,10 @@ class JupiterSwapClient:
         api_key: str | None = None,
         base_url: str | None = None,
         timeout_seconds: float | None = None,
+        max_retries: int | None = None,
+        retry_base_seconds: float | None = None,
+        retry_max_seconds: float | None = None,
+        sleep_fn: Callable[[float], None] | None = None,
         transport: (
             httpx.BaseTransport
             | None
@@ -66,6 +71,34 @@ class JupiterSwapClient:
             )
         )
 
+        self.max_retries = max(
+            0,
+            int(
+                max_retries
+                if max_retries is not None
+                else settings.JUPITER_SWAP_MAX_RETRIES
+            ),
+        )
+
+        self.retry_base_seconds = max(
+            0.0,
+            float(
+                retry_base_seconds
+                if retry_base_seconds is not None
+                else settings.JUPITER_SWAP_RETRY_BASE_SECONDS
+            ),
+        )
+
+        self.retry_max_seconds = max(
+            self.retry_base_seconds,
+            float(
+                retry_max_seconds
+                if retry_max_seconds is not None
+                else settings.JUPITER_SWAP_RETRY_MAX_SECONDS
+            ),
+        )
+
+        self.sleep_fn = sleep_fn or time.sleep
         self.transport = transport
 
     def _headers(self) -> dict[str, str]:
@@ -131,6 +164,16 @@ class JupiterSwapClient:
         ):
             return default
 
+    def _retry_delay(
+        self,
+        attempt_index: int,
+    ) -> float:
+        return min(
+            self.retry_max_seconds,
+            self.retry_base_seconds
+            * (2 ** max(0, attempt_index)),
+        )
+
     def _request_json(
         self,
         method: str,
@@ -138,85 +181,202 @@ class JupiterSwapClient:
         *,
         params: dict[str, str] | None = None,
         json: dict[str, Any] | None = None,
+        retryable: bool = False,
     ) -> dict[str, Any]:
-        try:
-            with httpx.Client(
-                timeout=self.timeout_seconds,
-                transport=self.transport,
-            ) as client:
-                response = client.request(
-                    method,
-                    f"{self.base_url}{path}",
-                    headers=self._headers(),
-                    params=params,
-                    json=json,
+        maximum_attempts = (
+            self.max_retries + 1
+            if retryable
+            else 1
+        )
+
+        retryable_statuses = {
+            429,
+            500,
+            502,
+            503,
+            504,
+        }
+
+        for attempt_index in range(
+            maximum_attempts
+        ):
+            attempt_number = attempt_index + 1
+            has_next_attempt = (
+                attempt_number
+                < maximum_attempts
+            )
+
+            try:
+                with httpx.Client(
+                    timeout=self.timeout_seconds,
+                    transport=self.transport,
+                ) as client:
+                    response = client.request(
+                        method,
+                        f"{self.base_url}{path}",
+                        headers=self._headers(),
+                        params=params,
+                        json=json,
+                    )
+
+            except httpx.TimeoutException as exception:
+                if has_next_attempt:
+                    self.sleep_fn(
+                        self._retry_delay(
+                            attempt_index
+                        )
+                    )
+                    continue
+
+                raise JupiterSwapError(
+                    "Timeout durante la richiesta "
+                    "a Jupiter.",
+                    code="JUPITER_TIMEOUT",
+                    status_code=504,
+                    payload={
+                        "attempts":
+                            attempt_number,
+                        "retryable":
+                            retryable,
+                    },
+                ) from exception
+
+            except httpx.HTTPError as exception:
+                if has_next_attempt:
+                    self.sleep_fn(
+                        self._retry_delay(
+                            attempt_index
+                        )
+                    )
+                    continue
+
+                raise JupiterSwapError(
+                    "Errore di rete durante la "
+                    "richiesta a Jupiter.",
+                    code="JUPITER_NETWORK_ERROR",
+                    status_code=502,
+                    payload={
+                        "attempts":
+                            attempt_number,
+                        "retryable":
+                            retryable,
+                        "error_type":
+                            type(
+                                exception
+                            ).__name__,
+                    },
+                ) from exception
+
+            if (
+                retryable
+                and response.status_code
+                in retryable_statuses
+                and has_next_attempt
+            ):
+                retry_after = (
+                    response.headers.get(
+                        "Retry-After"
+                    )
                 )
 
-        except httpx.TimeoutException as exception:
-            raise JupiterSwapError(
-                "Timeout durante la richiesta "
-                "a Jupiter.",
-                code="JUPITER_TIMEOUT",
-                status_code=504,
-            ) from exception
-
-        except httpx.HTTPError as exception:
-            raise JupiterSwapError(
-                "Errore di rete durante la "
-                "richiesta a Jupiter.",
-                code="JUPITER_NETWORK_ERROR",
-                status_code=502,
-            ) from exception
-
-        try:
-            payload = response.json()
-
-        except ValueError as exception:
-            raise JupiterSwapError(
-                "Jupiter ha restituito una "
-                "risposta non JSON.",
-                code="JUPITER_INVALID_RESPONSE",
-                status_code=502,
-                payload={
-                    "http_status":
-                        response.status_code,
-                },
-            ) from exception
-
-        if not isinstance(payload, dict):
-            raise JupiterSwapError(
-                "Formato risposta Jupiter "
-                "non valido.",
-                code="JUPITER_INVALID_RESPONSE",
-                status_code=502,
-            )
-
-        if response.is_error:
-            message = (
-                payload.get("error")
-                or payload.get("errorMessage")
-                or payload.get("message")
-                or (
-                    "Jupiter HTTP "
-                    f"{response.status_code}"
+                delay = self._retry_delay(
+                    attempt_index
                 )
-            )
 
-            raise JupiterSwapError(
-                str(message),
-                code="JUPITER_HTTP_ERROR",
-                status_code=502,
-                payload={
-                    "http_status":
-                        response.status_code,
-                    "response":
-                        sanitize_jupiter_payload(
-                            payload
-                        ),
-                },
-            )
+                if retry_after:
+                    try:
+                        delay = min(
+                            self.retry_max_seconds,
+                            max(
+                                delay,
+                                float(
+                                    retry_after
+                                ),
+                            ),
+                        )
+                    except ValueError:
+                        pass
 
-        return payload
+                self.sleep_fn(delay)
+                continue
+
+            try:
+                payload = response.json()
+
+            except ValueError as exception:
+                raise JupiterSwapError(
+                    "Jupiter ha restituito una "
+                    "risposta non JSON.",
+                    code=(
+                        "JUPITER_INVALID_RESPONSE"
+                    ),
+                    status_code=502,
+                    payload={
+                        "http_status":
+                            response.status_code,
+                        "attempts":
+                            attempt_number,
+                    },
+                ) from exception
+
+            if not isinstance(
+                payload,
+                dict,
+            ):
+                raise JupiterSwapError(
+                    "Formato risposta Jupiter "
+                    "non valido.",
+                    code=(
+                        "JUPITER_INVALID_RESPONSE"
+                    ),
+                    status_code=502,
+                    payload={
+                        "http_status":
+                            response.status_code,
+                        "attempts":
+                            attempt_number,
+                    },
+                )
+
+            if response.is_error:
+                message = (
+                    payload.get("error")
+                    or payload.get(
+                        "errorMessage"
+                    )
+                    or payload.get("message")
+                    or (
+                        "Jupiter HTTP "
+                        f"{response.status_code}"
+                    )
+                )
+
+                raise JupiterSwapError(
+                    str(message),
+                    code="JUPITER_HTTP_ERROR",
+                    status_code=502,
+                    payload={
+                        "http_status":
+                            response.status_code,
+                        "attempts":
+                            attempt_number,
+                        "retryable":
+                            retryable,
+                        "response":
+                            sanitize_jupiter_payload(
+                                payload
+                            ),
+                    },
+                )
+
+            return payload
+
+        raise JupiterSwapError(
+            "Richiesta Jupiter terminata "
+            "senza risposta.",
+            code="JUPITER_REQUEST_EXHAUSTED",
+            status_code=502,
+        )
 
     def get_order(
         self,
@@ -253,6 +413,7 @@ class JupiterSwapClient:
             "GET",
             "/order",
             params=params,
+            retryable=True,
         )
 
         request_id = str(

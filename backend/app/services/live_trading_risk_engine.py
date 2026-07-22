@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import (
     datetime,
     time,
+    timedelta,
     timezone,
 )
 from decimal import (
@@ -12,6 +13,7 @@ from decimal import (
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from backend.app.core.config import settings
 from backend.app.core.constants import (
     SOL_MINT,
 )
@@ -470,6 +472,73 @@ def build_live_execution_plan(
             risk_state,
             now=now,
         )
+
+        token_cooldown_minutes = max(
+            0,
+            int(
+                settings
+                .LIVE_TOKEN_REENTRY_COOLDOWN_MINUTES
+            ),
+        )
+
+        if token_cooldown_minutes > 0:
+            latest_closed_at = (
+                db.query(
+                    LivePosition.closed_at
+                )
+                .filter(
+                    LivePosition.mode
+                    == policy.mode,
+                    LivePosition.generation
+                    == generation,
+                    LivePosition.token_mint
+                    == token_mint,
+                    LivePosition.status
+                    == "CLOSED",
+                    LivePosition.closed_at
+                    .is_not(None),
+                )
+                .order_by(
+                    LivePosition
+                    .closed_at
+                    .desc()
+                )
+                .limit(1)
+                .scalar()
+            )
+
+            latest_closed_at = _as_utc(
+                latest_closed_at
+            )
+
+            if latest_closed_at is not None:
+                token_cooldown_until = (
+                    latest_closed_at
+                    + timedelta(
+                        minutes=(
+                            token_cooldown_minutes
+                        )
+                    )
+                )
+
+                if now < token_cooldown_until:
+                    remaining_seconds = max(
+                        1,
+                        int(
+                            (
+                                token_cooldown_until
+                                - now
+                            ).total_seconds()
+                        ),
+                    )
+
+                    _reject(
+                        "Rientro sullo stesso token "
+                        "temporaneamente bloccato. "
+                        f"Riprova tra circa "
+                        f"{remaining_seconds} secondi.",
+                        "TOKEN_REENTRY_COOLDOWN",
+                    )
 
         daily_orders = get_daily_order_count(
             db,

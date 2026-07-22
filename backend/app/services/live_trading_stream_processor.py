@@ -197,10 +197,11 @@ def process_live_signature(
                     wallet_address=(
                         normalized_wallet
                     ),
-                    outcome="SKIPPED",
+                    outcome="IGNORED",
                     message=(
-                        "Policy modificata prima "
-                        "dell'esecuzione."
+                        "Nessun ordine creato: "
+                        "stream non eseguibile oppure "
+                        "SELL senza posizione aperta."
                     ),
                     trade_id=stored_trade.id,
                 )

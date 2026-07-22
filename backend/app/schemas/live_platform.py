@@ -99,6 +99,10 @@ class LiveAnalyticsSummary(PlatformResponseModel):
     orders_completed: int
     buy_orders: int
     sell_orders: int
+    closed_trades: int
+    campaign_target_closed_trades: int
+    campaign_remaining_closed_trades: int
+    campaign_progress_percent: float
     open_positions: int
     closed_positions: int
     open_exposure_sol: float

@@ -123,6 +123,10 @@ def test_analytics_calculates_pnl_roi_profit_factor_and_drawdown(db):
     assert summary["profit_factor"] == pytest.approx(2.0)
     assert summary["max_drawdown_sol"] == pytest.approx(0.01)
     assert summary["ending_equity_sol"] == pytest.approx(1.01)
+    assert summary["closed_trades"] == 2
+    assert summary["campaign_target_closed_trades"] == 100
+    assert summary["campaign_remaining_closed_trades"] == 98
+    assert summary["campaign_progress_percent"] == pytest.approx(2.0)
     assert len(payload["wallet_performance"]) == 1
     assert len(payload["token_performance"]) == 2
 

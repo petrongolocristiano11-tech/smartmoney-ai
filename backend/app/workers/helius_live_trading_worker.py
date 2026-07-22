@@ -30,11 +30,18 @@ from backend.app.database.session import (
     SessionLocal,
     engine,
 )
+from backend.app.models.live_position import (
+    LivePosition,
+)
 from backend.app.models.live_trading_policy import (
     LiveTradingPolicy,
 )
 from backend.app.services.live_trading_policy_service import (
     get_or_create_live_policy,
+)
+from backend.app.services.live_trading_risk_engine import (
+    get_daily_buy_sol,
+    get_daily_order_count,
 )
 from backend.app.services.live_trading_stream_processor import (
     LiveStreamProcessResult,
@@ -321,7 +328,109 @@ def load_policy_snapshot() -> PolicySnapshot:
                 "SOURCE_WALLETS_EMPTY"
             )
 
-        elif not settings.JUPITER_API_KEY:
+        if enabled:
+            generation = (
+                max(
+                    1,
+                    int(
+                        policy
+                        .dry_run_generation
+                        or 1
+                    ),
+                )
+                if mode == "DRY_RUN"
+                else 1
+            )
+
+            snapshot_now = utc_now()
+
+            open_position_count = (
+                db.query(
+                    LivePosition
+                )
+                .filter(
+                    LivePosition.mode
+                    == mode,
+                    LivePosition.generation
+                    == generation,
+                    LivePosition.status
+                    == "OPEN",
+                    LivePosition.quantity_raw
+                    > 0,
+                )
+                .count()
+            )
+
+            # Con posizioni aperte il worker resta
+            # collegato per ricevere SELL sorgente.
+            if open_position_count == 0:
+                daily_orders = (
+                    get_daily_order_count(
+                        db,
+                        mode=mode,
+                        generation=generation,
+                        now=snapshot_now,
+                    )
+                )
+
+                if (
+                    daily_orders
+                    >= int(
+                        policy.max_daily_orders
+                    )
+                ):
+                    enabled = False
+                    blocked_reason = (
+                        "PAUSED_MAX_DAILY_ORDERS"
+                    )
+
+                else:
+                    daily_buy_sol = (
+                        get_daily_buy_sol(
+                            db,
+                            mode=mode,
+                            generation=generation,
+                            now=snapshot_now,
+                        )
+                    )
+
+                    daily_buy_exhausted = (
+                        daily_buy_sol
+                        >= float(
+                            policy
+                            .max_daily_buy_sol
+                        )
+                    )
+
+                    if (
+                        policy.sizing_mode
+                        == "FIXED"
+                    ):
+                        daily_buy_exhausted = (
+                            daily_buy_exhausted
+                            or (
+                                daily_buy_sol
+                                + float(
+                                    policy
+                                    .fixed_buy_size_sol
+                                )
+                                > float(
+                                    policy
+                                    .max_daily_buy_sol
+                                )
+                            )
+                        )
+
+                    if daily_buy_exhausted:
+                        enabled = False
+                        blocked_reason = (
+                            "PAUSED_MAX_DAILY_BUY"
+                        )
+
+        if (
+            enabled
+            and not settings.JUPITER_API_KEY
+        ):
             enabled = False
             blocked_reason = (
                 "JUPITER_NOT_CONFIGURED"
@@ -353,6 +462,17 @@ def load_policy_snapshot() -> PolicySnapshot:
                 ),
             )
         )
+
+        # Il motivo dinamico entra nel fingerprint:
+        # quando viene raggiunto un limite giornaliero
+        # la connessione WebSocket viene chiusa entro
+        # il successivo refresh della policy.
+        fingerprint = hashlib.sha256(
+            (
+                f"{fingerprint}|"
+                f"{blocked_reason or ''}"
+            ).encode("utf-8")
+        ).hexdigest()
 
         return PolicySnapshot(
             mode=mode,
@@ -1249,6 +1369,8 @@ class HeliusLiveTradingWorker:
                         "STREAM_EXECUTION_DISABLED",
                         "SOURCE_WALLETS_EMPTY",
                         "KILL_SWITCH_ACTIVE",
+                        "PAUSED_MAX_DAILY_ORDERS",
+                        "PAUSED_MAX_DAILY_BUY",
                     }
 
                     self.current_status = (
@@ -1284,6 +1406,28 @@ class HeliusLiveTradingWorker:
                             "Il worker è bloccato "
                             "da una configurazione "
                             "incompleta."
+                        )
+
+                    elif (
+                        snapshot.blocked_reason
+                        in {
+                            "PAUSED_MAX_DAILY_ORDERS",
+                            "PAUSED_MAX_DAILY_BUY",
+                        }
+                    ):
+                        self.metrics.last_error_at = None
+                        self.metrics.last_error_code = (
+                            snapshot.blocked_reason
+                        )
+                        self.metrics.last_error_message = (
+                            "Sottoscrizioni Helius "
+                            "sospese automaticamente: "
+                            "limite giornaliero "
+                            "raggiunto e nessuna "
+                            "posizione aperta. "
+                            "La ripresa avverrà "
+                            "automaticamente al reset "
+                            "UTC del giorno."
                         )
 
                     else:

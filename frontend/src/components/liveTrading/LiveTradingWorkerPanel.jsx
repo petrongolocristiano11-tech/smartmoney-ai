@@ -35,6 +35,10 @@ function LiveTradingWorkerPanel({
     return null;
   }
 
+  const pausedByDailyLimit = String(
+    worker.last_error_code ?? ""
+  ).startsWith("PAUSED_");
+
   return (
     <LiveTradingSection
       title="Worker Helius automatico"
@@ -182,13 +186,31 @@ function LiveTradingWorkerPanel({
       )}
 
       {worker.last_error_message && (
-        <div className="mt-5 rounded-xl border border-red-800 bg-red-950/40 p-4">
-          <p className="font-bold text-red-200">
+        <div
+          className={`mt-5 rounded-xl border p-4 ${
+            pausedByDailyLimit
+              ? "border-amber-800 bg-amber-950/40"
+              : "border-red-800 bg-red-950/40"
+          }`}
+        >
+          <p
+            className={`font-bold ${
+              pausedByDailyLimit
+                ? "text-amber-200"
+                : "text-red-200"
+            }`}
+          >
             {worker.last_error_code
               ?? "WORKER_ERROR"}
           </p>
 
-          <p className="mt-2 text-sm leading-6 text-red-300">
+          <p
+            className={`mt-2 text-sm leading-6 ${
+              pausedByDailyLimit
+                ? "text-amber-300"
+                : "text-red-300"
+            }`}
+          >
             {worker.last_error_message}
           </p>
 

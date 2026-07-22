@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
+from backend.app.core.config import settings
 from backend.app.models.live_copy_order import LiveCopyOrder
 from backend.app.models.live_position import LivePosition
 from backend.app.services.live_platform_config_service import get_or_create_platform_config
@@ -254,6 +255,32 @@ def build_live_trading_analytics(
     for order in orders:
         status_counts[str(order.status)] += 1
 
+    campaign_target = max(
+        1,
+        int(
+            settings
+            .LIVE_CAMPAIGN_TARGET_CLOSED_TRADES
+        ),
+    )
+
+    closed_trades = len(
+        sell_orders
+    )
+
+    campaign_remaining = max(
+        0,
+        campaign_target
+        - closed_trades,
+    )
+
+    campaign_progress = min(
+        100.0,
+        percentage(
+            closed_trades,
+            campaign_target,
+        ),
+    )
+
     return {
         "generated_at": finished_at,
         "mode": mode,
@@ -268,6 +295,13 @@ def build_live_trading_analytics(
             "orders_completed": len(completed_orders),
             "buy_orders": len(buy_orders),
             "sell_orders": len(sell_orders),
+            "closed_trades": closed_trades,
+            "campaign_target_closed_trades":
+                campaign_target,
+            "campaign_remaining_closed_trades":
+                campaign_remaining,
+            "campaign_progress_percent":
+                campaign_progress,
             "open_positions": len(open_positions),
             "closed_positions": len(closed_positions),
             "open_exposure_sol": rounded(exposure),

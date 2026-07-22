@@ -150,6 +150,26 @@ class Settings(BaseSettings):
         le=60.0,
     )
 
+    # Retry applicati soltanto alle quotazioni /order.
+    # L'esecuzione /execute non viene ritentata automaticamente.
+    JUPITER_SWAP_MAX_RETRIES: int = Field(
+        default=2,
+        ge=0,
+        le=10,
+    )
+
+    JUPITER_SWAP_RETRY_BASE_SECONDS: float = Field(
+        default=0.50,
+        ge=0.05,
+        le=10.0,
+    )
+
+    JUPITER_SWAP_RETRY_MAX_SECONDS: float = Field(
+        default=4.0,
+        ge=0.10,
+        le=60.0,
+    )
+
     # =========================
     # TOKEN SAFETY / MARKET DATA
     # =========================
@@ -271,6 +291,21 @@ class Settings(BaseSettings):
     LIVE_STREAM_RECENT_SIGNATURES: int = Field(
         default=10000,
         ge=100,
+        le=100000,
+    )
+
+    # Impedisce il rientro immediato sullo stesso token
+    # dopo la chiusura completa di una posizione.
+    LIVE_TOKEN_REENTRY_COOLDOWN_MINUTES: int = Field(
+        default=15,
+        ge=0,
+        le=10080,
+    )
+
+    # Obiettivo ufficiale della campagna DRY_RUN.
+    LIVE_CAMPAIGN_TARGET_CLOSED_TRADES: int = Field(
+        default=100,
+        ge=1,
         le=100000,
     )
 

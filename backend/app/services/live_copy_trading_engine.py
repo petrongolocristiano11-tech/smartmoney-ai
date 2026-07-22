@@ -678,6 +678,91 @@ def execute_source_trade(
             status_code=409,
         )
 
+    if normalized_origin == "STREAM":
+        (
+            source_side,
+            source_token_mint,
+            _,
+            _,
+        ) = _basic_trade_values(
+            trade
+        )
+
+        generation = (
+            max(
+                1,
+                int(
+                    policy
+                    .dry_run_generation
+                    or 1
+                ),
+            )
+            if policy.mode == "DRY_RUN"
+            else 1
+        )
+
+        source_wallet_allowed = (
+            str(
+                trade.wallet_address
+                or ""
+            ).strip()
+            in set(
+                policy.source_wallets
+                or []
+            )
+        )
+
+        if (
+            source_side == "SELL"
+            and source_wallet_allowed
+        ):
+            open_position = (
+                db.query(
+                    LivePosition.id
+                )
+                .filter(
+                    LivePosition.mode
+                    == policy.mode,
+                    LivePosition.generation
+                    == generation,
+                    LivePosition.token_mint
+                    == source_token_mint,
+                    LivePosition.status
+                    == "OPEN",
+                    LivePosition.quantity_raw
+                    > 0,
+                )
+                .first()
+            )
+
+            if open_position is None:
+                record_live_event(
+                    db,
+                    generation=generation,
+                    event_type=(
+                        "SOURCE_SELL_IGNORED"
+                    ),
+                    severity="INFO",
+                    message=(
+                        "SELL sorgente ignorato: "
+                        "non esiste una posizione "
+                        "aperta sul token."
+                    ),
+                    payload={
+                        "code":
+                            "IGNORED_ALREADY_CLOSED",
+                        "source_signature":
+                            trade.signature,
+                        "source_wallet":
+                            trade.wallet_address,
+                        "token_mint":
+                            source_token_mint,
+                    },
+                    commit=True,
+                )
+
+                return None
+
     order, claimed = _claim_order(
         db,
         trade=trade,

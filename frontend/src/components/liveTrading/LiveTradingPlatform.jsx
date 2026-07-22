@@ -200,6 +200,7 @@ function getRankingStatus(row, minimumSample) {
 
 function MetricGrid({ analytics }) {
   const summary = analytics?.summary;
+
   if (!summary) {
     return null;
   }
@@ -207,26 +208,106 @@ function MetricGrid({ analytics }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <LiveTradingMetric
-        label="PnL realizzato"
-        value={`${formatLiveNumber(summary.net_realized_pnl_sol, 6)} SOL`}
-        tone={summary.net_realized_pnl_sol > 0 ? "positive" : summary.net_realized_pnl_sol < 0 ? "danger" : "default"}
-        subtitle={`ROI ${formatLiveNumber(summary.roi_percent, 2)}%`}
+        label="Trade chiusi"
+        value={`${summary.closed_trades} / ${summary.campaign_target_closed_trades}`}
+        tone={
+          summary.closed_trades
+          >= summary.campaign_target_closed_trades
+            ? "positive"
+            : "info"
+        }
+        subtitle={`${summary.campaign_remaining_closed_trades} rimanenti · ${formatLiveNumber(
+          summary.campaign_progress_percent,
+          2
+        )}% completato`}
       />
+
+      <LiveTradingMetric
+        label="PnL generazione"
+        value={`${formatLiveNumber(
+          summary.net_realized_pnl_sol,
+          6
+        )} SOL`}
+        tone={
+          summary.net_realized_pnl_sol > 0
+            ? "positive"
+            : summary.net_realized_pnl_sol < 0
+              ? "danger"
+              : "default"
+        }
+        subtitle={`ROI ${formatLiveNumber(
+          summary.roi_percent,
+          2
+        )}%`}
+      />
+
       <LiveTradingMetric
         label="Win rate"
-        value={`${formatLiveNumber(summary.win_rate_percent, 2)}%`}
-        subtitle={`${summary.winning_trades} vinte · ${summary.losing_trades} perse`}
+        value={`${formatLiveNumber(
+          summary.win_rate_percent,
+          2
+        )}%`}
+        subtitle={`${summary.winning_trades} vinte · ${summary.losing_trades} perse · ${summary.breakeven_trades} pari`}
       />
+
+      <LiveTradingMetric
+        label="BUY / SELL"
+        value={`${summary.buy_orders} / ${summary.sell_orders}`}
+        subtitle={`${summary.orders_completed} ordini completati`}
+      />
+
       <LiveTradingMetric
         label="Profit factor"
-        value={summary.profit_factor === null ? "N/D" : formatLiveNumber(summary.profit_factor, 3)}
-        subtitle={`${summary.sell_orders} SELL completati`}
+        value={
+          summary.profit_factor === null
+            ? "N/D"
+            : formatLiveNumber(
+                summary.profit_factor,
+                3
+              )
+        }
+        subtitle={`Media ${formatLiveNumber(
+          summary.average_trade_pnl_sol,
+          6
+        )} SOL`}
       />
+
       <LiveTradingMetric
         label="Drawdown massimo"
-        value={`${formatLiveNumber(summary.max_drawdown_sol, 6)} SOL`}
-        tone={summary.max_drawdown_sol > 0 ? "warning" : "default"}
-        subtitle={`${formatLiveNumber(summary.max_drawdown_percent, 2)}%`}
+        value={`${formatLiveNumber(
+          summary.max_drawdown_sol,
+          6
+        )} SOL`}
+        tone={
+          summary.max_drawdown_sol > 0
+            ? "warning"
+            : "default"
+        }
+        subtitle={`${formatLiveNumber(
+          summary.max_drawdown_percent,
+          2
+        )}%`}
+      />
+
+      <LiveTradingMetric
+        label="Posizioni aperte"
+        value={summary.open_positions}
+        subtitle={`${formatLiveNumber(
+          summary.open_exposure_sol,
+          6
+        )} SOL esposti`}
+      />
+
+      <LiveTradingMetric
+        label="Migliore / peggiore"
+        value={`${formatLiveNumber(
+          summary.best_trade_pnl_sol,
+          5
+        )} / ${formatLiveNumber(
+          summary.worst_trade_pnl_sol,
+          5
+        )}`}
+        subtitle="PnL SOL per trade"
       />
     </div>
   );
