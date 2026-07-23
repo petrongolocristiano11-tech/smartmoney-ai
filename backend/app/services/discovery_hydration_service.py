@@ -90,8 +90,20 @@ def _select_candidates(
 ) -> tuple[list[DiscoveredWallet], int]:
     rows = (
         db.query(DiscoveredWallet)
-        .filter(DiscoveredWallet.smart_score >= minimum_smart_score)
+        .filter(
+            DiscoveredWallet.smart_score
+            >= minimum_smart_score
+        )
+        .filter(
+            DiscoveredWallet.discovery_funnel_status
+            == "NEEDS_LOCAL_DATA"
+        )
+        .filter(
+            DiscoveredWallet.discovery_funnel_action
+            == "RUN_CONTROLLED_HYDRATION"
+        )
         .order_by(
+            DiscoveredWallet.discovery_funnel_score.desc(),
             DiscoveredWallet.smart_score.desc(),
             DiscoveredWallet.ranking_score.desc(),
             DiscoveredWallet.id.asc(),

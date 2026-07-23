@@ -101,12 +101,27 @@ def _score(wallet_address: str) -> dict:
     }
 
 
-def _add_wallet(db_session, address: str = WALLET, score: float = 80):
+def _add_wallet(
+    db_session,
+    address: str = WALLET,
+    score: float = 80,
+    *,
+    funnel_status: str = "NEEDS_LOCAL_DATA",
+    funnel_action: str = "RUN_CONTROLLED_HYDRATION",
+    funnel_score: float | None = None,
+):
     wallet = DiscoveredWallet(
         wallet_address=address,
         discovered_from_token=TOKEN,
         smart_score=score,
         activity_classification="INATTIVO",
+        discovery_funnel_status=funnel_status,
+        discovery_funnel_action=funnel_action,
+        discovery_funnel_score=(
+            score
+            if funnel_score is None
+            else funnel_score
+        ),
     )
     db_session.add(wallet)
     db_session.commit()
@@ -248,3 +263,101 @@ def test_hydration_failure_is_persisted_and_run_continues(db_session, monkeypatc
     assert wallet.hydration_status == "FAILED"
     assert wallet.hydration_error_code == "HELIUS_HTTP_ERROR"
     assert "api-key" not in (wallet.hydration_error_message or "").lower()
+
+
+
+def test_hydration_skips_terminal_funnel_wallets(
+    db_session,
+    monkeypatch,
+):
+    blocked_address = "B" * 32
+    target_address = "C" * 32
+
+    _add_wallet(
+        db_session,
+        address=blocked_address,
+        score=99,
+        funnel_status="BLOCKED",
+        funnel_action="DO_NOT_PROMOTE",
+        funnel_score=99,
+    )
+    _add_wallet(
+        db_session,
+        address=target_address,
+        score=70,
+        funnel_status="NEEDS_LOCAL_DATA",
+        funnel_action="RUN_CONTROLLED_HYDRATION",
+        funnel_score=70,
+    )
+
+    calls = []
+
+    monkeypatch.setattr(
+        hydration,
+        "get_wallet_history",
+        lambda address, **_kwargs: (
+            calls.append(address) or []
+        ),
+    )
+    monkeypatch.setattr(
+        hydration,
+        "calculate_smart_score",
+        lambda _db, address: _score(address),
+    )
+
+    result = hydration.run_controlled_discovery_hydration(
+        db_session,
+        max_wallets=1,
+        max_helius_requests=1,
+        now=NOW,
+    )
+
+    assert result["wallets_attempted"] == 1
+    assert calls == [target_address]
+    assert blocked_address not in calls
+
+
+def test_hydration_prioritizes_funnel_score(
+    db_session,
+    monkeypatch,
+):
+    high_smart_address = "D" * 32
+    high_funnel_address = "E" * 32
+
+    _add_wallet(
+        db_session,
+        address=high_smart_address,
+        score=95,
+        funnel_score=30,
+    )
+    _add_wallet(
+        db_session,
+        address=high_funnel_address,
+        score=70,
+        funnel_score=80,
+    )
+
+    calls = []
+
+    monkeypatch.setattr(
+        hydration,
+        "get_wallet_history",
+        lambda address, **_kwargs: (
+            calls.append(address) or []
+        ),
+    )
+    monkeypatch.setattr(
+        hydration,
+        "calculate_smart_score",
+        lambda _db, address: _score(address),
+    )
+
+    result = hydration.run_controlled_discovery_hydration(
+        db_session,
+        max_wallets=1,
+        max_helius_requests=1,
+        now=NOW,
+    )
+
+    assert result["wallets_attempted"] == 1
+    assert calls == [high_funnel_address]
