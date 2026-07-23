@@ -1097,8 +1097,13 @@ function Discovery() {
       });
       setExtendedHistoryResult(response.data);
       setCandidateWallet(wallet);
+
+      const resumed = Boolean(
+        response.data.parameters?.resumed
+      );
+
       setMessage(
-        `Storico esteso ${response.data.status}: ${response.data.trades_imported} nuovi swap, ${response.data.trades_updated} aggiornati, ${response.data.helius_requests}/${response.data.request_budget} richieste Helius.`
+        `Storico ${resumed ? "ripreso dal cursore salvato" : "esteso"} ${response.data.status}: ${response.data.trades_imported} nuovi swap, ${response.data.trades_updated} aggiornati, ${response.data.helius_requests}/${response.data.request_budget} richieste Helius.`
       );
       await loadDiscoveredWallets();
     } catch (requestError) {
@@ -1635,9 +1640,11 @@ async function handleExitPriceAudit(
               </div>
 
               {extendedHistoryResult && (
-                <div className="mt-4 grid gap-3 rounded-lg border border-slate-700 bg-slate-900/70 p-4 text-sm sm:grid-cols-2 xl:grid-cols-7">
+                <div className="mt-4 grid gap-3 rounded-lg border border-slate-700 bg-slate-900/70 p-4 text-sm sm:grid-cols-2 xl:grid-cols-9">
                   <span>Stato: <strong className="text-cyan-300">{extendedHistoryResult.status}</strong></span>
                   <span>Stop: <strong>{extendedHistoryResult.stop_reason}</strong></span>
+                  <span>Modalità: <strong>{extendedHistoryResult.parameters?.resumed ? "RIPRESA" : "NUOVA"}</strong></span>
+                  <span>Cursore iniziale: <strong>{extendedHistoryResult.parameters?.resume_from_signature ? shortenAddress(extendedHistoryResult.parameters.resume_from_signature, 8, 6) : "-"}</strong></span>
                   <span>Helius: <strong>{extendedHistoryResult.helius_requests}/{extendedHistoryResult.request_budget}</strong></span>
                   <span>Pagine: <strong>{extendedHistoryResult.pages_fetched}</strong></span>
                   <span>Swap: <strong>{extendedHistoryResult.swaps_found}</strong></span>

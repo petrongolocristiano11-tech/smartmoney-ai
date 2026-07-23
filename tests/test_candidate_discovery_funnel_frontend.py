@@ -18,6 +18,10 @@ def test_frontend_contains_candidate_funnel_controls_and_queue():
     assert "DISCOVERY_FUNNEL_OPTIONS" in page
     assert "history_queue" in page
     assert "Calcola candidate funnel" in page
+    assert "parameters?.resumed" in page
+    assert "Cursore iniziale" in page
+    assert '"RIPRESA" : "NUOVA"' in page
+    assert "ripreso dal cursore salvato" in page
 
 
 def test_discovery_frontend_has_no_known_mojibake():

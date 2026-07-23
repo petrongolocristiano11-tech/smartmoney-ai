@@ -56,6 +56,66 @@ def test_hard_exitability_block_stays_blocked():
     assert "FUNNEL_EXITABILITY_HARD_BLOCK" in result["reasons"]
 
 
+def test_promotion_gate_reason_blocks_history_queue():
+    result = evaluate_candidate(
+        wallet(
+            promotion_reasons=[
+                "QUALITY_NOT_COPYABLE",
+            ],
+        )
+    )
+
+    assert result["status"] == "BLOCKED"
+    assert result["action"] == "DO_NOT_PROMOTE"
+    assert result["history_candidate"] is False
+    assert (
+        "FUNNEL_PROMOTION_GATE_QUALITY_NOT_COPYABLE"
+        in result["reasons"]
+    )
+
+
+def test_low_promotion_score_blocks_history_queue():
+    result = evaluate_candidate(
+        wallet(
+            promotion_reasons=[
+                "SMART_SCORE_BELOW_PROMOTION_MINIMUM",
+            ],
+        )
+    )
+
+    assert result["status"] == "BLOCKED"
+    assert result["history_candidate"] is False
+
+
+def test_rejected_promotion_status_is_terminal():
+    result = evaluate_candidate(
+        wallet(
+            promotion_status="BOCCIATO",
+        )
+    )
+
+    assert result["status"] == "BLOCKED"
+    assert (
+        "FUNNEL_PROMOTION_STATUS_REJECTED"
+        in result["reasons"]
+    )
+
+
+def test_exit_price_block_is_terminal():
+    result = evaluate_candidate(
+        wallet(
+            exit_price_coverage_status="BLOCKED",
+        )
+    )
+
+    assert result["status"] == "BLOCKED"
+    assert result["history_candidate"] is False
+    assert (
+        "FUNNEL_EXIT_PRICE_AUDIT_BLOCK"
+        in result["reasons"]
+    )
+
+
 def test_missing_local_sample_requests_controlled_hydration():
     result = evaluate_candidate(
         wallet(

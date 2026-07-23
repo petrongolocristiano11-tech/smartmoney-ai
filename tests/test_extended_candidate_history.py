@@ -349,3 +349,172 @@ def test_helius_filtered_history_extracts_continuation_signature(monkeypatch):
     assert error.value.error_code == "HELIUS_CONTINUATION_REQUIRED"
     assert error.value.continuation_signature == continuation
     assert error.value.retryable is True
+
+
+
+def test_extended_history_resumes_from_saved_cursor(
+    db,
+    monkeypatch,
+):
+    resume_cursor = "R" * 64
+    series_start = NOW - timedelta(hours=2)
+
+    db.add(
+        CandidateHistoryBackfillRun(
+            run_id="previous-partial",
+            wallet_address=WALLET,
+            status="PARTIAL",
+            stop_reason="REQUEST_BUDGET_EXHAUSTED",
+            requested_lookback_days=30,
+            page_size=10,
+            request_budget=2,
+            next_before_signature=resume_cursor,
+            parameters={
+                "series_started_at":
+                    series_start.isoformat(),
+            },
+            safety={"manual_only": True},
+            started_at=series_start,
+            completed_at=series_start,
+        )
+    )
+    db.commit()
+
+    resumed_page = build_page(
+        "resumed",
+        4,
+        20,
+    )
+    calls = []
+
+    def fake_history(_address, **kwargs):
+        calls.append(kwargs)
+
+        if len(calls) == 1:
+            return resumed_page
+
+        return []
+
+    monkeypatch.setattr(
+        history,
+        "get_wallet_history",
+        fake_history,
+    )
+    monkeypatch.setattr(
+        history,
+        "_recalculate_wallet",
+        lambda *_args, **_kwargs: None,
+    )
+
+    run = history.run_extended_candidate_history(
+        db,
+        wallet_address=WALLET,
+        lookback_days=30,
+        max_helius_requests=2,
+        page_size=10,
+        now=NOW,
+    )
+
+    assert run.status == "COMPLETED"
+    assert run.stop_reason == "LAST_PAGE"
+    assert run.parameters["resumed"] is True
+    assert (
+        run.parameters["resume_source_run_id"]
+        == "previous-partial"
+    )
+    assert (
+        calls[0]["before_signature"]
+        == resume_cursor
+    )
+    assert (
+        calls[0]["lte_time"]
+        == int(series_start.timestamp())
+    )
+
+
+def test_extended_history_force_starts_fresh(
+    db,
+    monkeypatch,
+):
+    db.add(
+        CandidateHistoryBackfillRun(
+            run_id="previous-force",
+            wallet_address=WALLET,
+            status="PARTIAL",
+            stop_reason="REQUEST_BUDGET_EXHAUSTED",
+            requested_lookback_days=30,
+            page_size=10,
+            request_budget=1,
+            next_before_signature="F" * 64,
+            parameters={},
+            safety={"manual_only": True},
+            started_at=NOW - timedelta(hours=1),
+            completed_at=NOW - timedelta(hours=1),
+        )
+    )
+    db.commit()
+
+    calls = []
+
+    def fake_history(_address, **kwargs):
+        calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(
+        history,
+        "get_wallet_history",
+        fake_history,
+    )
+    monkeypatch.setattr(
+        history,
+        "_recalculate_wallet",
+        lambda *_args, **_kwargs: None,
+    )
+
+    run = history.run_extended_candidate_history(
+        db,
+        wallet_address=WALLET,
+        lookback_days=30,
+        max_helius_requests=1,
+        page_size=10,
+        force=True,
+        now=NOW,
+    )
+
+    assert run.parameters["resumed"] is False
+    assert calls[0]["before_signature"] is None
+
+
+def test_completed_same_lookback_is_not_repeated(
+    db,
+):
+    db.add(
+        CandidateHistoryBackfillRun(
+            run_id="already-completed",
+            wallet_address=WALLET,
+            status="COMPLETED",
+            stop_reason="LAST_PAGE",
+            requested_lookback_days=30,
+            page_size=10,
+            request_budget=2,
+            next_before_signature="C" * 64,
+            parameters={},
+            safety={"manual_only": True},
+            started_at=NOW - timedelta(hours=1),
+            completed_at=NOW - timedelta(hours=1),
+        )
+    )
+    db.commit()
+
+    with pytest.raises(
+        ValueError,
+        match="già stato completato",
+    ):
+        history.run_extended_candidate_history(
+            db,
+            wallet_address=WALLET,
+            lookback_days=30,
+            max_helius_requests=2,
+            page_size=10,
+            now=NOW,
+        )

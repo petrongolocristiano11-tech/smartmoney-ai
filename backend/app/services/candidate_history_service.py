@@ -68,6 +68,140 @@ def _transaction_time(item: dict[str, Any]) -> datetime | None:
     return datetime.fromtimestamp(value, tz=timezone.utc)
 
 
+def _parse_datetime(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return ensure_aware(value)
+
+    text = str(value or "").strip()
+    if not text:
+        return None
+
+    try:
+        parsed = datetime.fromisoformat(
+            text.replace("Z", "+00:00")
+        )
+    except ValueError:
+        return None
+
+    return ensure_aware(parsed)
+
+
+def _earliest_datetime(
+    first: datetime | None,
+    second: datetime | None,
+) -> datetime | None:
+    values = [
+        value
+        for value in (
+            ensure_aware(first),
+            ensure_aware(second),
+        )
+        if value is not None
+    ]
+    return min(values) if values else None
+
+
+def _latest_datetime(
+    first: datetime | None,
+    second: datetime | None,
+) -> datetime | None:
+    values = [
+        value
+        for value in (
+            ensure_aware(first),
+            ensure_aware(second),
+        )
+        if value is not None
+    ]
+    return max(values) if values else None
+
+
+def _resolve_resume_context(
+    previous_run: CandidateHistoryBackfillRun | None,
+    *,
+    effective_lookback: int,
+    force: bool,
+    started_at: datetime,
+) -> dict[str, Any]:
+    fresh = {
+        "resumed": False,
+        "before_signature": None,
+        "source_run_id": None,
+        "series_started_at": started_at,
+    }
+
+    if force or previous_run is None:
+        return fresh
+
+    previous_status = str(
+        previous_run.status or ""
+    ).upper()
+
+    previous_lookback = int(
+        previous_run.requested_lookback_days or 0
+    )
+
+    previous_cursor = str(
+        previous_run.next_before_signature or ""
+    ).strip() or None
+
+    if (
+        previous_status
+        in {
+            BACKFILL_STATUS_COMPLETED,
+            BACKFILL_STATUS_EMPTY,
+        }
+        and effective_lookback <= previous_lookback
+    ):
+        raise ValueError(
+            "Lo storico richiesto è già stato "
+            "completato. Aumenta il lookback oppure "
+            "usa force per ricominciare."
+        )
+
+    if (
+        previous_status == BACKFILL_STATUS_PARTIAL
+        and effective_lookback < previous_lookback
+    ):
+        raise ValueError(
+            "Non ridurre il lookback durante una "
+            "serie parziale."
+        )
+
+    if (
+        previous_status == BACKFILL_STATUS_PARTIAL
+        and not previous_cursor
+    ):
+        raise ValueError(
+            "Il backfill parziale non possiede un "
+            "cursore sicuro. Usa force per ricominciare."
+        )
+
+    if not previous_cursor:
+        return fresh
+
+    parameters = (
+        previous_run.parameters
+        if isinstance(previous_run.parameters, dict)
+        else {}
+    )
+
+    series_started_at = (
+        _parse_datetime(
+            parameters.get("series_started_at")
+        )
+        or ensure_aware(previous_run.started_at)
+        or started_at
+    )
+
+    return {
+        "resumed": True,
+        "before_signature": previous_cursor,
+        "source_run_id": previous_run.run_id,
+        "series_started_at": series_started_at,
+    }
+
+
 def _update_wallet_backfill_fields(
     wallet: DiscoveredWallet,
     *,
@@ -88,8 +222,14 @@ def _update_wallet_backfill_fields(
     wallet.extended_history_trades_imported = run.trades_imported
     wallet.extended_history_trades_updated = run.trades_updated
     wallet.extended_history_parse_failures = run.parse_failures
-    wallet.extended_history_oldest_at = run.oldest_transaction_at
-    wallet.extended_history_newest_at = run.newest_transaction_at
+    wallet.extended_history_oldest_at = _earliest_datetime(
+        wallet.extended_history_oldest_at,
+        run.oldest_transaction_at,
+    )
+    wallet.extended_history_newest_at = _latest_datetime(
+        wallet.extended_history_newest_at,
+        run.newest_transaction_at,
+    )
     wallet.extended_history_stop_reason = run.stop_reason
     wallet.extended_history_error_code = run.error_code
     wallet.extended_history_error_message = run.error_message
@@ -142,10 +282,46 @@ def run_extended_candidate_history(
                 "Lo storico esteso è consentito solo ai wallet COPIABILE."
             )
 
-        effective_lookback = max(7, min(int(lookback_days), 90))
-        effective_budget = max(1, min(int(max_helius_requests), 20))
-        effective_page_size = max(10, min(int(page_size), 100))
-        cutoff = started_at - timedelta(days=effective_lookback)
+        effective_lookback = max(
+            7,
+            min(int(lookback_days), 90),
+        )
+        effective_budget = max(
+            1,
+            min(int(max_helius_requests), 20),
+        )
+        effective_page_size = max(
+            10,
+            min(int(page_size), 100),
+        )
+
+        previous_run = (
+            db.query(CandidateHistoryBackfillRun)
+            .filter(
+                CandidateHistoryBackfillRun.wallet_address
+                == wallet_address
+            )
+            .order_by(
+                CandidateHistoryBackfillRun.id.desc()
+            )
+            .first()
+        )
+
+        resume_context = _resolve_resume_context(
+            previous_run,
+            effective_lookback=effective_lookback,
+            force=force,
+            started_at=started_at,
+        )
+
+        series_started_at = resume_context[
+            "series_started_at"
+        ]
+
+        cutoff = (
+            series_started_at
+            - timedelta(days=effective_lookback)
+        )
 
         run = CandidateHistoryBackfillRun(
             run_id=run_id,
@@ -155,6 +331,9 @@ def run_extended_candidate_history(
             requested_lookback_days=effective_lookback,
             page_size=effective_page_size,
             request_budget=effective_budget,
+            next_before_signature=resume_context[
+                "before_signature"
+            ],
             parameters={
                 "lookback_days": effective_lookback,
                 "max_helius_requests": effective_budget,
@@ -163,6 +342,18 @@ def run_extended_candidate_history(
                 "token_accounts": "balanceChanged",
                 "pagination": "before-signature",
                 "force": force,
+                "resumed": bool(
+                    resume_context["resumed"]
+                ),
+                "resume_source_run_id": (
+                    resume_context["source_run_id"]
+                ),
+                "resume_from_signature": (
+                    resume_context["before_signature"]
+                ),
+                "series_started_at": (
+                    series_started_at.isoformat()
+                ),
             },
             safety={
                 "manual_only": True,
@@ -183,8 +374,15 @@ def run_extended_candidate_history(
         db.commit()
         db.refresh(run)
 
-        before_signature: str | None = None
-        seen_page_cursors: set[str] = set()
+        before_signature = resume_context[
+            "before_signature"
+        ]
+
+        seen_page_cursors: set[str] = (
+            {before_signature}
+            if before_signature
+            else set()
+        )
         seen_signatures: set[str] = set()
         oldest_at: datetime | None = None
         newest_at: datetime | None = None
@@ -200,7 +398,9 @@ def run_extended_candidate_history(
                     limit=effective_page_size,
                     transaction_type="SWAP",
                     gte_time=int(cutoff.timestamp()),
-                    lte_time=int(started_at.timestamp()),
+                    lte_time=int(
+                        series_started_at.timestamp()
+                    ),
                     before_signature=before_signature,
                     commitment="confirmed",
                     token_accounts="balanceChanged",
@@ -222,7 +422,12 @@ def run_extended_candidate_history(
 
             if not page:
                 stop_reason = (
-                    STOP_EMPTY_PAGE if run.transactions_found == 0 else STOP_LAST_PAGE
+                    STOP_LAST_PAGE
+                    if (
+                        bool(resume_context["resumed"])
+                        or run.transactions_found > 0
+                    )
+                    else STOP_EMPTY_PAGE
                 )
                 db.commit()
                 break
@@ -281,7 +486,10 @@ def run_extended_candidate_history(
         run.newest_transaction_at = newest_at
         run.next_before_signature = before_signature
         run.stop_reason = stop_reason
-        if run.transactions_found == 0:
+        if (
+            run.transactions_found == 0
+            and not bool(resume_context["resumed"])
+        ):
             run.status = BACKFILL_STATUS_EMPTY
         elif stop_reason == STOP_REQUEST_BUDGET:
             run.status = BACKFILL_STATUS_PARTIAL

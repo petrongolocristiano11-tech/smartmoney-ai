@@ -29,6 +29,12 @@ MIN_LOCAL_SAMPLE = 6
 MIN_UNIQUE_TOKENS = 2
 MIN_SMART_SCORE = 40.0
 
+PROMOTION_HARD_BLOCK_REASONS = frozenset({
+    "ACTIVITY_NOT_ACTIVE",
+    "QUALITY_NOT_COPYABLE",
+    "SMART_SCORE_BELOW_PROMOTION_MINIMUM",
+})
+
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -87,30 +93,117 @@ def _score(wallet: DiscoveredWallet) -> float:
     return round(_clip(score), 2)
 
 
-def _hard_block_reasons(wallet: DiscoveredWallet) -> list[str]:
+def _reason_set(value: object) -> set[str]:
+    if not isinstance(
+        value,
+        (list, tuple, set),
+    ):
+        return set()
+
+    return {
+        str(item).strip()
+        for item in value
+        if str(item).strip()
+    }
+
+
+def _hard_block_reasons(
+    wallet: DiscoveredWallet,
+) -> list[str]:
     reasons: list[str] = []
-    if str(wallet.exitability_gate_status) == "BLOCKED":
-        reasons.append("FUNNEL_EXITABILITY_HARD_BLOCK")
-    if str(wallet.quality_classification) in {"SOSPETTO", "NON_COPIABILE"}:
-        reasons.append("FUNNEL_QUALITY_BLOCK")
+
+    if str(
+        getattr(
+            wallet,
+            "exitability_gate_status",
+            "NON_ANALIZZATO",
+        )
+    ) == "BLOCKED":
+        reasons.append(
+            "FUNNEL_EXITABILITY_HARD_BLOCK"
+        )
+
+    if str(
+        getattr(
+            wallet,
+            "exit_price_coverage_status",
+            "NON_ANALIZZATO",
+        )
+    ) == "BLOCKED":
+        reasons.append(
+            "FUNNEL_EXIT_PRICE_AUDIT_BLOCK"
+        )
+
+    if str(
+        getattr(
+            wallet,
+            "promotion_status",
+            "NON_ANALIZZATO",
+        )
+    ) == "BOCCIATO":
+        reasons.append(
+            "FUNNEL_PROMOTION_STATUS_REJECTED"
+        )
+
+    promotion_reasons = _reason_set(
+        getattr(
+            wallet,
+            "promotion_reasons",
+            [],
+        )
+    )
+
+    for reason in sorted(
+        promotion_reasons
+        & PROMOTION_HARD_BLOCK_REASONS
+    ):
+        reasons.append(
+            f"FUNNEL_PROMOTION_GATE_{reason}"
+        )
+
+    if str(wallet.quality_classification) in {
+        "SOSPETTO",
+        "NON_COPIABILE",
+    }:
+        reasons.append(
+            "FUNNEL_QUALITY_BLOCK"
+        )
+
     if str(wallet.activity_classification) == "INATTIVO":
-        reasons.append("FUNNEL_INACTIVE_WALLET")
+        reasons.append(
+            "FUNNEL_INACTIVE_WALLET"
+        )
+
     if (
         _local_sample(wallet) >= 10
-        and _ratio_percent(wallet.dust_ratio_7d) >= 80
+        and _ratio_percent(
+            wallet.dust_ratio_7d
+        ) >= 80
     ):
-        reasons.append("FUNNEL_EXCESSIVE_DUST")
+        reasons.append(
+            "FUNNEL_EXCESSIVE_DUST"
+        )
+
     if (
         _local_sample(wallet) >= 10
-        and _ratio_percent(wallet.top_token_concentration_7d) >= 95
+        and _ratio_percent(
+            wallet.top_token_concentration_7d
+        ) >= 95
     ):
-        reasons.append("FUNNEL_EXTREME_TOKEN_CONCENTRATION")
+        reasons.append(
+            "FUNNEL_EXTREME_TOKEN_CONCENTRATION"
+        )
+
     if (
         _has_local_data(wallet)
-        and _clip(wallet.smart_score) < MIN_SMART_SCORE
+        and _clip(wallet.smart_score)
+        < MIN_SMART_SCORE
     ):
-        reasons.append("FUNNEL_SMART_SCORE_TOO_LOW")
-    return reasons
+        reasons.append(
+            "FUNNEL_SMART_SCORE_TOO_LOW"
+        )
+
+    return list(dict.fromkeys(reasons))
 
 
 def _has_local_data(wallet: DiscoveredWallet) -> bool:
