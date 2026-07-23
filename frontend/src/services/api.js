@@ -291,6 +291,31 @@ export function getLatestCandidatePositionLifecycleAudit(
 }
 
 
+export function runCandidateExitPriceAudit({
+  walletAddress,
+  maxLocalPriceAgeHours = 24,
+}) {
+  return api.post(
+    "/discovered-wallets/promotion/exit-price-audit",
+    {
+      wallet_address: walletAddress,
+      max_local_price_age_hours: maxLocalPriceAgeHours,
+    }
+  );
+}
+
+
+export function getLatestCandidateExitPriceAudit(
+  walletAddress
+) {
+  return api.get(
+    `/discovered-wallets/promotion/exit-price-audit/${encodeURIComponent(
+      walletAddress
+    )}/latest`
+  );
+}
+
+
 // =========================
 // WALLET INTELLIGENCE
 // =========================

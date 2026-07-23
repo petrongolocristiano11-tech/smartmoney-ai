@@ -206,6 +206,31 @@ class DiscoveredWallet(Base):
         Float, default=0.0
     )
 
+    exit_price_coverage_status: Mapped[str] = mapped_column(
+        String(24), default="NON_ANALIZZATO", index=True
+    )
+    exit_price_coverage_score: Mapped[float] = mapped_column(
+        Float, default=0.0, index=True
+    )
+    exit_price_local_observable_percent: Mapped[float] = mapped_column(
+        Float, default=0.0
+    )
+    exit_price_current_route_percent: Mapped[float] = mapped_column(
+        Float, default=0.0
+    )
+    exit_price_temporal_execution_percent: Mapped[float] = mapped_column(
+        Float, default=0.0
+    )
+    exit_price_audit_reasons: Mapped[list] = mapped_column(
+        JSON, default=list
+    )
+    latest_exit_price_audit_run_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, index=True
+    )
+    exit_price_audit_calculated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
     eligible: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     eligibility_reasons: Mapped[list] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String(20), default="DISCOVERED")

@@ -12,6 +12,8 @@ from backend.app.schemas.candidate_backtest import (
     CandidateReconstructionAuditResponse,
     CandidatePositionLifecycleAuditRequest,
     CandidatePositionLifecycleAuditResponse,
+    CandidateExitPriceAuditRequest,
+    CandidateExitPriceAuditResponse,
     CandidateHistoryBackfillRequest,
     CandidateHistoryBackfillResponse,
 )
@@ -34,6 +36,10 @@ from backend.app.services.candidate_reconstruction_audit_service import (
 from backend.app.services.candidate_position_lifecycle_audit_service import (
     get_latest_candidate_position_lifecycle_audit,
     run_candidate_position_lifecycle_audit,
+)
+from backend.app.services.candidate_exit_price_audit_service import (
+    get_latest_candidate_exit_price_audit,
+    run_candidate_exit_price_audit,
 )
 from backend.app.services.candidate_history_service import (
     CandidateHistoryAlreadyRunningError,
@@ -85,6 +91,13 @@ def get_discovered_wallets(
         "DATI_INSUFFICIENTI",
         "NON_ANALIZZATO",
     ] = "ALL",
+    exit_price: Literal[
+        "ALL",
+        "READY",
+        "PARTIAL",
+        "BLOCKED",
+        "NON_ANALIZZATO",
+    ] = "ALL",
     sort_by: Literal[
         "ranking_score",
         "smart_score",
@@ -95,6 +108,9 @@ def get_discovered_wallets(
         "backtest_total_return_percent",
         "backtest_max_drawdown_percent",
         "backtest_jupiter_compatibility_percent",
+        "exit_price_coverage_score",
+        "exit_price_local_observable_percent",
+        "exit_price_current_route_percent",
         "median_swap_sol_7d",
         "size_compatibility_ratio_7d",
         "last_swap_at",
@@ -118,6 +134,10 @@ def get_discovered_wallets(
         )
     if promotion != "ALL":
         query = query.filter(DiscoveredWallet.promotion_status == promotion)
+    if exit_price != "ALL":
+        query = query.filter(
+            DiscoveredWallet.exit_price_coverage_status == exit_price
+        )
 
     order_column = getattr(DiscoveredWallet, sort_by)
     return (
@@ -335,6 +355,46 @@ def read_latest_position_lifecycle_audit(
             ),
         )
 
+    return run
+
+
+@router.post(
+    "/promotion/exit-price-audit",
+    response_model=CandidateExitPriceAuditResponse,
+)
+def run_exit_price_audit(
+    request: CandidateExitPriceAuditRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return run_candidate_exit_price_audit(
+            db,
+            **request.model_dump(),
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=409,
+            detail=str(error),
+        ) from error
+
+
+@router.get(
+    "/promotion/exit-price-audit/{wallet_address}/latest",
+    response_model=CandidateExitPriceAuditResponse,
+)
+def read_latest_exit_price_audit(
+    wallet_address: str,
+    db: Session = Depends(get_db),
+):
+    run = get_latest_candidate_exit_price_audit(
+        db,
+        wallet_address,
+    )
+    if run is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Audit copertura prezzi di uscita non trovato",
+        )
     return run
 
 

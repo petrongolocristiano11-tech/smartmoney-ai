@@ -10,6 +10,7 @@ import {
   runCandidatePromotionBacktest,
   runCandidateReconstructionAudit,
   runCandidatePositionLifecycleAudit,
+  runCandidateExitPriceAudit,
   runDiscovery,
   runSmartDiscovery,
 } from "../services/api";
@@ -38,6 +39,13 @@ const PROMOTION_OPTIONS = [
   "OSSERVAZIONE",
   "BOCCIATO",
   "DATI_INSUFFICIENTI",
+  "NON_ANALIZZATO",
+];
+const EXIT_PRICE_OPTIONS = [
+  "ALL",
+  "READY",
+  "PARTIAL",
+  "BLOCKED",
   "NON_ANALIZZATO",
 ];
 
@@ -138,6 +146,21 @@ function promotionBadge(status) {
     OSSERVAZIONE: "border-amber-700 bg-amber-950/60 text-amber-300",
     BOCCIATO: "border-red-700 bg-red-950/60 text-red-300",
     DATI_INSUFFICIENTI: "border-orange-700 bg-orange-950/60 text-orange-300",
+    NON_ANALIZZATO: "border-blue-800 bg-blue-950/40 text-blue-300",
+  };
+  return {
+    label: normalized.replace("_", " "),
+    className: classes[normalized] ?? classes.NON_ANALIZZATO,
+  };
+}
+
+
+function exitPriceBadge(status) {
+  const normalized = status || "NON_ANALIZZATO";
+  const classes = {
+    READY: "border-green-700 bg-green-950/60 text-green-300",
+    PARTIAL: "border-amber-700 bg-amber-950/60 text-amber-300",
+    BLOCKED: "border-red-700 bg-red-950/60 text-red-300",
     NON_ANALIZZATO: "border-blue-800 bg-blue-950/40 text-blue-300",
   };
   return {
@@ -484,6 +507,127 @@ function LifecycleAuditPanel({ result }) {
 }
 
 
+function ExitPriceAuditPanel({ result }) {
+  if (!result) return null;
+
+  const summary = result.summary ?? {};
+  const readiness = exitPriceBadge(result.readiness_status);
+
+  return (
+    <section className="mb-8 overflow-hidden rounded-xl border border-rose-900 bg-slate-800">
+      <div className="border-b border-slate-700 p-5">
+        <p className="font-mono text-xs text-slate-400">{result.wallet_address}</p>
+        <div className="mt-1 flex flex-wrap items-center gap-3">
+          <h2 className="text-xl font-bold text-rose-300">
+            Exit Price Provenance &amp; Cached Coverage Audit
+          </h2>
+          <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${readiness.className}`}>
+            {readiness.label} · {formatNumber(result.readiness_score)}%
+          </span>
+        </div>
+        <p className="mt-2 text-xs text-amber-300">
+          Diagnosi: {(result.diagnoses ?? []).join(", ")}
+        </p>
+        <p className="mt-2 text-xs text-slate-400">
+          Separa prezzo osservabile, route cached attuale e prova temporale storica.
+          Nessun look-ahead, nessuna richiesta Helius/Jupiter e nessuna modifica operativa.
+        </p>
+      </div>
+
+      <div className="p-5">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+          <StatCard label="Posizioni" value={summary.positions_analyzed ?? 0} tone="text-orange-300" />
+          <StatCard label="Prezzo locale fresco" value={`${formatNumber(summary.local_observable_percent)}%`} tone="text-cyan-300" />
+          <StatCard label="Route cached attuale" value={`${formatNumber(summary.current_route_supported_percent)}%`} tone="text-green-300" />
+          <StatCard label="Prova temporale" value={`${formatNumber(summary.temporal_execution_percent)}%`} tone="text-indigo-300" />
+          <StatCard label="Cache mancanti" value={summary.cache_missing ?? 0} tone="text-red-300" />
+          <StatCard label="Prezzi stale" value={summary.stale_local_prices ?? 0} tone="text-amber-300" />
+          <StatCard label="Copertura valutazione" value={`${formatNumber(summary.valuation_coverage_percent)}%`} tone="text-fuchsia-300" />
+        </div>
+
+        <div className="mt-5 overflow-x-auto">
+          <table className="w-full min-w-[1250px] text-xs">
+            <thead className="bg-slate-950 text-slate-400">
+              <tr>
+                <th className="p-3">Scenario</th>
+                <th className="p-3">Dovute</th>
+                <th className="p-3">Non dovute</th>
+                <th className="p-3">Prezzo fresco</th>
+                <th className="p-3">Route attuale</th>
+                <th className="p-3">Prova temporale</th>
+                <th className="p-3">Cache presente</th>
+                <th className="p-3">Stale</th>
+                <th className="p-3">Mancanti</th>
+                <th className="p-3">Valore osservabile</th>
+                <th className="p-3">PnL osservabile</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {(result.scenario_results ?? []).map((row) => (
+                <tr key={row.scenario_key}>
+                  <td className="p-3 font-bold text-rose-300">
+                    {row.holding_period_hours == null ? "Fine analisi" : `${row.holding_period_hours} h`}
+                  </td>
+                  <td className="p-3 text-center">{row.positions_due}</td>
+                  <td className="p-3 text-center">{row.positions_not_due}</td>
+                  <td className="p-3 text-center text-cyan-300">{formatNumber(row.local_observable_percent)}%</td>
+                  <td className="p-3 text-center text-green-300">{formatNumber(row.current_route_supported_percent)}%</td>
+                  <td className="p-3 text-center text-indigo-300">{formatNumber(row.temporal_execution_percent)}%</td>
+                  <td className="p-3 text-center">{formatNumber(row.cache_present_percent)}%</td>
+                  <td className="p-3 text-center">{row.stale_local_prices}</td>
+                  <td className="p-3 text-center">{row.missing_local_prices}</td>
+                  <td className="p-3 text-center">{formatNumber(row.observable_value_sol, 4)} SOL</td>
+                  <td className="p-3 text-center">{formatNumber(row.observable_pnl_sol, 4)} SOL</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="mt-5 overflow-x-auto">
+          <h3 className="mb-3 font-bold text-rose-300">Provenienza prezzi alla fine dell’analisi</h3>
+          <table className="w-full min-w-[1400px] text-xs">
+            <thead className="bg-slate-950 text-slate-400">
+              <tr>
+                <th className="p-3">Token</th>
+                <th className="p-3">Bootstrap</th>
+                <th className="p-3">Stato evidenza</th>
+                <th className="p-3">Prezzo</th>
+                <th className="p-3">Età prezzo</th>
+                <th className="p-3">Side / fonte</th>
+                <th className="p-3">Cache</th>
+                <th className="p-3">Route attuale</th>
+                <th className="p-3">Temporale</th>
+                <th className="p-3">PnL osservabile</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {(result.position_results ?? []).map((position) => {
+                const evidence = position.scenario_evidence?.[0] ?? {};
+                return (
+                  <tr key={position.token_mint}>
+                    <td className="p-3 font-mono text-slate-300">{shortenAddress(position.token_mint, 7, 5)}</td>
+                    <td className="p-3 text-center">{position.bootstrap ? "SI" : "NO"}</td>
+                    <td className="p-3 text-center text-amber-300">{evidence.evidence_status ?? "-"}</td>
+                    <td className="p-3 text-center">{evidence.local_price_sol == null ? "-" : formatNumber(evidence.local_price_sol, 8)}</td>
+                    <td className="p-3 text-center">{evidence.local_price_age_hours == null ? "-" : `${formatNumber(evidence.local_price_age_hours, 1)} h`}</td>
+                    <td className="p-3 text-center">{evidence.local_price_side ?? "-"} / {evidence.local_price_source ?? "-"}</td>
+                    <td className="p-3 text-center">{evidence.cache?.status ?? "CACHE_MISSING"}</td>
+                    <td className="p-3 text-center">{evidence.current_route_supported ? "SI" : "NO"}</td>
+                    <td className="p-3 text-center">{evidence.temporal_executable ? "SI" : "NO"}</td>
+                    <td className="p-3 text-center">{evidence.observable_pnl_sol == null ? "-" : `${formatNumber(evidence.observable_pnl_sol, 4)} SOL`}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+
 function Discovery() {
   const [mode, setMode] = useState("FULL");
   const [seedWallet, setSeedWallet] = useState("");
@@ -520,6 +664,8 @@ function Discovery() {
   const [promotionResult, setPromotionResult] = useState(null);
   const [reconstructionAuditResult, setReconstructionAuditResult] = useState(null);
   const [lifecycleAuditResult, setLifecycleAuditResult] = useState(null);
+  const [exitPriceAuditResult, setExitPriceAuditResult] = useState(null);
+  const [maxLocalPriceAgeHours, setMaxLocalPriceAgeHours] = useState(24);
 
   const [discoveredWallets, setDiscoveredWallets] = useState([]);
   const [result, setResult] = useState(null);
@@ -530,6 +676,7 @@ function Discovery() {
   const [activityFilter, setActivityFilter] = useState("ALL");
   const [qualityFilter, setQualityFilter] = useState("ALL");
   const [promotionFilter, setPromotionFilter] = useState("ALL");
+  const [exitPriceFilter, setExitPriceFilter] = useState("ALL");
   const [eligibleOnly, setEligibleOnly] = useState(false);
   const [sortBy, setSortBy] = useState("ranking_score");
 
@@ -542,6 +689,7 @@ function Discovery() {
   const [runningBacktest, setRunningBacktest] = useState(false);
   const [runningReconstructionAudit, setRunningReconstructionAudit] = useState(false);
   const [runningLifecycleAudit, setRunningLifecycleAudit] = useState(false);
+  const [runningExitPriceAudit, setRunningExitPriceAudit] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -595,7 +743,8 @@ function Discovery() {
           String(wallet.quality_classification ?? "").toLowerCase().includes(normalizedSearch) ||
           String(wallet.promotion_status ?? "").toLowerCase().includes(normalizedSearch) ||
           String(wallet.hydration_status ?? "").toLowerCase().includes(normalizedSearch) ||
-          String(wallet.extended_history_status ?? "").toLowerCase().includes(normalizedSearch);
+          String(wallet.extended_history_status ?? "").toLowerCase().includes(normalizedSearch) ||
+          String(wallet.exit_price_coverage_status ?? "").toLowerCase().includes(normalizedSearch);
         const matchesScore = Number(wallet.smart_score ?? 0) >= Number(minimumScore || 0);
         const matchesActivity =
           activityFilter === "ALL" || wallet.activity_classification === activityFilter;
@@ -603,8 +752,11 @@ function Discovery() {
           qualityFilter === "ALL" || wallet.quality_classification === qualityFilter;
         const matchesPromotion =
           promotionFilter === "ALL" || wallet.promotion_status === promotionFilter;
+        const matchesExitPrice =
+          exitPriceFilter === "ALL" ||
+          wallet.exit_price_coverage_status === exitPriceFilter;
         const matchesEligibility = !eligibleOnly || Boolean(wallet.eligible);
-        return matchesSearch && matchesScore && matchesActivity && matchesQuality && matchesPromotion && matchesEligibility;
+        return matchesSearch && matchesScore && matchesActivity && matchesQuality && matchesPromotion && matchesExitPrice && matchesEligibility;
       })
       .sort((first, second) => {
         if (sortBy === "last_swap_at") {
@@ -619,6 +771,7 @@ function Discovery() {
     activityFilter,
     qualityFilter,
     promotionFilter,
+    exitPriceFilter,
     eligibleOnly,
     sortBy,
   ]);
@@ -1013,6 +1166,50 @@ async function handleLifecycleAudit(
 }
 
 
+async function handleExitPriceAudit(
+  walletAddress = candidateWallet
+) {
+  const wallet = String(walletAddress || "").trim();
+
+  if (!wallet) {
+    setError("Seleziona un wallet per l'audit prezzi di uscita.");
+    return;
+  }
+
+  setRunningExitPriceAudit(true);
+  setError("");
+  setMessage("");
+  setExitPriceAuditResult(null);
+
+  try {
+    const response = await runCandidateExitPriceAudit({
+      walletAddress: wallet,
+      maxLocalPriceAgeHours,
+    });
+
+    setExitPriceAuditResult(response.data);
+    setCandidateWallet(wallet);
+    setMessage(
+      `Exit price audit ${response.data.readiness_status}: ` +
+      `score ${formatNumber(response.data.readiness_score)}%, ` +
+      `prezzo locale ${formatNumber(response.data.summary?.local_observable_percent)}%, ` +
+      `route cached ${formatNumber(response.data.summary?.current_route_supported_percent)}%.`
+    );
+    await loadDiscoveredWallets();
+  } catch (requestError) {
+    console.error("Errore Exit Price Provenance Audit:", requestError);
+    const backendMessage = requestError.response?.data?.detail;
+    setError(
+      typeof backendMessage === "string"
+        ? backendMessage
+        : "Audit prezzi di uscita non completato. Nessuna funzione LIVE e stata modificata."
+    );
+  } finally {
+    setRunningExitPriceAudit(false);
+  }
+}
+
+
   function clearHistory() {
     if (!historyItems.length) return;
     if (window.confirm("Vuoi cancellare la cronologia locale delle discovery?")) {
@@ -1257,6 +1454,17 @@ async function handleLifecycleAudit(
     className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
   />
 </label>
+                <label className="text-sm text-slate-400">
+                  Freschezza prezzo locale (ore)
+                  <input
+                    type="number"
+                    min="1"
+                    max="720"
+                    value={maxLocalPriceAgeHours}
+                    onChange={(event) => setMaxLocalPriceAgeHours(Number(event.target.value))}
+                    className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                  />
+                </label>
                 <label className="flex items-center gap-3 self-end rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 text-sm text-slate-300">
                   <input
                     type="checkbox"
@@ -1323,6 +1531,17 @@ async function handleLifecycleAudit(
     {runningLifecycleAudit
       ? "Lifecycle audit in corso..."
       : "Position lifecycle + stale audit"}
+  </button>
+
+  <button
+    type="button"
+    onClick={() => handleExitPriceAudit()}
+    disabled={runningExitPriceAudit || !candidateWallet}
+    className="rounded-lg bg-rose-600 px-5 py-3 font-bold text-white disabled:opacity-50"
+  >
+    {runningExitPriceAudit
+      ? "Exit price audit in corso..."
+      : "Exit price provenance + cached coverage"}
   </button>
 </div>
             </div>
@@ -1615,6 +1834,7 @@ async function handleLifecycleAudit(
 )}
 
         <LifecycleAuditPanel result={lifecycleAuditResult} />
+        <ExitPriceAuditPanel result={exitPriceAuditResult} />
 
         <section className="mb-8 overflow-hidden rounded-xl border border-cyan-900 bg-slate-800">
           <div className="border-b border-slate-700 p-5">
@@ -1939,6 +2159,15 @@ async function handleLifecycleAudit(
                 ))}
               </select>
               <select
+                value={exitPriceFilter}
+                onChange={(event) => setExitPriceFilter(event.target.value)}
+                className="rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+              >
+                {EXIT_PRICE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>{option.replace("_", " ")}</option>
+                ))}
+              </select>
+              <select
                 value={sortBy}
                 onChange={(event) => setSortBy(event.target.value)}
                 className="rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
@@ -1949,6 +2178,9 @@ async function handleLifecycleAudit(
                 <option value="quality_score">Quality Score</option>
                 <option value="backtest_score">Backtest Score</option>
                 <option value="backtest_data_sufficiency_score">Sufficienza dati</option>
+                <option value="exit_price_coverage_score">Exit price score</option>
+                <option value="exit_price_local_observable_percent">Prezzi locali freschi</option>
+                <option value="exit_price_current_route_percent">Route cached attuale</option>
                 <option value="backtest_total_return_percent">Rendimento backtest</option>
                 <option value="backtest_max_drawdown_percent">Drawdown backtest</option>
                 <option value="median_swap_sol_7d">Mediana swap</option>
@@ -1968,7 +2200,7 @@ async function handleLifecycleAudit(
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[3450px] text-sm">
+            <table className="w-full min-w-[3700px] text-sm">
               <thead className="bg-slate-900 text-slate-400">
                 <tr>
                   <th className="p-4 text-left">Wallet</th>
@@ -1988,6 +2220,7 @@ async function handleLifecycleAudit(
                   <th className="p-4">WR / PF</th>
                   <th className="p-4">DD / Coverage</th>
                   <th className="p-4">Jupiter</th>
+                  <th className="p-4">Exit price</th>
                   <th className="p-4">Mediana</th>
                   <th className="p-4">Dust</th>
                   <th className="p-4">Size compat.</th>
@@ -2010,6 +2243,7 @@ async function handleLifecycleAudit(
                   const activity = activityBadge(wallet.activity_classification);
                   const quality = qualityBadge(wallet.quality_classification);
                   const promotion = promotionBadge(wallet.promotion_status);
+                  const exitPrice = exitPriceBadge(wallet.exit_price_coverage_status);
                   const eligibility = eligibilityBadge(wallet);
                   return (
                     <tr key={wallet.wallet_address} className="hover:bg-slate-700/30">
@@ -2113,6 +2347,22 @@ async function handleLifecycleAudit(
                       <td className="p-4 text-center text-slate-300">
                         {wallet.backtest_jupiter_status}
                         <p className="text-[10px] text-slate-500">{formatNumber(wallet.backtest_jupiter_compatibility_percent)}%</p>
+                      </td>
+                      <td className="p-4 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleExitPriceAudit(wallet.wallet_address)}
+                          disabled={runningExitPriceAudit}
+                          title={(wallet.exit_price_audit_reasons ?? []).join(", ")}
+                          className={`rounded-full border px-2.5 py-1 text-xs font-bold disabled:opacity-50 ${exitPrice.className}`}
+                        >
+                          {wallet.exit_price_coverage_status === "NON_ANALIZZATO"
+                            ? "AUDIT"
+                            : exitPrice.label}
+                        </button>
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          {formatNumber(wallet.exit_price_coverage_score)}% · local {formatNumber(wallet.exit_price_local_observable_percent)}% · route {formatNumber(wallet.exit_price_current_route_percent)}%
+                        </p>
                       </td>
                       <td className="p-4 text-center text-slate-300">{formatNumber(wallet.median_swap_sol_7d, 4)} SOL</td>
                       <td className="p-4 text-center text-slate-300">{formatNumber(Number(wallet.dust_ratio_7d ?? 0) * 100, 1)}%</td>

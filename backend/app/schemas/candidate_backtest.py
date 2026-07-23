@@ -285,6 +285,39 @@ class CandidatePositionLifecycleAuditResponse(
     )
 
 
+class CandidateExitPriceAuditRequest(BaseModel):
+    wallet_address: str = Field(min_length=32, max_length=64)
+    max_local_price_age_hours: int = Field(default=24, ge=1, le=720)
+
+    @field_validator("wallet_address")
+    @classmethod
+    def normalize_wallet(cls, value: str) -> str:
+        wallet = str(value or "").strip()
+        if not 32 <= len(wallet) <= 64:
+            raise ValueError("Wallet address non valido")
+        return wallet
+
+
+class CandidateExitPriceAuditResponse(BaseModel):
+    id: int
+    run_id: str
+    wallet_address: str
+    status: str
+    readiness_status: str
+    readiness_score: int
+    parameters: dict
+    safety: dict
+    summary: dict
+    scenario_results: list[dict]
+    position_results: list[dict]
+    diagnoses: list[str]
+    started_at: datetime
+    completed_at: datetime | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class CandidateHistoryBackfillRequest(BaseModel):
     wallet_address: str = Field(min_length=32, max_length=64)
     lookback_days: int = Field(default=30, ge=7, le=90)

@@ -110,6 +110,15 @@ class DiscoveredWalletResponse(BaseModel):
     backtest_bootstrap_positions: int
     backtest_matched_sell_ratio_percent: float
 
+    exit_price_coverage_status: str
+    exit_price_coverage_score: float
+    exit_price_local_observable_percent: float
+    exit_price_current_route_percent: float
+    exit_price_temporal_execution_percent: float
+    exit_price_audit_reasons: list[str]
+    latest_exit_price_audit_run_id: str | None
+    exit_price_audit_calculated_at: datetime | None
+
     eligible: bool
     eligibility_reasons: list[str]
     status: str
