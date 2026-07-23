@@ -33,6 +33,20 @@ class DiscoveredWalletResponse(BaseModel):
     activity_reasons: list[str]
     activity_calculated_at: datetime | None
 
+    hydration_status: str
+    hydration_run_id: str | None
+    hydration_last_attempt_at: datetime | None
+    hydration_last_success_at: datetime | None
+    hydration_lookback_days: int
+    hydration_transactions_found: int
+    hydration_swaps_found: int
+    hydration_trades_imported: int
+    hydration_trades_updated: int
+    hydration_parse_failures: int
+    hydration_helius_requests: int
+    hydration_error_code: str | None
+    hydration_error_message: str | None
+
     eligible: bool
     eligibility_reasons: list[str]
     status: str
@@ -47,3 +61,50 @@ class DiscoveredWalletActivityRefreshResponse(BaseModel):
     wallets_refreshed: int
     helius_requests: int
     message: str
+
+
+class DiscoveryHydrationWalletResult(BaseModel):
+    wallet_address: str
+    status: str
+    helius_requests: int
+    helius_attempts_reported: int
+    transactions_found: int
+    swaps_found: int
+    trades_imported: int
+    trades_updated: int
+    parse_failures: int
+    activity_classification: str
+    activity_score: float
+    eligible: bool
+    error_code: str | None
+    error_message: str | None
+
+
+class DiscoveryHydrationResponse(BaseModel):
+    status: str
+    run_id: str
+    started_at: datetime
+    completed_at: datetime
+    requested_max_wallets: int
+    effective_max_wallets: int
+    request_budget: int
+    helius_requests: int
+    retry_attempts_enabled: bool
+    lookback_days: int
+    transaction_limit_per_wallet: int
+    minimum_smart_score: float
+    force: bool
+    wallets_selected: int
+    wallets_attempted: int
+    wallets_completed: int
+    wallets_empty: int
+    wallets_partial: int
+    wallets_failed: int
+    wallets_skipped_cooldown: int
+    swaps_found: int
+    trades_imported: int
+    trades_updated: int
+    parse_failures: int
+    activity_breakdown: dict[str, int]
+    results: list[DiscoveryHydrationWalletResult]
+    safety: dict[str, bool]

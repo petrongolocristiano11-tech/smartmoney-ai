@@ -53,6 +53,40 @@ class DiscoveredWallet(Base):
         nullable=True,
     )
 
+    hydration_status: Mapped[str] = mapped_column(
+        String(24),
+        default="NEVER",
+        index=True,
+    )
+    hydration_run_id: Mapped[str | None] = mapped_column(
+        String(36),
+        nullable=True,
+    )
+    hydration_last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
+    hydration_last_success_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    hydration_lookback_days: Mapped[int] = mapped_column(Integer, default=0)
+    hydration_transactions_found: Mapped[int] = mapped_column(Integer, default=0)
+    hydration_swaps_found: Mapped[int] = mapped_column(Integer, default=0)
+    hydration_trades_imported: Mapped[int] = mapped_column(Integer, default=0)
+    hydration_trades_updated: Mapped[int] = mapped_column(Integer, default=0)
+    hydration_parse_failures: Mapped[int] = mapped_column(Integer, default=0)
+    hydration_helius_requests: Mapped[int] = mapped_column(Integer, default=0)
+    hydration_error_code: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    hydration_error_message: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
     eligible: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     eligibility_reasons: Mapped[list] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String(20), default="DISCOVERED")

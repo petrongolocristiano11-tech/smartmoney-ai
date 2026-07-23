@@ -7,11 +7,16 @@ from sqlalchemy.orm import Session
 from backend.app.database.session import get_db
 from backend.app.models.discovered_wallet import DiscoveredWallet
 from backend.app.schemas.discovered_wallet import (
+    DiscoveryHydrationResponse,
     DiscoveredWalletActivityRefreshResponse,
     DiscoveredWalletResponse,
 )
 from backend.app.services.discovered_wallet_service import (
     refresh_discovered_wallet_activity,
+)
+from backend.app.services.discovery_hydration_service import (
+    HydrationAlreadyRunningError,
+    run_controlled_discovery_hydration,
 )
 
 
@@ -75,6 +80,33 @@ def refresh_activity_ranking(
     db: Session = Depends(get_db),
 ):
     return refresh_discovered_wallet_activity(db, limit=limit)
+
+
+@router.post(
+    "/hydration/run",
+    response_model=DiscoveryHydrationResponse,
+)
+def run_discovery_hydration(
+    max_wallets: int = Query(default=3, ge=1, le=10),
+    max_helius_requests: int = Query(default=3, ge=1, le=10),
+    lookback_days: int = Query(default=7, ge=1, le=14),
+    transaction_limit: int = Query(default=100, ge=1, le=100),
+    minimum_smart_score: float = Query(default=0, ge=0, le=100),
+    force: bool = False,
+    db: Session = Depends(get_db),
+):
+    try:
+        return run_controlled_discovery_hydration(
+            db,
+            max_wallets=max_wallets,
+            max_helius_requests=max_helius_requests,
+            lookback_days=lookback_days,
+            transaction_limit=transaction_limit,
+            minimum_smart_score=minimum_smart_score,
+            force=force,
+        )
+    except HydrationAlreadyRunningError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 @router.get("/{wallet_address}", response_model=DiscoveredWalletResponse)

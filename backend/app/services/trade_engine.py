@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import UTC, datetime
 from decimal import (
     Decimal,
     InvalidOperation,
@@ -14,6 +15,19 @@ from backend.app.core.constants import (
 LAMPORTS_PER_SOL = Decimal(
     "1000000000"
 )
+
+
+def _timestamp_to_datetime(value) -> datetime | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+    try:
+        return datetime.fromtimestamp(float(value), tz=UTC)
+    except (OSError, OverflowError, TypeError, ValueError):
+        return None
 
 
 def _address(value) -> str:
@@ -1109,7 +1123,9 @@ def build_trade_data(
             "fee"
         ],
         "success": True,
-        "block_time": None,
+        "block_time": _timestamp_to_datetime(
+            trade.get("timestamp")
+        ),
         "raw_json": str(
             trade
         ),

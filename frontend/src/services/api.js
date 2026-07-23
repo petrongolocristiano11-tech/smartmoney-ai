@@ -91,6 +91,31 @@ export function refreshDiscoveredWalletActivity(
 }
 
 
+export function runControlledDiscoveryHydration({
+  maxWallets = 3,
+  maxHeliusRequests = 3,
+  lookbackDays = 7,
+  transactionLimit = 100,
+  minimumSmartScore = 0,
+  force = false,
+} = {}) {
+  return api.post(
+    "/discovered-wallets/hydration/run",
+    null,
+    {
+      params: {
+        max_wallets: maxWallets,
+        max_helius_requests: maxHeliusRequests,
+        lookback_days: lookbackDays,
+        transaction_limit: transactionLimit,
+        minimum_smart_score: minimumSmartScore,
+        force,
+      },
+    }
+  );
+}
+
+
 // =========================
 // WALLET INTELLIGENCE
 // =========================

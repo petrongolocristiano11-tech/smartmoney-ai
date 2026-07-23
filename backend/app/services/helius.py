@@ -96,9 +96,15 @@ def _request_json(
     params: dict[str, Any] | None = None,
     json: Any = None,
     timeout: float | None = None,
+    max_retries: int | None = None,
 ) -> Any:
     safe_endpoint = _safe_endpoint(url)
-    max_attempts = settings.HELIUS_MAX_RETRIES + 1
+    retry_count = (
+        settings.HELIUS_MAX_RETRIES
+        if max_retries is None
+        else max(0, int(max_retries))
+    )
+    max_attempts = retry_count + 1
     request_timeout = (
         timeout
         if timeout is not None
@@ -270,15 +276,37 @@ def get_enhanced_transaction(signature: str) -> list[dict[str, Any]]:
     return result
 
 
-def get_wallet_history(address: str) -> list[dict[str, Any]]:
+def get_wallet_history(
+    address: str,
+    *,
+    limit: int = 100,
+    transaction_type: str | None = None,
+    gte_time: int | None = None,
+    commitment: str = "finalized",
+    token_accounts: str = "none",
+    max_retries: int | None = None,
+) -> list[dict[str, Any]]:
     endpoint = (
-        "https://api.helius.xyz/v0/addresses/"
+        "https://mainnet.helius-rpc.com/v0/addresses/"
         f"{address}/transactions"
     )
+    params: dict[str, Any] = {
+        "api-key": settings.HELIUS_API_KEY,
+        "limit": max(1, min(int(limit), 100)),
+        "commitment": commitment,
+        "token-accounts": token_accounts,
+        "sort-order": "desc",
+    }
+    if transaction_type:
+        params["type"] = str(transaction_type).upper()
+    if gte_time is not None:
+        params["gte-time"] = int(gte_time)
+
     result = _request_json(
         "GET",
         endpoint,
-        params={"api-key": settings.HELIUS_API_KEY},
+        params=params,
+        max_retries=max_retries,
     )
 
     if not isinstance(result, list):
@@ -293,11 +321,25 @@ def get_wallet_history(address: str) -> list[dict[str, Any]]:
     return [item for item in result if isinstance(item, dict)]
 
 
-def get_wallet_swaps(address: str) -> dict[str, Any]:
-    transactions = get_wallet_history(address)
+def get_wallet_swaps(
+    address: str,
+    *,
+    limit: int = 100,
+    gte_time: int | None = None,
+    max_retries: int | None = None,
+) -> dict[str, Any]:
+    transactions = get_wallet_history(
+        address,
+        limit=limit,
+        transaction_type="SWAP",
+        gte_time=gte_time,
+        commitment="confirmed",
+        token_accounts="balanceChanged",
+        max_retries=max_retries,
+    )
 
     swaps = [
-        normalize_swap(transaction)
+        normalize_swap(transaction, wallet_address=address)
         for transaction in transactions
         if transaction.get("type") == "SWAP"
     ]

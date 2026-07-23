@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import {
   getDiscoveredWallets,
   refreshDiscoveredWalletActivity,
+  runControlledDiscoveryHydration,
   runDiscovery,
   runSmartDiscovery,
 } from "../services/api";
@@ -93,6 +94,22 @@ function activityBadge(classification) {
 }
 
 
+function hydrationBadge(status) {
+  const normalized = status || "NEVER";
+  const classes = {
+    COMPLETED: "border-green-700 bg-green-950/60 text-green-300",
+    EMPTY: "border-slate-600 bg-slate-900 text-slate-400",
+    PARTIAL: "border-amber-700 bg-amber-950/60 text-amber-300",
+    FAILED: "border-red-700 bg-red-950/60 text-red-300",
+    NEVER: "border-blue-800 bg-blue-950/40 text-blue-300",
+  };
+  return {
+    label: normalized,
+    className: classes[normalized] ?? classes.NEVER,
+  };
+}
+
+
 function eligibilityBadge(wallet) {
   if (wallet.eligible) {
     return {
@@ -128,6 +145,13 @@ function Discovery() {
   const [smartMaxWalletsPerToken, setSmartMaxWalletsPerToken] = useState(5);
   const [minSmartScore, setMinSmartScore] = useState(60);
 
+  const [hydrationMaxWallets, setHydrationMaxWallets] = useState(3);
+  const [hydrationRequestBudget, setHydrationRequestBudget] = useState(3);
+  const [hydrationLookbackDays, setHydrationLookbackDays] = useState(7);
+  const [hydrationTransactionLimit, setHydrationTransactionLimit] = useState(100);
+  const [hydrationMinimumScore, setHydrationMinimumScore] = useState(0);
+  const [hydrationResult, setHydrationResult] = useState(null);
+
   const [discoveredWallets, setDiscoveredWallets] = useState([]);
   const [result, setResult] = useState(null);
   const [historyItems, setHistoryItems] = useState(loadDiscoveryHistory);
@@ -140,6 +164,7 @@ function Discovery() {
 
   const [loadingWallets, setLoadingWallets] = useState(true);
   const [running, setRunning] = useState(false);
+  const [hydrating, setHydrating] = useState(false);
   const [refreshingActivity, setRefreshingActivity] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -180,7 +205,8 @@ function Discovery() {
           !normalizedSearch ||
           String(wallet.wallet_address ?? "").toLowerCase().includes(normalizedSearch) ||
           String(wallet.discovered_from_token ?? "").toLowerCase().includes(normalizedSearch) ||
-          String(wallet.activity_classification ?? "").toLowerCase().includes(normalizedSearch);
+          String(wallet.activity_classification ?? "").toLowerCase().includes(normalizedSearch) ||
+          String(wallet.hydration_status ?? "").toLowerCase().includes(normalizedSearch);
         const matchesScore = Number(wallet.smart_score ?? 0) >= Number(minimumScore || 0);
         const matchesActivity =
           activityFilter === "ALL" || wallet.activity_classification === activityFilter;
@@ -284,6 +310,40 @@ function Discovery() {
     }
   }
 
+  async function handleHydration() {
+    setHydrating(true);
+    setError("");
+    setMessage("");
+    setHydrationResult(null);
+
+    try {
+      const response = await runControlledDiscoveryHydration({
+        maxWallets: hydrationMaxWallets,
+        maxHeliusRequests: hydrationRequestBudget,
+        lookbackDays: hydrationLookbackDays,
+        transactionLimit: hydrationTransactionLimit,
+        minimumSmartScore: hydrationMinimumScore,
+        force: false,
+      });
+      setHydrationResult(response.data);
+      setMessage(
+        `Hydration ${response.data.status}: ${response.data.wallets_attempted} wallet, ${response.data.helius_requests} richieste Helius, ${response.data.swaps_found} swap trovati e ${response.data.trades_imported} trade importati.`
+      );
+      await loadDiscoveredWallets();
+    } catch (requestError) {
+      console.error("Errore Discovery Hydration:", requestError);
+      const backendMessage = requestError.response?.data?.detail;
+      setError(
+        typeof backendMessage === "string"
+          ? backendMessage
+          : "Discovery Hydration non completata. Nessun worker o stream è stato avviato."
+      );
+    } finally {
+      setHydrating(false);
+    }
+  }
+
+
   async function handleRefreshActivity() {
     setRefreshingActivity(true);
     setError("");
@@ -323,6 +383,14 @@ function Discovery() {
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
+              onClick={handleHydration}
+              disabled={hydrating}
+              className="rounded-lg border border-cyan-700 bg-cyan-950/50 px-4 py-2 text-sm font-semibold text-cyan-300 disabled:opacity-50"
+            >
+              {hydrating ? "Idratazione..." : `Idrata ${hydrationMaxWallets} wallet`}
+            </button>
+            <button
+              type="button"
               onClick={handleRefreshActivity}
               disabled={refreshingActivity}
               className="rounded-lg border border-emerald-700 bg-emerald-950/50 px-4 py-2 text-sm font-semibold text-emerald-300 disabled:opacity-50"
@@ -343,8 +411,9 @@ function Discovery() {
 
       <main className="mx-auto max-w-[1500px] p-4 sm:p-8">
         <div className="mb-6 rounded-xl border border-amber-800 bg-amber-950/30 p-4 text-sm text-amber-200">
-          Il ricalcolo attività usa solo i trade già salvati e non consuma crediti Helius.
-          Questo blocco non abilita lo stream, non arma LIVE e non applica wallet al worker.
+          Il ricalcolo attività usa solo il database. L'idratazione è manuale e limitata
+          dal budget selezionato: una richiesta Helius per wallet e retry disabilitati nel batch.
+          Non abilita stream o LIVE, non avvia worker, non applica wallet e non crea generazioni.
         </div>
 
         {error && (
@@ -365,6 +434,79 @@ function Discovery() {
           <StatCard label="Poco attivi" value={summary.low} tone="text-amber-300" />
           <StatCard label="Inattivi" value={summary.inactive} tone="text-slate-300" />
           <StatCard label="Iperattivi" value={summary.hyperactive} tone="text-red-300" />
+        </section>
+
+        <section className="mb-8 overflow-hidden rounded-xl border border-cyan-900 bg-slate-800">
+          <div className="border-b border-slate-700 p-5">
+            <h2 className="text-xl font-bold text-cyan-300">Discovery Hydration controllata</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              Recupera gli swap recenti dei wallet con Smart Score più alto, li salva con
+              data reale, elimina i duplicati e aggiorna ranking e idoneità.
+            </p>
+          </div>
+          <div className="p-5">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <label className="text-sm text-slate-400">
+                Wallet massimi
+                <input
+                  type="number" min="1" max="10" value={hydrationMaxWallets}
+                  onChange={(event) => setHydrationMaxWallets(Number(event.target.value))}
+                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                />
+              </label>
+              <label className="text-sm text-slate-400">
+                Budget richieste Helius
+                <input
+                  type="number" min="1" max="10" value={hydrationRequestBudget}
+                  onChange={(event) => setHydrationRequestBudget(Number(event.target.value))}
+                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                />
+              </label>
+              <label className="text-sm text-slate-400">
+                Storico giorni
+                <input
+                  type="number" min="1" max="14" value={hydrationLookbackDays}
+                  onChange={(event) => setHydrationLookbackDays(Number(event.target.value))}
+                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                />
+              </label>
+              <label className="text-sm text-slate-400">
+                Transazioni per wallet
+                <input
+                  type="number" min="1" max="100" value={hydrationTransactionLimit}
+                  onChange={(event) => setHydrationTransactionLimit(Number(event.target.value))}
+                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                />
+              </label>
+              <label className="text-sm text-slate-400">
+                Smart Score minimo
+                <input
+                  type="number" min="0" max="100" value={hydrationMinimumScore}
+                  onChange={(event) => setHydrationMinimumScore(Number(event.target.value))}
+                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                />
+              </label>
+            </div>
+            <button
+              type="button"
+              onClick={handleHydration}
+              disabled={hydrating}
+              className="mt-5 rounded-lg bg-cyan-600 px-5 py-3 font-bold text-white disabled:opacity-50"
+            >
+              {hydrating ? "Idratazione in corso..." : "Avvia idratazione controllata"}
+            </button>
+
+            {hydrationResult && (
+              <div className="mt-5 grid gap-3 rounded-lg border border-slate-700 bg-slate-900/70 p-4 text-sm sm:grid-cols-2 xl:grid-cols-6">
+                <span>Stato: <strong className="text-cyan-300">{hydrationResult.status}</strong></span>
+                <span>Wallet: <strong>{hydrationResult.wallets_attempted}</strong></span>
+                <span>Helius: <strong>{hydrationResult.helius_requests}/{hydrationResult.request_budget}</strong></span>
+                <span>Swap: <strong>{hydrationResult.swaps_found}</strong></span>
+                <span>Importati: <strong>{hydrationResult.trades_imported}</strong></span>
+                <span>Errori: <strong>{hydrationResult.wallets_failed}</strong></span>
+              </div>
+            )}
+          </div>
         </section>
 
         <section className="mb-8 overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
@@ -614,10 +756,12 @@ function Discovery() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1650px] text-sm">
+            <table className="w-full min-w-[1850px] text-sm">
               <thead className="bg-slate-900 text-slate-400">
                 <tr>
                   <th className="p-4 text-left">Wallet</th>
+                  <th className="p-4">Hydration</th>
+                  <th className="p-4">Import</th>
                   <th className="p-4">Ranking</th>
                   <th className="p-4">Smart</th>
                   <th className="p-4">Activity</th>
@@ -652,6 +796,23 @@ function Discovery() {
                           {wallet.discovered_from_token || "-"}
                         </p>
                       </td>
+                      <td className="p-4 text-center">
+                        {(() => {
+                          const hydration = hydrationBadge(wallet.hydration_status);
+                          return (
+                            <span
+                              title={wallet.hydration_error_message || formatDate(wallet.hydration_last_attempt_at)}
+                              className={`rounded-full border px-2.5 py-1 text-xs font-bold ${hydration.className}`}
+                            >
+                              {hydration.label}
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      <td className="p-4 text-center text-slate-300">
+                        {wallet.hydration_trades_imported ?? 0}
+                        <p className="text-[10px] text-slate-500">swap {wallet.hydration_swaps_found ?? 0}</p>
+                      </td>
                       <td className="p-4 text-center font-bold text-cyan-300">{formatNumber(wallet.ranking_score)}</td>
                       <td className="p-4 text-center font-bold text-blue-300">{formatNumber(wallet.smart_score)}</td>
                       <td className="p-4 text-center font-bold text-purple-300">{formatNumber(wallet.activity_score)}</td>
@@ -680,7 +841,7 @@ function Discovery() {
                 })}
                 {!filteredWallets.length && (
                   <tr>
-                    <td colSpan="15" className="p-10 text-center text-slate-500">
+                    <td colSpan="17" className="p-10 text-center text-slate-500">
                       Nessun wallet corrisponde ai filtri selezionati.
                     </td>
                   </tr>

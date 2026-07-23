@@ -1,0 +1,30 @@
+SMARTMONEY AI — CONTROLLED DISCOVERY HYDRATION
+Data verifica: 2026-07-23
+
+RISULTATI
+- Python compileall backend/tests: SUPERATO
+- Test specifici: 11 SUPERATI
+- Suite completa nel sorgente del pacchetto: 184 SUPERATI
+- Alembic heads: b7d4e8f1c902 (head)
+- SQL PostgreSQL upgrade: VERIFICATO
+- SQL PostgreSQL downgrade: VERIFICATO
+- Controllo sintattico frontend JS/JSX con TypeScript: SUPERATO
+- npm ci / build nell'ambiente di generazione: NON COMPLETATO
+  Motivo: registro npm interno HTTP 503 durante il download di zustand.
+  La build deve essere eseguita localmente e su Railway.
+
+TEST COPERTI
+- limite rigido richieste Helius;
+- retry disabilitati nel batch;
+- filtro SWAP e finestra temporale;
+- timestamp storico salvato in block_time;
+- deduplica trade per signature;
+- ricalcolo attività e ranking;
+- stato EMPTY;
+- persistenza errori Helius;
+- nessuna attivazione LIVE/stream/worker/generazioni.
+
+NOTA SUL NUMERO TEST LOCALE
+Il repository locale dell'utente conteneva 5 test ulteriori rispetto al sorgente
+usato per generare questo pacchetto. Dopo l'aggiunta dei 5 nuovi test, il totale
+locale previsto è 189, salvo altre modifiche successive.

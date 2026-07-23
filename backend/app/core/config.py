@@ -91,6 +91,46 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # CONTROLLED DISCOVERY HYDRATION
+    # =========================
+
+    DISCOVERY_HYDRATION_DEFAULT_WALLETS: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+    )
+
+    DISCOVERY_HYDRATION_MAX_WALLETS_PER_RUN: int = Field(
+        default=10,
+        ge=1,
+        le=25,
+    )
+
+    DISCOVERY_HYDRATION_MAX_HELIUS_REQUESTS_PER_RUN: int = Field(
+        default=10,
+        ge=1,
+        le=25,
+    )
+
+    DISCOVERY_HYDRATION_LOOKBACK_DAYS: int = Field(
+        default=7,
+        ge=1,
+        le=14,
+    )
+
+    DISCOVERY_HYDRATION_TRANSACTION_LIMIT: int = Field(
+        default=100,
+        ge=1,
+        le=100,
+    )
+
+    DISCOVERY_HYDRATION_COOLDOWN_HOURS: int = Field(
+        default=12,
+        ge=1,
+        le=168,
+    )
+
+    # =========================
     # AUTOMATION / SECURITY
     # =========================
 

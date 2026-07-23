@@ -1,0 +1,36 @@
+SMARTMONEY AI — CONTROLLED DISCOVERY HYDRATION
+File completi da creare o sostituire
+Data blocco: 2026-07-23
+
+CREARE
+- alembic/versions/b7d4e8f1c902_add_controlled_discovery_hydration.py
+- backend/app/services/discovery_hydration_service.py
+- tests/test_controlled_discovery_hydration.py
+- tests/test_trade_historical_timestamp.py
+- README_CONTROLLED_DISCOVERY_HYDRATION.md
+- TEST_CONTROLLED_DISCOVERY_HYDRATION.ps1
+- TEST_RESULTS_CONTROLLED_DISCOVERY_HYDRATION.txt
+- PATCH_FILES_CONTROLLED_DISCOVERY_HYDRATION.txt
+
+SOSTITUIRE
+- .env.example
+- PATCH_MANIFEST_SHA256.txt
+- backend/app/api/discovered_wallets.py
+- backend/app/core/config.py
+- backend/app/models/discovered_wallet.py
+- backend/app/schemas/discovered_wallet.py
+- backend/app/services/helius.py
+- backend/app/services/trade_engine.py
+- frontend/src/pages/Discovery.jsx
+- frontend/src/services/api.js
+
+INVARIANTI DI SICUREZZA
+- LIVE non abilitato e non armato.
+- Stream automatico non abilitato.
+- Worker non avviato.
+- Nessuna sottoscrizione Helius creata.
+- Una richiesta Helius massima per wallet nel batch, senza retry.
+- Generazione DRY_RUN #3 non modificata o resettata.
+- Generazione #4 non creata.
+- Nessun wallet applicato automaticamente.
+- Telegram e Discord non implementati.
