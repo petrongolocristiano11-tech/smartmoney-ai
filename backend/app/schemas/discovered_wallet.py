@@ -68,6 +68,23 @@ class DiscoveredWalletResponse(BaseModel):
     hydration_error_code: str | None
     hydration_error_message: str | None
 
+    promotion_status: str
+    promotion_eligible: bool
+    promotion_reasons: list[str]
+    promotion_calculated_at: datetime | None
+    latest_backtest_run_id: str | None
+    backtest_score: float
+    backtest_total_return_percent: float
+    backtest_net_pnl_sol: float
+    backtest_win_rate_percent: float
+    backtest_profit_factor: float | None
+    backtest_max_drawdown_percent: float
+    backtest_completed_positions: int
+    backtest_open_positions: int
+    backtest_execution_coverage_percent: float
+    backtest_jupiter_status: str
+    backtest_jupiter_compatibility_percent: float
+
     eligible: bool
     eligibility_reasons: list[str]
     status: str

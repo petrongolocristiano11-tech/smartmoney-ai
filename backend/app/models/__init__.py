@@ -1,3 +1,6 @@
+from backend.app.models.candidate_backtest import (
+    CandidateBacktestRun,
+)
 from backend.app.models.live_platform_config import (
     LivePlatformConfig,
 )
@@ -61,6 +64,7 @@ from backend.app.models.wallet_profile import (
 
 
 __all__ = [
+    "CandidateBacktestRun",
     "DiscoveryJob",
     "TokenSafetySnapshot",
     "LiveWalletScore",

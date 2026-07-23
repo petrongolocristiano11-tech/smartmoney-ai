@@ -190,6 +190,13 @@ class LiveWalletScoreResponse(PlatformResponseModel):
     quality_score: float
     quality_classification: str
     quality_eligible: bool
+    promotion_status: str
+    promotion_eligible: bool
+    backtest_score: float
+    backtest_total_return_percent: float
+    backtest_profit_factor: float | None
+    backtest_max_drawdown_percent: float
+    backtest_jupiter_status: str
     last_swap_at: datetime | None
     swaps_24h: int
     swaps_7d: int

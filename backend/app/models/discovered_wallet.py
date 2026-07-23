@@ -122,6 +122,39 @@ class DiscoveredWallet(Base):
         nullable=True,
     )
 
+    promotion_status: Mapped[str] = mapped_column(
+        String(24),
+        default="NON_ANALIZZATO",
+        index=True,
+    )
+    promotion_eligible: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        index=True,
+    )
+    promotion_reasons: Mapped[list] = mapped_column(JSON, default=list)
+    promotion_calculated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    latest_backtest_run_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, index=True
+    )
+    backtest_score: Mapped[float] = mapped_column(Float, default=0.0)
+    backtest_total_return_percent: Mapped[float] = mapped_column(Float, default=0.0)
+    backtest_net_pnl_sol: Mapped[float] = mapped_column(Float, default=0.0)
+    backtest_win_rate_percent: Mapped[float] = mapped_column(Float, default=0.0)
+    backtest_profit_factor: Mapped[float | None] = mapped_column(Float, nullable=True)
+    backtest_max_drawdown_percent: Mapped[float] = mapped_column(Float, default=0.0)
+    backtest_completed_positions: Mapped[int] = mapped_column(Integer, default=0)
+    backtest_open_positions: Mapped[int] = mapped_column(Integer, default=0)
+    backtest_execution_coverage_percent: Mapped[float] = mapped_column(Float, default=0.0)
+    backtest_jupiter_status: Mapped[str] = mapped_column(
+        String(24), default="NOT_CHECKED"
+    )
+    backtest_jupiter_compatibility_percent: Mapped[float] = mapped_column(
+        Float, default=0.0
+    )
+
     eligible: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     eligibility_reasons: Mapped[list] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String(20), default="DISCOVERED")

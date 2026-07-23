@@ -1,0 +1,42 @@
+SMARTMONEY AI — TEST RESULTS
+Historical Candidate Backtest & Promotion Gate
+Data: 2026-07-23
+
+BACKEND
+- compileall backend: PASS
+- test specifici Promotion Gate e integrazione: 15 passed
+- suite completa del sorgente ricostruito: 196 passed
+- suite prevista nel repository locale utente: circa 201 test, perché il repository locale contiene 5 test aggiuntivi rispetto al sorgente ricostruito
+
+TEST COPERTI
+- candidato profittevole e Jupiter compatibile -> PROMOSSO
+- candidato in perdita -> BOCCIATO
+- Jupiter non configurato -> OSSERVAZIONE
+- qualità diversa da COPIABILE -> nessuna promozione
+- API di avvio backtest e persistenza risultato
+- API ultimo backtest e filtro promotion_status
+- idoneità Discovery fail-closed senza promozione
+- ranking operativo richiede Promotion Gate
+
+DATABASE
+- Alembic head unica: e4b7c2a9d815
+- SQL PostgreSQL upgrade generato: PASS
+- revisione precedente: c9e4a7f2d631
+- migrazione fail-closed delle vecchie idoneità: PASS
+
+FRONTEND
+- 45 file JS/JSX analizzati con parser TypeScript: 0 errori sintattici
+- frontend/src/services/api.js node --check: PASS
+- npm install/build non completabili nell'ambiente isolato: registro npm interno ha restituito HTTP 503
+- lo script di applicazione esegue npm install e npm run build sul PC locale
+
+SICUREZZA
+- richieste Helius del backtest: 0
+- Jupiter usato solo per quote round-trip
+- nessuna firma o invio transazione
+- LIVE non abilitato o armato
+- stream non abilitato
+- worker non avviato
+- Generazione #3 non modificata
+- Generazione #4 non creata
+- wallet non applicati automaticamente

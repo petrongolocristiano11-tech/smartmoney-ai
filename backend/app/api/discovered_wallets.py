@@ -5,12 +5,20 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from backend.app.database.session import get_db
+from backend.app.schemas.candidate_backtest import (
+    CandidateBacktestRequest,
+    CandidateBacktestResponse,
+)
 from backend.app.models.discovered_wallet import DiscoveredWallet
 from backend.app.schemas.discovered_wallet import (
     DiscoveryHydrationResponse,
     DiscoveredWalletActivityRefreshResponse,
     DiscoveredWalletQualityRefreshResponse,
     DiscoveredWalletResponse,
+)
+from backend.app.services.candidate_backtest_service import (
+    get_latest_candidate_backtest,
+    run_candidate_backtest,
 )
 from backend.app.services.discovered_wallet_service import (
     refresh_discovered_wallet_activity,
@@ -49,11 +57,22 @@ def get_discovered_wallets(
         "NON_COPIABILE",
         "NON_ANALIZZATO",
     ] = "ALL",
+    promotion: Literal[
+        "ALL",
+        "PROMOSSO",
+        "OSSERVAZIONE",
+        "BOCCIATO",
+        "NON_ANALIZZATO",
+    ] = "ALL",
     sort_by: Literal[
         "ranking_score",
         "smart_score",
         "activity_score",
         "quality_score",
+        "backtest_score",
+        "backtest_total_return_percent",
+        "backtest_max_drawdown_percent",
+        "backtest_jupiter_compatibility_percent",
         "median_swap_sol_7d",
         "size_compatibility_ratio_7d",
         "last_swap_at",
@@ -75,6 +94,8 @@ def get_discovered_wallets(
         query = query.filter(
             DiscoveredWallet.quality_classification == quality
         )
+    if promotion != "ALL":
+        query = query.filter(DiscoveredWallet.promotion_status == promotion)
 
     order_column = getattr(DiscoveredWallet, sort_by)
     return (
@@ -135,6 +156,34 @@ def run_discovery_hydration(
         )
     except HydrationAlreadyRunningError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post(
+    "/promotion/backtest",
+    response_model=CandidateBacktestResponse,
+)
+def run_promotion_backtest(
+    request: CandidateBacktestRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return run_candidate_backtest(db, **request.model_dump())
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.get(
+    "/promotion/{wallet_address}/latest",
+    response_model=CandidateBacktestResponse,
+)
+def read_latest_promotion_backtest(
+    wallet_address: str,
+    db: Session = Depends(get_db),
+):
+    run = get_latest_candidate_backtest(db, wallet_address)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Backtest non trovato")
+    return run
 
 
 @router.get("/{wallet_address}", response_model=DiscoveredWalletResponse)

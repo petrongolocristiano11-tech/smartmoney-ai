@@ -92,7 +92,8 @@ def test_quality_refresh_is_database_only_and_updates_final_eligibility(api_clie
     listing = api_client.get("/discovered-wallets")
     rows = {item["wallet_address"]: item for item in listing.json()}
     assert rows[COPYABLE]["quality_classification"] == "COPIABILE"
-    assert rows[COPYABLE]["eligible"] is True
+    assert rows[COPYABLE]["eligible"] is False
+    assert "PROMOTION_GATE_NOT_PASSED" in rows[COPYABLE]["eligibility_reasons"]
     assert rows[SUSPICIOUS]["quality_classification"] == "SOSPETTO"
     assert rows[SUSPICIOUS]["eligible"] is False
 

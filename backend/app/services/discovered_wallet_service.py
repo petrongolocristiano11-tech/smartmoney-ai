@@ -77,8 +77,12 @@ def apply_activity_quality_and_ranking(
         quality=quality,
     )
     wallet.ranking_score = ranking["ranking_score"]
-    wallet.eligible = ranking["eligible"]
-    wallet.eligibility_reasons = ranking["eligibility_reasons"]
+    wallet.eligible = bool(ranking["eligible"] and wallet.promotion_eligible)
+    reasons = list(ranking["eligibility_reasons"])
+    reasons.extend(wallet.promotion_reasons or [])
+    if not wallet.promotion_eligible:
+        reasons.append("PROMOTION_GATE_NOT_PASSED")
+    wallet.eligibility_reasons = list(dict.fromkeys(reasons))
     return wallet
 
 
@@ -99,8 +103,12 @@ def apply_activity_and_ranking(
         quality=quality,
     )
     wallet.ranking_score = ranking["ranking_score"]
-    wallet.eligible = ranking["eligible"]
-    wallet.eligibility_reasons = ranking["eligibility_reasons"]
+    wallet.eligible = bool(ranking["eligible"] and wallet.promotion_eligible)
+    reasons = list(ranking["eligibility_reasons"])
+    reasons.extend(wallet.promotion_reasons or [])
+    if not wallet.promotion_eligible:
+        reasons.append("PROMOTION_GATE_NOT_PASSED")
+    wallet.eligibility_reasons = list(dict.fromkeys(reasons))
     return wallet
 
 

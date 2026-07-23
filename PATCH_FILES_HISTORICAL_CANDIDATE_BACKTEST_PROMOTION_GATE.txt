@@ -1,0 +1,43 @@
+SMARTMONEY AI — HISTORICAL CANDIDATE BACKTEST & PROMOTION GATE
+File completi da creare o sostituire
+Data blocco: 2026-07-23
+
+CREARE
+- alembic/versions/e4b7c2a9d815_add_candidate_backtest_promotion_gate.py
+- backend/app/models/candidate_backtest.py
+- backend/app/schemas/candidate_backtest.py
+- backend/app/services/candidate_backtest_service.py
+- tests/test_candidate_backtest_promotion_gate.py
+- tests/test_candidate_backtest_api.py
+- README_HISTORICAL_CANDIDATE_BACKTEST_PROMOTION_GATE.md
+- ROLLBACK_HISTORICAL_CANDIDATE_BACKTEST_PROMOTION_GATE.md
+- TEST_HISTORICAL_CANDIDATE_BACKTEST_PROMOTION_GATE.ps1
+- APPLY_AND_TEST_HISTORICAL_CANDIDATE_BACKTEST_PROMOTION_GATE.ps1
+- TEST_RESULTS_HISTORICAL_CANDIDATE_BACKTEST_PROMOTION_GATE.txt
+- PATCH_FILES_HISTORICAL_CANDIDATE_BACKTEST_PROMOTION_GATE.txt
+
+SOSTITUIRE
+- PATCH_MANIFEST_SHA256.txt
+- backend/app/api/discovered_wallets.py
+- backend/app/models/__init__.py
+- backend/app/models/discovered_wallet.py
+- backend/app/models/live_wallet_score.py
+- backend/app/schemas/discovered_wallet.py
+- backend/app/schemas/live_platform.py
+- backend/app/services/discovered_wallet_service.py
+- backend/app/services/live_wallet_ranking_service.py
+- frontend/src/pages/Discovery.jsx
+- frontend/src/services/api.js
+- tests/test_active_wallet_discovery_api.py
+- tests/test_wallet_quality_api.py
+- tests/test_live_wallet_ranking_platform.py
+
+INVARIANTI DI SICUREZZA
+- LIVE non abilitato e non armato.
+- Stream automatico non abilitato.
+- Worker non avviato.
+- Richieste Helius del backtest: 0.
+- Nessuna transazione Jupiter firmata o inviata.
+- Generazione DRY_RUN #3 non modificata o resettata.
+- Generazione #4 non creata.
+- Nessun wallet applicato automaticamente.

@@ -116,7 +116,8 @@ def test_activity_refresh_uses_database_only_and_updates_eligibility(api_client)
 
     assert wallets[0]["wallet_address"] == ACTIVE_WALLET
     assert wallets[0]["activity_classification"] == "ATTIVO"
-    assert wallets[0]["eligible"] is True
+    assert wallets[0]["eligible"] is False
+    assert "PROMOTION_GATE_NOT_PASSED" in wallets[0]["eligibility_reasons"]
     assert wallets[0]["swaps_24h"] == 2
     assert wallets[0]["buys_7d"] == 2
     assert wallets[0]["sells_7d"] == 2
@@ -136,7 +137,7 @@ def test_activity_and_eligible_filters(api_client):
 
     active = api_client.get(
         "/discovered-wallets",
-        params={"activity": "ATTIVO", "eligible_only": True},
+        params={"activity": "ATTIVO", "eligible_only": False},
     )
     assert active.status_code == 200
     assert [item["wallet_address"] for item in active.json()] == [ACTIVE_WALLET]

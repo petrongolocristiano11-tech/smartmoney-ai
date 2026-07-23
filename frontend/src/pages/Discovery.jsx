@@ -6,6 +6,7 @@ import {
   refreshDiscoveredWalletActivity,
   refreshDiscoveredWalletQuality,
   runControlledDiscoveryHydration,
+  runCandidatePromotionBacktest,
   runDiscovery,
   runSmartDiscovery,
 } from "../services/api";
@@ -26,6 +27,13 @@ const QUALITY_OPTIONS = [
   "OSSERVAZIONE",
   "SOSPETTO",
   "NON_COPIABILE",
+  "NON_ANALIZZATO",
+];
+const PROMOTION_OPTIONS = [
+  "ALL",
+  "PROMOSSO",
+  "OSSERVAZIONE",
+  "BOCCIATO",
   "NON_ANALIZZATO",
 ];
 
@@ -119,6 +127,21 @@ function qualityBadge(classification) {
 }
 
 
+function promotionBadge(status) {
+  const normalized = status || "NON_ANALIZZATO";
+  const classes = {
+    PROMOSSO: "border-green-700 bg-green-950/60 text-green-300",
+    OSSERVAZIONE: "border-amber-700 bg-amber-950/60 text-amber-300",
+    BOCCIATO: "border-red-700 bg-red-950/60 text-red-300",
+    NON_ANALIZZATO: "border-blue-800 bg-blue-950/40 text-blue-300",
+  };
+  return {
+    label: normalized.replace("_", " "),
+    className: classes[normalized] ?? classes.NON_ANALIZZATO,
+  };
+}
+
+
 function hydrationBadge(status) {
   const normalized = status || "NEVER";
   const classes = {
@@ -177,6 +200,16 @@ function Discovery() {
   const [hydrationMinimumScore, setHydrationMinimumScore] = useState(0);
   const [hydrationResult, setHydrationResult] = useState(null);
 
+  const [candidateWallet, setCandidateWallet] = useState("");
+  const [backtestLookbackDays, setBacktestLookbackDays] = useState(7);
+  const [backtestStartingCapital, setBacktestStartingCapital] = useState(1);
+  const [backtestBuySize, setBacktestBuySize] = useState(0.05);
+  const [backtestSlippageBps, setBacktestSlippageBps] = useState(100);
+  const [backtestFeeBps, setBacktestFeeBps] = useState(10);
+  const [backtestDelaySeconds, setBacktestDelaySeconds] = useState(8);
+  const [backtestCheckJupiter, setBacktestCheckJupiter] = useState(true);
+  const [promotionResult, setPromotionResult] = useState(null);
+
   const [discoveredWallets, setDiscoveredWallets] = useState([]);
   const [result, setResult] = useState(null);
   const [historyItems, setHistoryItems] = useState(loadDiscoveryHistory);
@@ -185,6 +218,7 @@ function Discovery() {
   const [minimumScore, setMinimumScore] = useState(0);
   const [activityFilter, setActivityFilter] = useState("ALL");
   const [qualityFilter, setQualityFilter] = useState("ALL");
+  const [promotionFilter, setPromotionFilter] = useState("ALL");
   const [eligibleOnly, setEligibleOnly] = useState(false);
   const [sortBy, setSortBy] = useState("ranking_score");
 
@@ -193,6 +227,7 @@ function Discovery() {
   const [hydrating, setHydrating] = useState(false);
   const [refreshingActivity, setRefreshingActivity] = useState(false);
   const [refreshingQuality, setRefreshingQuality] = useState(false);
+  const [runningBacktest, setRunningBacktest] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -200,7 +235,17 @@ function Discovery() {
     setLoadingWallets(true);
     try {
       const response = await getDiscoveredWallets(0, 500);
-      setDiscoveredWallets(Array.isArray(response.data) ? response.data : []);
+      const rows = Array.isArray(response.data) ? response.data : [];
+      setDiscoveredWallets(rows);
+      setCandidateWallet((current) => {
+        if (current && rows.some((wallet) => wallet.wallet_address === current)) {
+          return current;
+        }
+        return (
+          rows.find((wallet) => wallet.quality_classification === "COPIABILE")
+            ?.wallet_address ?? rows[0]?.wallet_address ?? ""
+        );
+      });
     } catch (requestError) {
       console.error("Errore caricamento wallet scoperti:", requestError);
       setError("Impossibile caricare i wallet scoperti dal backend.");
@@ -234,14 +279,17 @@ function Discovery() {
           String(wallet.discovered_from_token ?? "").toLowerCase().includes(normalizedSearch) ||
           String(wallet.activity_classification ?? "").toLowerCase().includes(normalizedSearch) ||
           String(wallet.quality_classification ?? "").toLowerCase().includes(normalizedSearch) ||
+          String(wallet.promotion_status ?? "").toLowerCase().includes(normalizedSearch) ||
           String(wallet.hydration_status ?? "").toLowerCase().includes(normalizedSearch);
         const matchesScore = Number(wallet.smart_score ?? 0) >= Number(minimumScore || 0);
         const matchesActivity =
           activityFilter === "ALL" || wallet.activity_classification === activityFilter;
         const matchesQuality =
           qualityFilter === "ALL" || wallet.quality_classification === qualityFilter;
+        const matchesPromotion =
+          promotionFilter === "ALL" || wallet.promotion_status === promotionFilter;
         const matchesEligibility = !eligibleOnly || Boolean(wallet.eligible);
-        return matchesSearch && matchesScore && matchesActivity && matchesQuality && matchesEligibility;
+        return matchesSearch && matchesScore && matchesActivity && matchesQuality && matchesPromotion && matchesEligibility;
       })
       .sort((first, second) => {
         if (sortBy === "last_swap_at") {
@@ -255,6 +303,7 @@ function Discovery() {
     minimumScore,
     activityFilter,
     qualityFilter,
+    promotionFilter,
     eligibleOnly,
     sortBy,
   ]);
@@ -273,6 +322,8 @@ function Discovery() {
       discoveredWallets.filter(
         (wallet) => wallet.quality_classification === classification
       ).length;
+    const promotionCount = (status) =>
+      discoveredWallets.filter((wallet) => wallet.promotion_status === status).length;
     return {
       total: discoveredWallets.length,
       eligible: discoveredWallets.filter((wallet) => wallet.eligible).length,
@@ -284,6 +335,10 @@ function Discovery() {
       observation: qualityCount("OSSERVAZIONE"),
       suspicious: qualityCount("SOSPETTO"),
       notCopyable: qualityCount("NON_COPIABILE"),
+      promoted: promotionCount("PROMOSSO"),
+      promotionObservation: promotionCount("OSSERVAZIONE"),
+      rejected: promotionCount("BOCCIATO"),
+      promotionNotAnalyzed: promotionCount("NON_ANALIZZATO"),
     };
   }, [discoveredWallets]);
 
@@ -420,6 +475,48 @@ function Discovery() {
   }
 
 
+  async function handlePromotionBacktest(walletAddress = candidateWallet) {
+    const wallet = String(walletAddress || "").trim();
+    if (!wallet) {
+      setError("Seleziona un wallet candidato per il backtest.");
+      return;
+    }
+    setRunningBacktest(true);
+    setError("");
+    setMessage("");
+    setPromotionResult(null);
+    try {
+      const response = await runCandidatePromotionBacktest({
+        walletAddress: wallet,
+        lookbackDays: backtestLookbackDays,
+        startingCapitalSol: backtestStartingCapital,
+        fixedBuySizeSol: backtestBuySize,
+        slippageBps: backtestSlippageBps,
+        feeBps: backtestFeeBps,
+        copyDelaySeconds: backtestDelaySeconds,
+        checkJupiter: backtestCheckJupiter,
+        jupiterTokenLimit: 10,
+      });
+      setPromotionResult(response.data);
+      setCandidateWallet(wallet);
+      setMessage(
+        `Backtest ${response.data.decision}: score ${formatNumber(response.data.score)}, rendimento ${formatNumber(response.data.total_return_percent)}%, drawdown ${formatNumber(response.data.max_drawdown_percent)}%.`
+      );
+      await loadDiscoveredWallets();
+    } catch (requestError) {
+      console.error("Errore Candidate Backtest:", requestError);
+      const backendMessage = requestError.response?.data?.detail;
+      setError(
+        typeof backendMessage === "string"
+          ? backendMessage
+          : "Backtest candidato non completato. Nessuna transazione è stata firmata o inviata."
+      );
+    } finally {
+      setRunningBacktest(false);
+    }
+  }
+
+
   function clearHistory() {
     if (!historyItems.length) return;
     if (window.confirm("Vuoi cancellare la cronologia locale delle discovery?")) {
@@ -432,10 +529,10 @@ function Discovery() {
       <header className="border-b border-slate-700">
         <div className="mx-auto flex max-w-[1500px] flex-col gap-4 p-6 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Wallet Quality & Execution Suitability</h1>
+            <h1 className="text-3xl font-bold">Historical Candidate Backtest & Promotion Gate</h1>
             <p className="mt-2 max-w-3xl text-slate-400">
-              Valida se l'attività recente è realmente copiabile: dust, size, equilibrio
-              BUY/SELL, concentrazione token e cicli completi diventano filtri obbligatori.
+              Simula i candidati con capitale, size, slippage, commissioni e ritardo reali.
+              Solo un backtest PROMOSSO rende il wallet idoneo finale.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -477,9 +574,9 @@ function Discovery() {
 
       <main className="mx-auto max-w-[1500px] p-4 sm:p-8">
         <div className="mb-6 rounded-xl border border-amber-800 bg-amber-950/30 p-4 text-sm text-amber-200">
-          Attività e qualità vengono ricalcolate esclusivamente dai trade salvati.
-          L'idratazione resta manuale e limitata dal budget: una richiesta Helius per wallet.
-          Nessuna azione abilita stream o LIVE, avvia worker, applica wallet o crea generazioni.
+          Il backtest usa trade storici salvati e, quando richiesto, sole quote Jupiter
+          SOL→token→SOL. Non firma o invia transazioni, non abilita stream o LIVE,
+          non avvia worker, non applica wallet e non crea o resetta generazioni.
         </div>
 
         {error && (
@@ -496,10 +593,141 @@ function Discovery() {
         <section className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
           <StatCard label="Wallet scoperti" value={summary.total} tone="text-blue-300" />
           <StatCard label="Idonei finali" value={summary.eligible} tone="text-green-300" />
-          <StatCard label="Copiabili" value={summary.copyable} tone="text-emerald-300" />
-          <StatCard label="Osservazione" value={summary.observation} tone="text-amber-300" />
-          <StatCard label="Sospetti" value={summary.suspicious} tone="text-fuchsia-300" />
-          <StatCard label="Non copiabili" value={summary.notCopyable} tone="text-red-300" />
+          <StatCard label="Promossi" value={summary.promoted} tone="text-emerald-300" />
+          <StatCard label="Gate osservazione" value={summary.promotionObservation} tone="text-amber-300" />
+          <StatCard label="Bocciati" value={summary.rejected} tone="text-red-300" />
+          <StatCard label="Gate non analizzati" value={summary.promotionNotAnalyzed} tone="text-blue-300" />
+        </section>
+
+
+        <section className="mb-8 overflow-hidden rounded-xl border border-emerald-900 bg-slate-800">
+          <div className="border-b border-slate-700 p-5">
+            <h2 className="text-xl font-bold text-emerald-300">
+              Historical Candidate Backtest & Promotion Gate
+            </h2>
+            <p className="mt-1 text-sm text-slate-400">
+              Il gate simula una copia conservativa: una posizione per token, size fissa,
+              costi, slippage e ritardo. Le quote Jupiter sono di sola lettura.
+            </p>
+          </div>
+          <div className="p-5">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <label className="text-sm text-slate-400 xl:col-span-2">
+                Wallet candidato
+                <select
+                  value={candidateWallet}
+                  onChange={(event) => setCandidateWallet(event.target.value)}
+                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 font-mono text-xs"
+                >
+                  {discoveredWallets
+                    .filter((wallet) => wallet.quality_classification === "COPIABILE")
+                    .map((wallet) => (
+                      <option key={wallet.wallet_address} value={wallet.wallet_address}>
+                        {shortenAddress(wallet.wallet_address, 12, 10)} · Q {formatNumber(wallet.quality_score)} · {wallet.promotion_status}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label className="text-sm text-slate-400">
+                Capitale iniziale (SOL)
+                <input
+                  type="number" min="0.05" step="0.05" value={backtestStartingCapital}
+                  onChange={(event) => setBacktestStartingCapital(Number(event.target.value))}
+                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                />
+              </label>
+              <label className="text-sm text-slate-400">
+                Size BUY (SOL)
+                <input
+                  type="number" min="0.001" step="0.01" value={backtestBuySize}
+                  onChange={(event) => setBacktestBuySize(Number(event.target.value))}
+                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                />
+              </label>
+              <label className="text-sm text-slate-400">
+                Storico giorni
+                <input
+                  type="number" min="1" max="30" value={backtestLookbackDays}
+                  onChange={(event) => setBacktestLookbackDays(Number(event.target.value))}
+                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                />
+              </label>
+              <label className="text-sm text-slate-400">
+                Slippage (bps)
+                <input
+                  type="number" min="0" max="1000" value={backtestSlippageBps}
+                  onChange={(event) => setBacktestSlippageBps(Number(event.target.value))}
+                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                />
+              </label>
+              <label className="text-sm text-slate-400">
+                Commissioni (bps)
+                <input
+                  type="number" min="0" max="500" value={backtestFeeBps}
+                  onChange={(event) => setBacktestFeeBps(Number(event.target.value))}
+                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                />
+              </label>
+              <label className="text-sm text-slate-400">
+                Ritardo copy (secondi)
+                <input
+                  type="number" min="0" max="3600" value={backtestDelaySeconds}
+                  onChange={(event) => setBacktestDelaySeconds(Number(event.target.value))}
+                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                />
+              </label>
+            </div>
+            <div className="mt-5 flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-3 rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 text-sm text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={backtestCheckJupiter}
+                  onChange={(event) => setBacktestCheckJupiter(event.target.checked)}
+                />
+                Verifica quote Jupiter round-trip
+              </label>
+              <button
+                type="button"
+                onClick={() => handlePromotionBacktest()}
+                disabled={runningBacktest || !candidateWallet}
+                className="rounded-lg bg-emerald-600 px-5 py-3 font-bold text-white disabled:opacity-50"
+              >
+                {runningBacktest ? "Backtest in corso..." : "Esegui backtest e gate"}
+              </button>
+            </div>
+
+            {promotionResult && (
+              <div className="mt-6 rounded-xl border border-slate-700 bg-slate-900/70 p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-mono text-xs text-slate-400">{promotionResult.wallet_address}</p>
+                    <h3 className="mt-1 text-2xl font-bold text-emerald-300">
+                      {promotionResult.decision} · score {formatNumber(promotionResult.score)}
+                    </h3>
+                  </div>
+                  <span className={`rounded-full border px-3 py-1 text-sm font-bold ${promotionBadge(promotionResult.decision).className}`}>
+                    {promotionResult.decision}
+                  </span>
+                </div>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                  <StatCard label="Rendimento" value={`${formatNumber(promotionResult.total_return_percent)}%`} tone="text-cyan-300" />
+                  <StatCard label="PnL netto" value={`${formatNumber(promotionResult.net_pnl_sol, 4)} SOL`} tone="text-green-300" />
+                  <StatCard label="Win rate" value={`${formatNumber(promotionResult.win_rate_percent)}%`} tone="text-blue-300" />
+                  <StatCard label="Profit factor" value={promotionResult.profit_factor == null ? "-" : formatNumber(promotionResult.profit_factor)} tone="text-purple-300" />
+                  <StatCard label="Max drawdown" value={`${formatNumber(promotionResult.max_drawdown_percent)}%`} tone="text-amber-300" />
+                  <StatCard label="Jupiter" value={`${formatNumber(promotionResult.jupiter_compatibility_percent)}%`} tone="text-fuchsia-300" subtitle={promotionResult.jupiter_status} />
+                </div>
+                <p className="mt-4 text-sm text-slate-400">
+                  Posizioni chiuse: <strong>{promotionResult.completed_positions}</strong> · aperte: <strong>{promotionResult.open_positions}</strong> · copertura: <strong>{formatNumber(promotionResult.execution_coverage_percent)}%</strong> · richieste Jupiter: <strong>{promotionResult.jupiter_requests}</strong>
+                </p>
+                {(promotionResult.reasons ?? []).length > 0 && (
+                  <p className="mt-3 text-xs text-amber-300">
+                    Motivi: {(promotionResult.reasons ?? []).join(", ")}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         </section>
 
         <section className="mb-8 overflow-hidden rounded-xl border border-cyan-900 bg-slate-800">
@@ -780,7 +1008,7 @@ function Discovery() {
         <section className="mb-8 overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
           <div className="border-b border-slate-700 p-5">
             <h2 className="text-xl font-bold">Ranking wallet scoperti</h2>
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-7">
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-8">
               <input
                 type="text"
                 value={search}
@@ -816,6 +1044,15 @@ function Discovery() {
                 ))}
               </select>
               <select
+                value={promotionFilter}
+                onChange={(event) => setPromotionFilter(event.target.value)}
+                className="rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+              >
+                {PROMOTION_OPTIONS.map((option) => (
+                  <option key={option} value={option}>{option.replace("_", " ")}</option>
+                ))}
+              </select>
+              <select
                 value={sortBy}
                 onChange={(event) => setSortBy(event.target.value)}
                 className="rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
@@ -824,6 +1061,9 @@ function Discovery() {
                 <option value="smart_score">Smart Score</option>
                 <option value="activity_score">Activity Score</option>
                 <option value="quality_score">Quality Score</option>
+                <option value="backtest_score">Backtest Score</option>
+                <option value="backtest_total_return_percent">Rendimento backtest</option>
+                <option value="backtest_max_drawdown_percent">Drawdown backtest</option>
                 <option value="median_swap_sol_7d">Mediana swap</option>
                 <option value="size_compatibility_ratio_7d">Compatibilità size</option>
                 <option value="last_swap_at">Ultimo swap</option>
@@ -841,7 +1081,7 @@ function Discovery() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[2500px] text-sm">
+            <table className="w-full min-w-[3150px] text-sm">
               <thead className="bg-slate-900 text-slate-400">
                 <tr>
                   <th className="p-4 text-left">Wallet</th>
@@ -853,6 +1093,12 @@ function Discovery() {
                   <th className="p-4">Classe attività</th>
                   <th className="p-4">Quality</th>
                   <th className="p-4">Suitability</th>
+                  <th className="p-4">Promotion</th>
+                  <th className="p-4">Backtest</th>
+                  <th className="p-4">Return / PnL</th>
+                  <th className="p-4">WR / PF</th>
+                  <th className="p-4">DD / Coverage</th>
+                  <th className="p-4">Jupiter</th>
                   <th className="p-4">Mediana</th>
                   <th className="p-4">Dust</th>
                   <th className="p-4">Size compat.</th>
@@ -874,6 +1120,7 @@ function Discovery() {
                 {filteredWallets.map((wallet) => {
                   const activity = activityBadge(wallet.activity_classification);
                   const quality = qualityBadge(wallet.quality_classification);
+                  const promotion = promotionBadge(wallet.promotion_status);
                   const eligibility = eligibilityBadge(wallet);
                   return (
                     <tr key={wallet.wallet_address} className="hover:bg-slate-700/30">
@@ -921,6 +1168,36 @@ function Discovery() {
                           {quality.label}
                         </span>
                       </td>
+                      <td className="p-4 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handlePromotionBacktest(wallet.wallet_address)}
+                          disabled={runningBacktest || wallet.quality_classification !== "COPIABILE"}
+                          title={(wallet.promotion_reasons ?? []).join(", ")}
+                          className={`rounded-full border px-2.5 py-1 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-60 ${promotion.className}`}
+                        >
+                          {wallet.promotion_status === "NON_ANALIZZATO" && wallet.quality_classification === "COPIABILE"
+                            ? "BACKTEST"
+                            : promotion.label}
+                        </button>
+                      </td>
+                      <td className="p-4 text-center font-bold text-emerald-300">{formatNumber(wallet.backtest_score)}</td>
+                      <td className="p-4 text-center text-slate-300">
+                        {formatNumber(wallet.backtest_total_return_percent)}%
+                        <p className="text-[10px] text-slate-500">{formatNumber(wallet.backtest_net_pnl_sol, 4)} SOL</p>
+                      </td>
+                      <td className="p-4 text-center text-slate-300">
+                        {formatNumber(wallet.backtest_win_rate_percent)}%
+                        <p className="text-[10px] text-slate-500">PF {wallet.backtest_profit_factor == null ? "-" : formatNumber(wallet.backtest_profit_factor)}</p>
+                      </td>
+                      <td className="p-4 text-center text-slate-300">
+                        {formatNumber(wallet.backtest_max_drawdown_percent)}%
+                        <p className="text-[10px] text-slate-500">cov. {formatNumber(wallet.backtest_execution_coverage_percent)}%</p>
+                      </td>
+                      <td className="p-4 text-center text-slate-300">
+                        {wallet.backtest_jupiter_status}
+                        <p className="text-[10px] text-slate-500">{formatNumber(wallet.backtest_jupiter_compatibility_percent)}%</p>
+                      </td>
                       <td className="p-4 text-center text-slate-300">{formatNumber(wallet.median_swap_sol_7d, 4)} SOL</td>
                       <td className="p-4 text-center text-slate-300">{formatNumber(Number(wallet.dust_ratio_7d ?? 0) * 100, 1)}%</td>
                       <td className="p-4 text-center text-slate-300">{formatNumber(Number(wallet.size_compatibility_ratio_7d ?? 0) * 100, 1)}%</td>
@@ -948,7 +1225,7 @@ function Discovery() {
                 })}
                 {!filteredWallets.length && (
                   <tr>
-                    <td colSpan="24" className="p-10 text-center text-slate-500">
+                    <td colSpan="30" className="p-10 text-center text-slate-500">
                       Nessun wallet corrisponde ai filtri selezionati.
                     </td>
                   </tr>

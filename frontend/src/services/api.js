@@ -129,6 +129,45 @@ export function runControlledDiscoveryHydration({
 }
 
 
+export function runCandidatePromotionBacktest({
+  walletAddress,
+  lookbackDays = 7,
+  startingCapitalSol = 1,
+  fixedBuySizeSol = 0.05,
+  slippageBps = 100,
+  feeBps = 10,
+  copyDelaySeconds = 8,
+  delayPenaltyBpsPerMinute = 25,
+  maxOpenPositions = 5,
+  checkJupiter = true,
+  jupiterTokenLimit = 10,
+}) {
+  return api.post(
+    "/discovered-wallets/promotion/backtest",
+    {
+      wallet_address: walletAddress,
+      lookback_days: lookbackDays,
+      starting_capital_sol: startingCapitalSol,
+      fixed_buy_size_sol: fixedBuySizeSol,
+      slippage_bps: slippageBps,
+      fee_bps: feeBps,
+      copy_delay_seconds: copyDelaySeconds,
+      delay_penalty_bps_per_minute: delayPenaltyBpsPerMinute,
+      max_open_positions: maxOpenPositions,
+      check_jupiter: checkJupiter,
+      jupiter_token_limit: jupiterTokenLimit,
+    }
+  );
+}
+
+
+export function getLatestCandidatePromotionBacktest(walletAddress) {
+  return api.get(
+    `/discovered-wallets/promotion/${encodeURIComponent(walletAddress)}/latest`
+  );
+}
+
+
 // =========================
 // WALLET INTELLIGENCE
 // =========================

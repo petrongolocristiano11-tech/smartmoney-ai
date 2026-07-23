@@ -29,6 +29,19 @@ class LiveWalletScore(Base):
         index=True,
     )
     quality_eligible: Mapped[bool] = mapped_column(Boolean, default=False)
+    promotion_status: Mapped[str] = mapped_column(
+        String(24),
+        default="NON_ANALIZZATO",
+        index=True,
+    )
+    promotion_eligible: Mapped[bool] = mapped_column(Boolean, default=False)
+    backtest_score: Mapped[float] = mapped_column(Float, default=0.0)
+    backtest_total_return_percent: Mapped[float] = mapped_column(Float, default=0.0)
+    backtest_profit_factor: Mapped[float | None] = mapped_column(Float, nullable=True)
+    backtest_max_drawdown_percent: Mapped[float] = mapped_column(Float, default=0.0)
+    backtest_jupiter_status: Mapped[str] = mapped_column(
+        String(24), default="NOT_CHECKED"
+    )
     last_swap_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,

@@ -121,6 +121,15 @@ def _quality_reasons(discovered: DiscoveredWallet | None) -> list[str]:
     return list(dict.fromkeys(reasons))
 
 
+def _promotion_reasons(discovered: DiscoveredWallet | None) -> list[str]:
+    if discovered is None:
+        return ["PROMOTION_DATA_NOT_AVAILABLE"]
+    reasons = list(discovered.promotion_reasons or [])
+    if not discovered.promotion_eligible:
+        reasons.append("PROMOTION_GATE_NOT_PASSED")
+    return list(dict.fromkeys(reasons))
+
+
 def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
     policy = get_or_create_live_policy(db)
     config = get_or_create_platform_config(db)
@@ -266,6 +275,7 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
             reasons.append("SMART_SCORE_BELOW_MINIMUM")
         reasons.extend(_activity_reasons(discovered))
         reasons.extend(_quality_reasons(discovered))
+        reasons.extend(_promotion_reasons(discovered))
         reasons = list(dict.fromkeys(reasons))
 
         row = (
@@ -289,6 +299,25 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
             discovered.quality_classification if discovered else "NON_ANALIZZATO"
         )
         row.quality_eligible = bool(discovered.quality_eligible) if discovered else False
+        row.promotion_status = (
+            discovered.promotion_status if discovered else "NON_ANALIZZATO"
+        )
+        row.promotion_eligible = (
+            bool(discovered.promotion_eligible) if discovered else False
+        )
+        row.backtest_score = safe_float(discovered.backtest_score if discovered else 0)
+        row.backtest_total_return_percent = safe_float(
+            discovered.backtest_total_return_percent if discovered else 0
+        )
+        row.backtest_profit_factor = (
+            discovered.backtest_profit_factor if discovered else None
+        )
+        row.backtest_max_drawdown_percent = safe_float(
+            discovered.backtest_max_drawdown_percent if discovered else 0
+        )
+        row.backtest_jupiter_status = (
+            discovered.backtest_jupiter_status if discovered else "NOT_CHECKED"
+        )
         row.last_swap_at = discovered.last_swap_at if discovered else None
         row.swaps_24h = int(discovered.swaps_24h if discovered else 0)
         row.swaps_7d = int(discovered.swaps_7d if discovered else 0)
@@ -310,6 +339,7 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
             discovered is not None
             and bool(discovered.activity_eligible)
             and bool(discovered.quality_eligible)
+            and bool(discovered.promotion_eligible)
             and smart_score >= config.min_wallet_smart_score
             and closed >= minimum_sample
         )
@@ -347,6 +377,10 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
             "minimum_closed_trades": minimum_sample,
             "activity_filter_enabled": True,
             "quality_filter_enabled": True,
+            "promotion_filter_enabled": True,
+            "promoted_wallets": sum(
+                1 for row in calculated_rows if row.promotion_status == "PROMOSSO"
+            ),
             "copyable_wallets": sum(
                 1
                 for row in calculated_rows
