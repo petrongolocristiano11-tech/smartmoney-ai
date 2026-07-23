@@ -157,6 +157,44 @@ def test_complete_but_insufficient_history_requires_review_not_more_budget():
     assert result["history_candidate"] is False
 
 
+def test_last_page_marks_history_as_exhausted_below_target():
+    result = evaluate_candidate(
+        wallet(
+            extended_history_status="COMPLETED",
+            extended_history_stop_reason="LAST_PAGE",
+            extended_history_lookback_days=30,
+            backtest_history_span_days=29.4,
+            backtest_data_sufficient=False,
+        ),
+        target_history_days=30,
+    )
+
+    assert result["status"] == "REVIEW"
+    assert result["action"] == "REVIEW_CACHED_EVIDENCE"
+    assert result["history_candidate"] is False
+    assert result["recommended_history_budget"] == 0
+    assert result["reasons"] == [
+        "FUNNEL_HISTORY_COMPLETE_BUT_BACKTEST_INSUFFICIENT"
+    ]
+
+
+def test_reached_lookback_marks_history_complete_below_exact_span():
+    result = evaluate_candidate(
+        wallet(
+            extended_history_status="COMPLETED",
+            extended_history_stop_reason="LOOKBACK_REACHED",
+            extended_history_lookback_days=30,
+            backtest_history_span_days=29.4,
+            backtest_data_sufficient=False,
+        ),
+        target_history_days=30,
+    )
+
+    assert result["status"] == "REVIEW"
+    assert result["history_candidate"] is False
+    assert result["recommended_history_budget"] == 0
+
+
 def test_budget_is_diversified_before_extra_requests():
     candidates = [
         {

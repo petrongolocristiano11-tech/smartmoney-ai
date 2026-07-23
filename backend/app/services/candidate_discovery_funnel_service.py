@@ -229,9 +229,25 @@ def _history_complete_for_target(
     wallet: DiscoveredWallet,
     target_history_days: int,
 ) -> bool:
+    if str(wallet.extended_history_status) != "COMPLETED":
+        return False
+
+    if safe_float(wallet.backtest_history_span_days) >= target_history_days:
+        return True
+
+    stop_reason = str(
+        getattr(wallet, "extended_history_stop_reason", "") or ""
+    )
+
+    if stop_reason == "LAST_PAGE":
+        return True
+
+    requested_lookback = int(
+        getattr(wallet, "extended_history_lookback_days", 0) or 0
+    )
     return bool(
-        str(wallet.extended_history_status) == "COMPLETED"
-        and safe_float(wallet.backtest_history_span_days) >= target_history_days
+        stop_reason == "LOOKBACK_REACHED"
+        and requested_lookback >= target_history_days
     )
 
 
