@@ -756,6 +756,10 @@ def run_candidate_backtest(
         wallet.eligibility_reasons = list(
             dict.fromkeys([*wallet.eligibility_reasons, "BACKTEST_DATA_INSUFFICIENT"])
         )
+    if not wallet.exitability_gate_eligible:
+        wallet.eligibility_reasons = list(
+            dict.fromkeys([*wallet.eligibility_reasons, "EXITABILITY_GATE_NOT_PASSED"])
+        )
     wallet.status = "PROMOTED" if wallet.promotion_eligible else "UPDATED"
 
     db.commit()

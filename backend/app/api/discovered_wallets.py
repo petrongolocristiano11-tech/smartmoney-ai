@@ -23,6 +23,7 @@ from backend.app.schemas.discovered_wallet import (
     DiscoveredWalletActivityRefreshResponse,
     DiscoveredWalletQualityRefreshResponse,
     DiscoveredWalletResponse,
+    CandidateExitabilityGateResponse,
 )
 from backend.app.services.candidate_backtest_service import (
     get_latest_candidate_backtest,
@@ -49,6 +50,9 @@ from backend.app.services.candidate_history_service import (
 from backend.app.services.discovered_wallet_service import (
     refresh_discovered_wallet_activity,
     refresh_discovered_wallet_quality,
+)
+from backend.app.services.candidate_exitability_gate_service import (
+    run_exitability_gate_refresh,
 )
 from backend.app.services.discovery_hydration_service import (
     HydrationAlreadyRunningError,
@@ -98,6 +102,13 @@ def get_discovered_wallets(
         "BLOCKED",
         "NON_ANALIZZATO",
     ] = "ALL",
+    exitability_gate: Literal[
+        "ALL",
+        "READY",
+        "REVIEW",
+        "BLOCKED",
+        "NON_ANALIZZATO",
+    ] = "ALL",
     sort_by: Literal[
         "ranking_score",
         "smart_score",
@@ -137,6 +148,10 @@ def get_discovered_wallets(
     if exit_price != "ALL":
         query = query.filter(
             DiscoveredWallet.exit_price_coverage_status == exit_price
+        )
+    if exitability_gate != "ALL":
+        query = query.filter(
+            DiscoveredWallet.exitability_gate_status == exitability_gate
         )
 
     order_column = getattr(DiscoveredWallet, sort_by)
@@ -396,6 +411,17 @@ def read_latest_exit_price_audit(
             detail="Audit copertura prezzi di uscita non trovato",
         )
     return run
+
+
+@router.post(
+    "/exitability-gate/refresh",
+    response_model=CandidateExitabilityGateResponse,
+)
+def refresh_exitability_gate(
+    limit: int = Query(default=250, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    return run_exitability_gate_refresh(db, limit=limit)
 
 
 @router.get("/{wallet_address}", response_model=DiscoveredWalletResponse)

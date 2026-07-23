@@ -231,6 +231,20 @@ class DiscoveredWallet(Base):
         DateTime(timezone=True), nullable=True, index=True
     )
 
+    exitability_gate_status: Mapped[str] = mapped_column(
+        String(24), default="NON_ANALIZZATO", index=True
+    )
+    exitability_gate_score: Mapped[float] = mapped_column(
+        Float, default=0.0, index=True
+    )
+    exitability_gate_eligible: Mapped[bool] = mapped_column(
+        Boolean, default=False, index=True
+    )
+    exitability_gate_reasons: Mapped[list] = mapped_column(JSON, default=list)
+    exitability_gate_calculated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
     eligible: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     eligibility_reasons: Mapped[list] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String(20), default="DISCOVERED")

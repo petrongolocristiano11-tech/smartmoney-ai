@@ -118,6 +118,11 @@ class DiscoveredWalletResponse(BaseModel):
     exit_price_audit_reasons: list[str]
     latest_exit_price_audit_run_id: str | None
     exit_price_audit_calculated_at: datetime | None
+    exitability_gate_status: str
+    exitability_gate_score: float
+    exitability_gate_eligible: bool
+    exitability_gate_reasons: list[str]
+    exitability_gate_calculated_at: datetime | None
 
     eligible: bool
     eligibility_reasons: list[str]
@@ -196,3 +201,17 @@ class DiscoveryHydrationResponse(BaseModel):
     quality_breakdown: dict[str, int]
     results: list[DiscoveryHydrationWalletResult]
     safety: dict[str, bool]
+
+class CandidateExitabilityGateResponse(BaseModel):
+    id: int
+    run_id: str
+    status: str
+    parameters: dict
+    safety: dict
+    summary: dict
+    wallet_results: list[dict]
+    started_at: datetime
+    completed_at: datetime | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

@@ -10,6 +10,9 @@ from backend.app.models.candidate_position_lifecycle_audit import (
 from backend.app.models.candidate_exit_price_audit import (
     CandidateExitPriceAuditRun,
 )
+from backend.app.models.candidate_exitability_gate import (
+    CandidateExitabilityGateRun,
+)
 from backend.app.models.candidate_history_backfill import (
     CandidateHistoryBackfillRun,
 )
@@ -83,6 +86,7 @@ __all__ = [
     "CandidateReconstructionAuditRun",
     "CandidatePositionLifecycleAuditRun",
     "CandidateExitPriceAuditRun",
+    "CandidateExitabilityGateRun",
     "CandidateHistoryBackfillRun",
     "CandidateTokenCompatibility",
     "DiscoveryJob",

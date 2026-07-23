@@ -316,6 +316,19 @@ export function getLatestCandidateExitPriceAudit(
 }
 
 
+export function refreshExitabilityGate(
+  limit = 250
+) {
+  return api.post(
+    "/discovered-wallets/exitability-gate/refresh",
+    null,
+    {
+      params: { limit },
+    }
+  );
+}
+
+
 // =========================
 // WALLET INTELLIGENCE
 // =========================
