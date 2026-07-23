@@ -187,6 +187,9 @@ class LiveWalletScoreResponse(PlatformResponseModel):
     live_performance_score: float
     activity_score: float
     activity_classification: str
+    quality_score: float
+    quality_classification: str
+    quality_eligible: bool
     last_swap_at: datetime | None
     swaps_24h: int
     swaps_7d: int

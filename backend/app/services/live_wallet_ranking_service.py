@@ -105,6 +105,22 @@ def _activity_reasons(discovered: DiscoveredWallet | None) -> list[str]:
     return reasons
 
 
+def _quality_reasons(discovered: DiscoveredWallet | None) -> list[str]:
+    if discovered is None:
+        return ["QUALITY_NOT_ANALYZED"]
+
+    reasons = list(discovered.quality_reasons or [])
+    if discovered.quality_classification == "NON_ANALIZZATO":
+        reasons.append("QUALITY_NOT_ANALYZED")
+    elif discovered.quality_classification == "OSSERVAZIONE":
+        reasons.append("QUALITY_OBSERVATION_ONLY")
+    elif discovered.quality_classification == "SOSPETTO":
+        reasons.append("SUSPICIOUS_WALLET_QUALITY")
+    elif discovered.quality_classification == "NON_COPIABILE":
+        reasons.append("WALLET_NOT_COPYABLE")
+    return list(dict.fromkeys(reasons))
+
+
 def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
     policy = get_or_create_live_policy(db)
     config = get_or_create_platform_config(db)
@@ -228,8 +244,13 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
         activity_score = clamp(
             safe_float(discovered.activity_score) if discovered else 0.0
         )
+        quality_score = clamp(
+            safe_float(discovered.quality_score) if discovered else 0.0
+        )
         smart_score = (
-            performance_score * 0.80 + activity_score * 0.20
+            performance_score * 0.65
+            + activity_score * 0.15
+            + quality_score * 0.20
             if discovered is not None
             else performance_score
         )
@@ -244,6 +265,7 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
         if smart_score < config.min_wallet_smart_score:
             reasons.append("SMART_SCORE_BELOW_MINIMUM")
         reasons.extend(_activity_reasons(discovered))
+        reasons.extend(_quality_reasons(discovered))
         reasons = list(dict.fromkeys(reasons))
 
         row = (
@@ -262,6 +284,11 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
         row.activity_classification = (
             discovered.activity_classification if discovered else "NON_ANALIZZATO"
         )
+        row.quality_score = round(quality_score, 4)
+        row.quality_classification = (
+            discovered.quality_classification if discovered else "NON_ANALIZZATO"
+        )
+        row.quality_eligible = bool(discovered.quality_eligible) if discovered else False
         row.last_swap_at = discovered.last_swap_at if discovered else None
         row.swaps_24h = int(discovered.swaps_24h if discovered else 0)
         row.swaps_7d = int(discovered.swaps_7d if discovered else 0)
@@ -282,6 +309,7 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
         row.eligible = (
             discovered is not None
             and bool(discovered.activity_eligible)
+            and bool(discovered.quality_eligible)
             and smart_score >= config.min_wallet_smart_score
             and closed >= minimum_sample
         )
@@ -318,6 +346,17 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
             "minimum_score": config.min_wallet_smart_score,
             "minimum_closed_trades": minimum_sample,
             "activity_filter_enabled": True,
+            "quality_filter_enabled": True,
+            "copyable_wallets": sum(
+                1
+                for row in calculated_rows
+                if row.quality_classification == "COPIABILE"
+            ),
+            "suspicious_wallets": sum(
+                1
+                for row in calculated_rows
+                if row.quality_classification == "SOSPETTO"
+            ),
             "inactive_wallets": sum(
                 1
                 for row in calculated_rows
@@ -381,7 +420,7 @@ def apply_ranked_wallets(
     selected = [row.wallet_address for row in ranking if row.eligible][:resolved_limit]
     if not selected:
         raise LiveTradingError(
-            "Nessun wallet supera insieme attività, Smart Score e campione minimo di trade chiusi.",
+            "Nessun wallet supera insieme attività, qualità, Smart Score e campione minimo di trade chiusi.",
             code="NO_ELIGIBLE_SOURCE_WALLETS",
             status_code=409,
         )
@@ -397,6 +436,7 @@ def apply_ranked_wallets(
             "wallets": selected,
             "minimum_closed_trades": config.min_wallet_closed_trades,
             "activity_filter_enabled": True,
+            "quality_filter_enabled": True,
         },
     )
     db.commit()

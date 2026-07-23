@@ -288,22 +288,37 @@ def build_discovery_ranking(
     *,
     smart_score: float,
     activity: dict[str, Any],
+    quality: dict[str, Any] | None = None,
     minimum_smart_score: float = DISCOVERY_MIN_SMART_SCORE,
 ) -> dict[str, Any]:
     normalized_smart_score = clamp(safe_float(smart_score))
     activity_score = clamp(safe_float(activity.get("activity_score")))
-    ranking_score = round(
-        normalized_smart_score * 0.75 + activity_score * 0.25,
-        4,
-    )
+
+    if quality is None:
+        ranking_score = round(
+            normalized_smart_score * 0.75 + activity_score * 0.25,
+            4,
+        )
+    else:
+        quality_score = clamp(safe_float(quality.get("quality_score")))
+        ranking_score = round(
+            normalized_smart_score * 0.55
+            + activity_score * 0.20
+            + quality_score * 0.25,
+            4,
+        )
 
     reasons = list(activity.get("activity_reasons") or [])
+    if quality is not None:
+        reasons.extend(quality.get("quality_reasons") or [])
     if normalized_smart_score < minimum_smart_score:
         reasons.append("SMART_SCORE_BELOW_MINIMUM")
 
     eligible = bool(activity.get("activity_eligible")) and (
         normalized_smart_score >= minimum_smart_score
     )
+    if quality is not None:
+        eligible = eligible and bool(quality.get("quality_eligible"))
 
     return {
         "ranking_score": ranking_score,

@@ -12,7 +12,7 @@ from backend.app.core.config import settings
 from backend.app.models.discovered_wallet import DiscoveredWallet
 from backend.app.models.trade import Trade
 from backend.app.models.wallet import Wallet
-from backend.app.services.discovered_wallet_service import apply_activity_and_ranking
+from backend.app.services.discovered_wallet_service import analyze_and_apply_wallet_ranking
 from backend.app.services.helius import HeliusRequestError, get_wallet_history
 from backend.app.services.smart_score_engine import calculate_smart_score
 from backend.app.services.trade_engine import build_trade, build_trade_data, normalize_swap
@@ -230,6 +230,9 @@ def _mark_failure(
         "parse_failures": 0,
         "activity_classification": wallet.activity_classification,
         "activity_score": wallet.activity_score,
+        "quality_classification": wallet.quality_classification,
+        "quality_score": wallet.quality_score,
+        "quality_eligible": wallet.quality_eligible,
         "eligible": wallet.eligible,
         "error_code": error_code,
         "error_message": _safe_message(error_message),
@@ -270,9 +273,9 @@ def _hydrate_wallet(
         wallet = db.query(DiscoveredWallet).filter(DiscoveredWallet.id == wallet_id).one()
         _apply_score(wallet, score)
         activity = analyze_wallet_activity(db, wallet_address, now=now)
-        apply_activity_and_ranking(
+        analyze_and_apply_wallet_ranking(
+            db,
             wallet,
-            smart_score=wallet.smart_score,
             activity=activity,
         )
         _upsert_wallet_sync_marker(db, wallet_address, synced_at=now)
@@ -309,6 +312,9 @@ def _hydrate_wallet(
             **counters,
             "activity_classification": wallet.activity_classification,
             "activity_score": wallet.activity_score,
+            "quality_classification": wallet.quality_classification,
+            "quality_score": wallet.quality_score,
+            "quality_eligible": wallet.quality_eligible,
             "eligible": wallet.eligible,
             "error_code": None,
             "error_message": None,
@@ -452,6 +458,12 @@ def run_controlled_discovery_hydration(
             "activity_breakdown": dict(
                 Counter(
                     str(item.get("activity_classification") or "NON_ANALIZZATO")
+                    for item in results
+                )
+            ),
+            "quality_breakdown": dict(
+                Counter(
+                    str(item.get("quality_classification") or "NON_ANALIZZATO")
                     for item in results
                 )
             ),

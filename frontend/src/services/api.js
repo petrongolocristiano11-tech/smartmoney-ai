@@ -91,6 +91,19 @@ export function refreshDiscoveredWalletActivity(
 }
 
 
+export function refreshDiscoveredWalletQuality(
+  limit = 250
+) {
+  return api.post(
+    "/discovered-wallets/quality/refresh",
+    null,
+    {
+      params: { limit },
+    }
+  );
+}
+
+
 export function runControlledDiscoveryHydration({
   maxWallets = 3,
   maxHeliusRequests = 3,
@@ -442,7 +455,7 @@ export function sellPaperToken(
       accessKey
     )
   );
-} 
+}
 
 // =========================
 // PAPER AUTOPILOT
@@ -487,4 +500,4 @@ export function runPaperAutopilot(
       accessKey
     )
   );
-} 
+}

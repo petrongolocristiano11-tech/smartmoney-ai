@@ -33,6 +33,27 @@ class DiscoveredWalletResponse(BaseModel):
     activity_reasons: list[str]
     activity_calculated_at: datetime | None
 
+    quality_score: float
+    quality_classification: str
+    quality_eligible: bool
+    quality_reasons: list[str]
+    quality_calculated_at: datetime | None
+    quality_sample_swaps_7d: int
+    meaningful_swaps_7d: int
+    dust_swaps_7d: int
+    dust_ratio_7d: float
+    average_swap_sol_7d: float
+    median_swap_sol_7d: float
+    size_compatible_swaps_7d: int
+    size_compatibility_ratio_7d: float
+    average_size_compatibility_score_7d: float
+    buy_sell_balance_score_7d: float
+    unique_tokens_7d: int
+    top_token_concentration_7d: float
+    completed_token_pairs_7d: int
+    round_trip_token_ratio_7d: float
+    invalid_amount_swaps_7d: int
+
     hydration_status: str
     hydration_run_id: str | None
     hydration_last_attempt_at: datetime | None
@@ -63,6 +84,18 @@ class DiscoveredWalletActivityRefreshResponse(BaseModel):
     message: str
 
 
+class DiscoveredWalletQualityRefreshResponse(BaseModel):
+    status: str
+    wallets_refreshed: int
+    helius_requests: int
+    copyable: int
+    observation: int
+    suspicious: int
+    not_copyable: int
+    not_analyzed: int
+    message: str
+
+
 class DiscoveryHydrationWalletResult(BaseModel):
     wallet_address: str
     status: str
@@ -75,6 +108,9 @@ class DiscoveryHydrationWalletResult(BaseModel):
     parse_failures: int
     activity_classification: str
     activity_score: float
+    quality_classification: str
+    quality_score: float
+    quality_eligible: bool
     eligible: bool
     error_code: str | None
     error_message: str | None
@@ -106,5 +142,6 @@ class DiscoveryHydrationResponse(BaseModel):
     trades_updated: int
     parse_failures: int
     activity_breakdown: dict[str, int]
+    quality_breakdown: dict[str, int]
     results: list[DiscoveryHydrationWalletResult]
     safety: dict[str, bool]

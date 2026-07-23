@@ -57,7 +57,7 @@ def api_client():
                 wallet_address=ACTIVE_WALLET,
                 side=side,
                 source="TEST",
-                token_mint="M" * 32,
+                token_mint=("M" if index < 2 else "N") * 32,
                 token_amount=100,
                 sol_amount=sol_amount,
                 success=True,

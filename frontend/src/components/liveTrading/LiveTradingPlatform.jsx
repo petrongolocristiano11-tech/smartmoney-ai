@@ -170,6 +170,34 @@ function configToForm(config) {
 
 
 function getRankingStatus(row, minimumSample) {
+  if (row.quality_classification === "SOSPETTO") {
+    return {
+      label: "SOSPETTO",
+      className: "bg-fuchsia-950 text-fuchsia-300",
+    };
+  }
+
+  if (row.quality_classification === "NON_COPIABILE") {
+    return {
+      label: "NON COPIABILE",
+      className: "bg-red-950 text-red-300",
+    };
+  }
+
+  if (row.quality_classification === "OSSERVAZIONE") {
+    return {
+      label: "OSSERVAZIONE",
+      className: "bg-amber-950 text-amber-300",
+    };
+  }
+
+  if (row.quality_classification === "NON_ANALIZZATO") {
+    return {
+      label: "QUALITÀ N/D",
+      className: "bg-blue-950 text-blue-300",
+    };
+  }
+
   if (row.activity_classification === "INATTIVO") {
     return {
       label: "INATTIVO",
@@ -225,6 +253,18 @@ function getActivityClassName(classification) {
     POCO_ATTIVO: "bg-amber-950 text-amber-300",
     INATTIVO: "bg-slate-800 text-slate-400",
     IPERATTIVO: "bg-red-950 text-red-300",
+    NON_ANALIZZATO: "bg-blue-950 text-blue-300",
+  };
+  return classes[classification] ?? classes.NON_ANALIZZATO;
+}
+
+
+function getQualityClassName(classification) {
+  const classes = {
+    COPIABILE: "bg-green-950 text-green-300",
+    OSSERVAZIONE: "bg-amber-950 text-amber-300",
+    SOSPETTO: "bg-fuchsia-950 text-fuchsia-300",
+    NON_COPIABILE: "bg-red-950 text-red-300",
     NON_ANALIZZATO: "bg-blue-950 text-blue-300",
   };
   return classes[classification] ?? classes.NON_ANALIZZATO;
@@ -653,7 +693,7 @@ function LiveTradingPlatform({
 
       <LiveTradingSection
         title="Smart Wallet Ranking"
-        description="Combina profilo storico, performance copy-trading e attività recente. INATTIVO e IPERATTIVO vengono esclusi prima dell'idoneità."
+        description="Combina profilo storico, performance copy-trading, attività e qualità di esecuzione. Solo i wallet COPIABILI possono diventare idonei."
       >
         <div className="flex flex-wrap gap-3">
           <button
@@ -682,6 +722,7 @@ function LiveTradingPlatform({
                 <th className="px-4 py-3">Wallet</th>
                 <th className="px-4 py-3">Ranking</th>
                 <th className="px-4 py-3">Attività</th>
+                <th className="px-4 py-3">Qualità</th>
                 <th className="px-4 py-3">Swap 24h / 7d</th>
                 <th className="px-4 py-3">BUY / SELL 7d</th>
                 <th className="px-4 py-3">Ultimo swap</th>
@@ -707,6 +748,14 @@ function LiveTradingPlatform({
                     </span>
                     <div className="mt-1 text-xs text-slate-500">
                       score {formatLiveNumber(row.activity_score, 2)}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${getQualityClassName(row.quality_classification)}`}>
+                      {String(row.quality_classification ?? "NON_ANALIZZATO").replace("_", " ")}
+                    </span>
+                    <div className="mt-1 text-xs text-slate-500">
+                      score {formatLiveNumber(row.quality_score, 2)}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-slate-300">
@@ -742,7 +791,7 @@ function LiveTradingPlatform({
               ))}
               {!ranking.length && (
                 <tr>
-                  <td colSpan="11" className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan="12" className="px-4 py-8 text-center text-slate-500">
                     Nessun wallet disponibile per il ranking.
                   </td>
                 </tr>

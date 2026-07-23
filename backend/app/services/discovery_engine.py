@@ -214,6 +214,23 @@ def analyze_and_save_discovered_wallet(
         "activity_eligible": saved.activity_eligible,
         "activity_reasons": list(saved.activity_reasons or []),
         "activity_calculated_at": saved.activity_calculated_at,
+        "quality_score": getattr(saved, "quality_score", 0.0),
+        "quality_classification": getattr(saved, "quality_classification", "NON_ANALIZZATO"),
+        "quality_eligible": getattr(saved, "quality_eligible", False),
+        "quality_reasons": list(getattr(saved, "quality_reasons", []) or []),
+        "quality_calculated_at": getattr(saved, "quality_calculated_at", None),
+        "quality_sample_swaps_7d": getattr(saved, "quality_sample_swaps_7d", 0),
+        "meaningful_swaps_7d": getattr(saved, "meaningful_swaps_7d", 0),
+        "dust_swaps_7d": getattr(saved, "dust_swaps_7d", 0),
+        "dust_ratio_7d": getattr(saved, "dust_ratio_7d", 0.0),
+        "average_swap_sol_7d": getattr(saved, "average_swap_sol_7d", 0.0),
+        "median_swap_sol_7d": getattr(saved, "median_swap_sol_7d", 0.0),
+        "size_compatibility_ratio_7d": getattr(saved, "size_compatibility_ratio_7d", 0.0),
+        "buy_sell_balance_score_7d": getattr(saved, "buy_sell_balance_score_7d", 0.0),
+        "unique_tokens_7d": getattr(saved, "unique_tokens_7d", 0),
+        "top_token_concentration_7d": getattr(saved, "top_token_concentration_7d", 0.0),
+        "completed_token_pairs_7d": getattr(saved, "completed_token_pairs_7d", 0),
+        "round_trip_token_ratio_7d": getattr(saved, "round_trip_token_ratio_7d", 0.0),
     }
 
 

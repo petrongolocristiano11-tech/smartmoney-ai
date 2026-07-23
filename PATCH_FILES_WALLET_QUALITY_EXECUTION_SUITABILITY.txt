@@ -1,0 +1,49 @@
+SMARTMONEY AI — WALLET QUALITY & EXECUTION SUITABILITY
+File completi da creare o sostituire
+Data blocco: 2026-07-23
+
+CREARE
+- alembic/versions/c9e4a7f2d631_add_wallet_quality_execution_suitability.py
+- backend/app/services/wallet_quality_service.py
+- tests/test_wallet_quality_execution_suitability.py
+- tests/test_wallet_quality_api.py
+- README_WALLET_QUALITY_EXECUTION_SUITABILITY.md
+- ROLLBACK_WALLET_QUALITY_EXECUTION_SUITABILITY.md
+- TEST_WALLET_QUALITY_EXECUTION_SUITABILITY.ps1
+- APPLY_AND_TEST_WALLET_QUALITY_EXECUTION_SUITABILITY.ps1
+- TEST_RESULTS_WALLET_QUALITY_EXECUTION_SUITABILITY.txt
+- PATCH_FILES_WALLET_QUALITY_EXECUTION_SUITABILITY.txt
+
+SOSTITUIRE
+- PATCH_MANIFEST_SHA256.txt
+- backend/app/api/discovered_wallets.py
+- backend/app/models/discovered_wallet.py
+- backend/app/models/live_wallet_score.py
+- backend/app/schemas/discovered_wallet.py
+- backend/app/schemas/live_platform.py
+- backend/app/services/discovered_wallet_service.py
+- backend/app/services/discovery_engine.py
+- backend/app/services/discovery_hydration_service.py
+- backend/app/services/live_wallet_ranking_service.py
+- backend/app/services/smart_discovery_engine.py
+- backend/app/services/wallet_activity_service.py
+- frontend/src/components/liveTrading/LiveTradingPlatform.jsx
+- frontend/src/pages/Discovery.jsx
+- frontend/src/services/api.js
+- tests/test_active_wallet_discovery_api.py
+- tests/test_live_wallet_ranking_platform.py
+
+NON SOSTITUIRE
+- backend/app/core/config.py
+- .env
+- database locale
+- file Railway o variabili Railway
+
+INVARIANTI DI SICUREZZA
+- LIVE disabilitato e non armato.
+- Stream automatico non avviato.
+- Worker non avviato.
+- Nessuna sottoscrizione Helius creata.
+- Generazione DRY_RUN #3 non modificata o resettata.
+- Generazione #4 non creata.
+- Nessun wallet applicato automaticamente.

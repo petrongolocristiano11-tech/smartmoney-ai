@@ -47,13 +47,23 @@ def smart_discovery_from_wallet(
 
         smart_score = float(profile.get("smart_score") or 0)
         activity_eligible = bool(profile.get("activity_eligible"))
-        if smart_score >= min_smart_score and activity_eligible:
+        quality_eligible = bool(profile.get("quality_eligible"))
+        quality_classification = str(
+            profile.get("quality_classification") or "NON_ANALIZZATO"
+        )
+        if (
+            smart_score >= min_smart_score
+            and activity_eligible
+            and quality_eligible
+        ):
             ranked_wallets.append(profile)
 
         if depth >= max_depth:
             continue
         if wallet != seed_wallet and (
-            smart_score < min_smart_score or not activity_eligible
+            smart_score < min_smart_score
+            or not activity_eligible
+            or quality_classification in {"SOSPETTO", "NON_COPIABILE"}
         ):
             continue
 
@@ -104,6 +114,20 @@ def smart_discovery_from_wallet(
         )
     }
 
+    quality_breakdown = {
+        classification: sum(
+            1
+            for item in analyzed_profiles
+            if item.get("quality_classification") == classification
+        )
+        for classification in (
+            "COPIABILE",
+            "OSSERVAZIONE",
+            "SOSPETTO",
+            "NON_COPIABILE",
+        )
+    }
+
     return {
         "status": "COMPLETED" if failed_wallets == 0 else "PARTIAL",
         "seed_wallet": seed_wallet,
@@ -116,5 +140,6 @@ def smart_discovery_from_wallet(
         ),
         "min_smart_score": min_smart_score,
         "activity_breakdown": activity_breakdown,
+        "quality_breakdown": quality_breakdown,
         "ranking": ranked_wallets,
     }

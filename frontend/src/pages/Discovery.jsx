@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import {
   getDiscoveredWallets,
   refreshDiscoveredWalletActivity,
+  refreshDiscoveredWalletQuality,
   runControlledDiscoveryHydration,
   runDiscovery,
   runSmartDiscovery,
@@ -17,6 +18,14 @@ const ACTIVITY_OPTIONS = [
   "POCO_ATTIVO",
   "INATTIVO",
   "IPERATTIVO",
+  "NON_ANALIZZATO",
+];
+const QUALITY_OPTIONS = [
+  "ALL",
+  "COPIABILE",
+  "OSSERVAZIONE",
+  "SOSPETTO",
+  "NON_COPIABILE",
   "NON_ANALIZZATO",
 ];
 
@@ -94,6 +103,22 @@ function activityBadge(classification) {
 }
 
 
+function qualityBadge(classification) {
+  const normalized = classification || "NON_ANALIZZATO";
+  const classes = {
+    COPIABILE: "border-green-700 bg-green-950/60 text-green-300",
+    OSSERVAZIONE: "border-amber-700 bg-amber-950/60 text-amber-300",
+    SOSPETTO: "border-fuchsia-700 bg-fuchsia-950/60 text-fuchsia-300",
+    NON_COPIABILE: "border-red-700 bg-red-950/60 text-red-300",
+    NON_ANALIZZATO: "border-blue-800 bg-blue-950/40 text-blue-300",
+  };
+  return {
+    label: normalized.replace("_", " "),
+    className: classes[normalized] ?? classes.NON_ANALIZZATO,
+  };
+}
+
+
 function hydrationBadge(status) {
   const normalized = status || "NEVER";
   const classes = {
@@ -159,6 +184,7 @@ function Discovery() {
   const [search, setSearch] = useState("");
   const [minimumScore, setMinimumScore] = useState(0);
   const [activityFilter, setActivityFilter] = useState("ALL");
+  const [qualityFilter, setQualityFilter] = useState("ALL");
   const [eligibleOnly, setEligibleOnly] = useState(false);
   const [sortBy, setSortBy] = useState("ranking_score");
 
@@ -166,6 +192,7 @@ function Discovery() {
   const [running, setRunning] = useState(false);
   const [hydrating, setHydrating] = useState(false);
   const [refreshingActivity, setRefreshingActivity] = useState(false);
+  const [refreshingQuality, setRefreshingQuality] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -206,12 +233,15 @@ function Discovery() {
           String(wallet.wallet_address ?? "").toLowerCase().includes(normalizedSearch) ||
           String(wallet.discovered_from_token ?? "").toLowerCase().includes(normalizedSearch) ||
           String(wallet.activity_classification ?? "").toLowerCase().includes(normalizedSearch) ||
+          String(wallet.quality_classification ?? "").toLowerCase().includes(normalizedSearch) ||
           String(wallet.hydration_status ?? "").toLowerCase().includes(normalizedSearch);
         const matchesScore = Number(wallet.smart_score ?? 0) >= Number(minimumScore || 0);
         const matchesActivity =
           activityFilter === "ALL" || wallet.activity_classification === activityFilter;
+        const matchesQuality =
+          qualityFilter === "ALL" || wallet.quality_classification === qualityFilter;
         const matchesEligibility = !eligibleOnly || Boolean(wallet.eligible);
-        return matchesSearch && matchesScore && matchesActivity && matchesEligibility;
+        return matchesSearch && matchesScore && matchesActivity && matchesQuality && matchesEligibility;
       })
       .sort((first, second) => {
         if (sortBy === "last_swap_at") {
@@ -224,6 +254,7 @@ function Discovery() {
     search,
     minimumScore,
     activityFilter,
+    qualityFilter,
     eligibleOnly,
     sortBy,
   ]);
@@ -234,17 +265,25 @@ function Discovery() {
   );
 
   const summary = useMemo(() => {
-    const count = (classification) =>
+    const activityCount = (classification) =>
       discoveredWallets.filter(
         (wallet) => wallet.activity_classification === classification
+      ).length;
+    const qualityCount = (classification) =>
+      discoveredWallets.filter(
+        (wallet) => wallet.quality_classification === classification
       ).length;
     return {
       total: discoveredWallets.length,
       eligible: discoveredWallets.filter((wallet) => wallet.eligible).length,
-      active: count("ATTIVO"),
-      low: count("POCO_ATTIVO"),
-      inactive: count("INATTIVO"),
-      hyperactive: count("IPERATTIVO"),
+      active: activityCount("ATTIVO"),
+      low: activityCount("POCO_ATTIVO"),
+      inactive: activityCount("INATTIVO"),
+      hyperactive: activityCount("IPERATTIVO"),
+      copyable: qualityCount("COPIABILE"),
+      observation: qualityCount("OSSERVAZIONE"),
+      suspicious: qualityCount("SOSPETTO"),
+      notCopyable: qualityCount("NON_COPIABILE"),
     };
   }, [discoveredWallets]);
 
@@ -362,6 +401,25 @@ function Discovery() {
     }
   }
 
+  async function handleRefreshQuality() {
+    setRefreshingQuality(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await refreshDiscoveredWalletQuality(500);
+      setMessage(
+        `Qualità ricalcolata su ${response.data.wallets_refreshed} wallet: ${response.data.copyable} copiabili, ${response.data.observation} in osservazione, ${response.data.suspicious} sospetti e ${response.data.not_copyable} non copiabili. Helius: ${response.data.helius_requests}.`
+      );
+      await loadDiscoveredWallets();
+    } catch (requestError) {
+      console.error("Errore ricalcolo qualità:", requestError);
+      setError("Impossibile ricalcolare la qualità di esecuzione dal database.");
+    } finally {
+      setRefreshingQuality(false);
+    }
+  }
+
+
   function clearHistory() {
     if (!historyItems.length) return;
     if (window.confirm("Vuoi cancellare la cronologia locale delle discovery?")) {
@@ -374,10 +432,10 @@ function Discovery() {
       <header className="border-b border-slate-700">
         <div className="mx-auto flex max-w-[1500px] flex-col gap-4 p-6 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Active Wallet Discovery & Ranking</h1>
+            <h1 className="text-3xl font-bold">Wallet Quality & Execution Suitability</h1>
             <p className="mt-2 max-w-3xl text-slate-400">
-              Scopre wallet, misura l'attività recente e separa wallet attivi,
-              poco attivi, inattivi e iperattivi prima dell'idoneità.
+              Valida se l'attività recente è realmente copiabile: dust, size, equilibrio
+              BUY/SELL, concentrazione token e cicli completi diventano filtri obbligatori.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -388,6 +446,14 @@ function Discovery() {
               className="rounded-lg border border-cyan-700 bg-cyan-950/50 px-4 py-2 text-sm font-semibold text-cyan-300 disabled:opacity-50"
             >
               {hydrating ? "Idratazione..." : `Idrata ${hydrationMaxWallets} wallet`}
+            </button>
+            <button
+              type="button"
+              onClick={handleRefreshQuality}
+              disabled={refreshingQuality}
+              className="rounded-lg border border-purple-700 bg-purple-950/50 px-4 py-2 text-sm font-semibold text-purple-300 disabled:opacity-50"
+            >
+              {refreshingQuality ? "Analisi qualità..." : "Ricalcola qualità DB"}
             </button>
             <button
               type="button"
@@ -411,9 +477,9 @@ function Discovery() {
 
       <main className="mx-auto max-w-[1500px] p-4 sm:p-8">
         <div className="mb-6 rounded-xl border border-amber-800 bg-amber-950/30 p-4 text-sm text-amber-200">
-          Il ricalcolo attività usa solo il database. L'idratazione è manuale e limitata
-          dal budget selezionato: una richiesta Helius per wallet e retry disabilitati nel batch.
-          Non abilita stream o LIVE, non avvia worker, non applica wallet e non crea generazioni.
+          Attività e qualità vengono ricalcolate esclusivamente dai trade salvati.
+          L'idratazione resta manuale e limitata dal budget: una richiesta Helius per wallet.
+          Nessuna azione abilita stream o LIVE, avvia worker, applica wallet o crea generazioni.
         </div>
 
         {error && (
@@ -429,11 +495,11 @@ function Discovery() {
 
         <section className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
           <StatCard label="Wallet scoperti" value={summary.total} tone="text-blue-300" />
-          <StatCard label="Idonei" value={summary.eligible} tone="text-green-300" />
-          <StatCard label="Attivi" value={summary.active} tone="text-emerald-300" />
-          <StatCard label="Poco attivi" value={summary.low} tone="text-amber-300" />
-          <StatCard label="Inattivi" value={summary.inactive} tone="text-slate-300" />
-          <StatCard label="Iperattivi" value={summary.hyperactive} tone="text-red-300" />
+          <StatCard label="Idonei finali" value={summary.eligible} tone="text-green-300" />
+          <StatCard label="Copiabili" value={summary.copyable} tone="text-emerald-300" />
+          <StatCard label="Osservazione" value={summary.observation} tone="text-amber-300" />
+          <StatCard label="Sospetti" value={summary.suspicious} tone="text-fuchsia-300" />
+          <StatCard label="Non copiabili" value={summary.notCopyable} tone="text-red-300" />
         </section>
 
         <section className="mb-8 overflow-hidden rounded-xl border border-cyan-900 bg-slate-800">
@@ -663,6 +729,7 @@ function Discovery() {
                       <th className="p-4">Ranking</th>
                       <th className="p-4">Smart</th>
                       <th className="p-4">Attività</th>
+                      <th className="p-4">Qualità</th>
                       <th className="p-4">Swap 24h / 7d</th>
                       <th className="p-4">BUY / SELL 7d</th>
                       <th className="p-4">Ultimo swap</th>
@@ -673,6 +740,7 @@ function Discovery() {
                     {resultRanking.slice(0, 15).map((wallet, index) => {
                       const address = getResultWalletAddress(wallet);
                       const activity = activityBadge(wallet.activity_classification);
+                      const quality = qualityBadge(wallet.quality_classification);
                       const eligibility = eligibilityBadge(wallet);
                       return (
                         <tr key={address || index}>
@@ -687,6 +755,11 @@ function Discovery() {
                           <td className="p-4 text-center font-bold text-blue-300">{formatNumber(wallet.smart_score)}</td>
                           <td className="p-4 text-center">
                             <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${activity.className}`}>{activity.label}</span>
+                          </td>
+                          <td className="p-4 text-center">
+                            <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${quality.className}`}>
+                              {quality.label}
+                            </span>
                           </td>
                           <td className="p-4 text-center text-slate-300">{wallet.swaps_24h ?? 0} / {wallet.swaps_7d ?? 0}</td>
                           <td className="p-4 text-center text-slate-300">{wallet.buys_7d ?? 0} / {wallet.sells_7d ?? 0}</td>
@@ -707,7 +780,7 @@ function Discovery() {
         <section className="mb-8 overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
           <div className="border-b border-slate-700 p-5">
             <h2 className="text-xl font-bold">Ranking wallet scoperti</h2>
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-7">
               <input
                 type="text"
                 value={search}
@@ -734,6 +807,15 @@ function Discovery() {
                 ))}
               </select>
               <select
+                value={qualityFilter}
+                onChange={(event) => setQualityFilter(event.target.value)}
+                className="rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+              >
+                {QUALITY_OPTIONS.map((option) => (
+                  <option key={option} value={option}>{option.replace("_", " ")}</option>
+                ))}
+              </select>
+              <select
                 value={sortBy}
                 onChange={(event) => setSortBy(event.target.value)}
                 className="rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
@@ -741,6 +823,9 @@ function Discovery() {
                 <option value="ranking_score">Ranking Score</option>
                 <option value="smart_score">Smart Score</option>
                 <option value="activity_score">Activity Score</option>
+                <option value="quality_score">Quality Score</option>
+                <option value="median_swap_sol_7d">Mediana swap</option>
+                <option value="size_compatibility_ratio_7d">Compatibilità size</option>
                 <option value="last_swap_at">Ultimo swap</option>
                 <option value="volume_7d_sol">Volume 7d</option>
               </select>
@@ -756,7 +841,7 @@ function Discovery() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1850px] text-sm">
+            <table className="w-full min-w-[2500px] text-sm">
               <thead className="bg-slate-900 text-slate-400">
                 <tr>
                   <th className="p-4 text-left">Wallet</th>
@@ -765,7 +850,14 @@ function Discovery() {
                   <th className="p-4">Ranking</th>
                   <th className="p-4">Smart</th>
                   <th className="p-4">Activity</th>
-                  <th className="p-4">Classe</th>
+                  <th className="p-4">Classe attività</th>
+                  <th className="p-4">Quality</th>
+                  <th className="p-4">Suitability</th>
+                  <th className="p-4">Mediana</th>
+                  <th className="p-4">Dust</th>
+                  <th className="p-4">Size compat.</th>
+                  <th className="p-4">Token / conc.</th>
+                  <th className="p-4">Cicli B→S</th>
                   <th className="p-4">Ultimo swap</th>
                   <th className="p-4">Swap 24h</th>
                   <th className="p-4">Swap 7d</th>
@@ -781,6 +873,7 @@ function Discovery() {
               <tbody className="divide-y divide-slate-700">
                 {filteredWallets.map((wallet) => {
                   const activity = activityBadge(wallet.activity_classification);
+                  const quality = qualityBadge(wallet.quality_classification);
                   const eligibility = eligibilityBadge(wallet);
                   return (
                     <tr key={wallet.wallet_address} className="hover:bg-slate-700/30">
@@ -819,6 +912,20 @@ function Discovery() {
                       <td className="p-4 text-center">
                         <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${activity.className}`}>{activity.label}</span>
                       </td>
+                      <td className="p-4 text-center font-bold text-fuchsia-300">{formatNumber(wallet.quality_score)}</td>
+                      <td className="p-4 text-center">
+                        <span
+                          title={(wallet.quality_reasons ?? []).join(", ")}
+                          className={`rounded-full border px-2.5 py-1 text-xs font-bold ${quality.className}`}
+                        >
+                          {quality.label}
+                        </span>
+                      </td>
+                      <td className="p-4 text-center text-slate-300">{formatNumber(wallet.median_swap_sol_7d, 4)} SOL</td>
+                      <td className="p-4 text-center text-slate-300">{formatNumber(Number(wallet.dust_ratio_7d ?? 0) * 100, 1)}%</td>
+                      <td className="p-4 text-center text-slate-300">{formatNumber(Number(wallet.size_compatibility_ratio_7d ?? 0) * 100, 1)}%</td>
+                      <td className="p-4 text-center text-slate-300">{wallet.unique_tokens_7d ?? 0} / {formatNumber(Number(wallet.top_token_concentration_7d ?? 0) * 100, 1)}%</td>
+                      <td className="p-4 text-center text-slate-300">{wallet.completed_token_pairs_7d ?? 0}</td>
                       <td className="p-4 text-center text-xs text-slate-400">{formatDate(wallet.last_swap_at)}</td>
                       <td className="p-4 text-center text-slate-300">{wallet.swaps_24h}</td>
                       <td className="p-4 text-center text-slate-300">{wallet.swaps_7d}</td>
@@ -841,7 +948,7 @@ function Discovery() {
                 })}
                 {!filteredWallets.length && (
                   <tr>
-                    <td colSpan="17" className="p-10 text-center text-slate-500">
+                    <td colSpan="24" className="p-10 text-center text-slate-500">
                       Nessun wallet corrisponde ai filtri selezionati.
                     </td>
                   </tr>

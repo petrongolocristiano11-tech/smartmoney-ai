@@ -1,0 +1,35 @@
+SMARTMONEY AI — WALLET QUALITY & EXECUTION SUITABILITY
+Data verifica: 2026-07-23
+
+RISULTATI AMBIENTE DI PREPARAZIONE
+- Compilazione backend: SUPERATA
+- Test specifici qualità/integrazione: 21 passed
+- Suite completa del pacchetto: 190 passed
+- Suite prevista nel repository locale dell'utente: circa 195 test
+  (il repository locale contiene 5 test aggiuntivi rispetto al sorgente del pacchetto)
+- Alembic heads: c9e4a7f2d631 (head)
+- SQL PostgreSQL upgrade: VERIFICATO
+- SQL PostgreSQL downgrade: VERIFICATO
+- Controllo sintattico frontend TypeScript/JSX: 45 file superati
+- npm/Vite build nell'ambiente di preparazione: NON ESEGUITA
+  Motivo: registro npm non disponibile entro il timeout.
+  La build deve essere eseguita dal test PowerShell sul PC dell'utente.
+
+CASI COPERTI
+- wallet bilanciato e con size reali -> COPIABILE
+- wallet dust e solo BUY -> SOSPETTO
+- wallet poco attivo -> OSSERVAZIONE
+- wallet iperattivo -> NON_COPIABILE
+- refresh qualità a costo Helius zero
+- filtro API per classe qualità
+- integrazione Activity + Quality + ranking finale
+- integrazione ranking LIVE e blocco applicazione non copiabili
+- migrazione fail-closed delle vecchie idoneità
+
+SICUREZZA
+- LIVE non abilitato
+- LIVE non armato
+- stream non avviato
+- worker non avviato
+- nessun wallet applicato
+- nessuna generazione creata o resettata

@@ -53,6 +53,41 @@ class DiscoveredWallet(Base):
         nullable=True,
     )
 
+    quality_score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
+    quality_classification: Mapped[str] = mapped_column(
+        String(24),
+        default="NON_ANALIZZATO",
+        index=True,
+    )
+    quality_eligible: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        index=True,
+    )
+    quality_reasons: Mapped[list] = mapped_column(JSON, default=list)
+    quality_calculated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    quality_sample_swaps_7d: Mapped[int] = mapped_column(Integer, default=0)
+    meaningful_swaps_7d: Mapped[int] = mapped_column(Integer, default=0)
+    dust_swaps_7d: Mapped[int] = mapped_column(Integer, default=0)
+    dust_ratio_7d: Mapped[float] = mapped_column(Float, default=0.0)
+    average_swap_sol_7d: Mapped[float] = mapped_column(Float, default=0.0)
+    median_swap_sol_7d: Mapped[float] = mapped_column(Float, default=0.0)
+    size_compatible_swaps_7d: Mapped[int] = mapped_column(Integer, default=0)
+    size_compatibility_ratio_7d: Mapped[float] = mapped_column(Float, default=0.0)
+    average_size_compatibility_score_7d: Mapped[float] = mapped_column(
+        Float,
+        default=0.0,
+    )
+    buy_sell_balance_score_7d: Mapped[float] = mapped_column(Float, default=0.0)
+    unique_tokens_7d: Mapped[int] = mapped_column(Integer, default=0)
+    top_token_concentration_7d: Mapped[float] = mapped_column(Float, default=0.0)
+    completed_token_pairs_7d: Mapped[int] = mapped_column(Integer, default=0)
+    round_trip_token_ratio_7d: Mapped[float] = mapped_column(Float, default=0.0)
+    invalid_amount_swaps_7d: Mapped[int] = mapped_column(Integer, default=0)
+
     hydration_status: Mapped[str] = mapped_column(
         String(24),
         default="NEVER",

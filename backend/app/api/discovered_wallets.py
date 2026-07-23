@@ -9,10 +9,12 @@ from backend.app.models.discovered_wallet import DiscoveredWallet
 from backend.app.schemas.discovered_wallet import (
     DiscoveryHydrationResponse,
     DiscoveredWalletActivityRefreshResponse,
+    DiscoveredWalletQualityRefreshResponse,
     DiscoveredWalletResponse,
 )
 from backend.app.services.discovered_wallet_service import (
     refresh_discovered_wallet_activity,
+    refresh_discovered_wallet_quality,
 )
 from backend.app.services.discovery_hydration_service import (
     HydrationAlreadyRunningError,
@@ -39,10 +41,21 @@ def get_discovered_wallets(
         "IPERATTIVO",
         "NON_ANALIZZATO",
     ] = "ALL",
+    quality: Literal[
+        "ALL",
+        "COPIABILE",
+        "OSSERVAZIONE",
+        "SOSPETTO",
+        "NON_COPIABILE",
+        "NON_ANALIZZATO",
+    ] = "ALL",
     sort_by: Literal[
         "ranking_score",
         "smart_score",
         "activity_score",
+        "quality_score",
+        "median_swap_sol_7d",
+        "size_compatibility_ratio_7d",
         "last_swap_at",
         "volume_7d_sol",
     ] = "ranking_score",
@@ -57,6 +70,10 @@ def get_discovered_wallets(
     if activity != "ALL":
         query = query.filter(
             DiscoveredWallet.activity_classification == activity
+        )
+    if quality != "ALL":
+        query = query.filter(
+            DiscoveredWallet.quality_classification == quality
         )
 
     order_column = getattr(DiscoveredWallet, sort_by)
@@ -80,6 +97,17 @@ def refresh_activity_ranking(
     db: Session = Depends(get_db),
 ):
     return refresh_discovered_wallet_activity(db, limit=limit)
+
+
+@router.post(
+    "/quality/refresh",
+    response_model=DiscoveredWalletQualityRefreshResponse,
+)
+def refresh_quality_ranking(
+    limit: int = Query(default=250, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    return refresh_discovered_wallet_quality(db, limit=limit)
 
 
 @router.post(

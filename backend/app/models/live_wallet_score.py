@@ -22,6 +22,13 @@ class LiveWalletScore(Base):
         default="NON_ANALIZZATO",
         index=True,
     )
+    quality_score: Mapped[float] = mapped_column(Float, default=0.0)
+    quality_classification: Mapped[str] = mapped_column(
+        String(24),
+        default="NON_ANALIZZATO",
+        index=True,
+    )
+    quality_eligible: Mapped[bool] = mapped_column(Boolean, default=False)
     last_swap_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
