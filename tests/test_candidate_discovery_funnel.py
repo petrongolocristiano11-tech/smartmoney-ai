@@ -194,3 +194,74 @@ def test_budget_is_diversified_before_extra_requests():
     )
     assert [row["allocated_requests"] for row in queue] == [1, 1, 1]
     assert [row["priority"] for row in queue] == [1, 2, 3]
+
+
+
+def test_unhydrated_wallet_requires_local_data_instead_of_terminal_block():
+    result = evaluate_candidate(
+        wallet(
+            activity_classification="INATTIVO",
+            quality_classification="NON_COPIABILE",
+            quality_sample_swaps_7d=0,
+            meaningful_swaps_7d=0,
+            hydration_swaps_found=0,
+            swaps_7d=0,
+            unique_tokens_7d=0,
+            buys_7d=0,
+            sells_7d=0,
+            hydration_status="NEVER",
+        )
+    )
+
+    assert result["status"] == "NEEDS_LOCAL_DATA"
+    assert result["action"] == "RUN_CONTROLLED_HYDRATION"
+    assert result["history_candidate"] is False
+    assert result["recommended_history_budget"] == 0
+    assert (
+        "FUNNEL_CONTROLLED_HYDRATION_REQUIRED"
+        in result["reasons"]
+    )
+
+
+def test_inactive_wallet_with_local_evidence_remains_terminal():
+    result = evaluate_candidate(
+        wallet(
+            activity_classification="INATTIVO",
+        )
+    )
+
+    assert result["status"] == "BLOCKED"
+    assert result["action"] == "DO_NOT_PROMOTE"
+    assert result["history_candidate"] is False
+    assert (
+        "FUNNEL_INACTIVE_WALLET"
+        in result["reasons"]
+    )
+
+
+def test_terminal_promotion_reason_blocks_even_without_local_data():
+    result = evaluate_candidate(
+        wallet(
+            promotion_reasons=[
+                "QUALITY_NOT_COPYABLE",
+            ],
+            activity_classification="INATTIVO",
+            quality_classification="NON_COPIABILE",
+            quality_sample_swaps_7d=0,
+            meaningful_swaps_7d=0,
+            hydration_swaps_found=0,
+            swaps_7d=0,
+            unique_tokens_7d=0,
+            buys_7d=0,
+            sells_7d=0,
+            hydration_status="NEVER",
+        )
+    )
+
+    assert result["status"] == "BLOCKED"
+    assert result["action"] == "DO_NOT_PROMOTE"
+    assert result["history_candidate"] is False
+    assert (
+        "FUNNEL_PROMOTION_GATE_QUALITY_NOT_COPYABLE"
+        in result["reasons"]
+    )

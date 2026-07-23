@@ -161,15 +161,23 @@ def _hard_block_reasons(
             f"FUNNEL_PROMOTION_GATE_{reason}"
         )
 
-    if str(wallet.quality_classification) in {
-        "SOSPETTO",
-        "NON_COPIABILE",
-    }:
+    has_local_data = _has_local_data(wallet)
+
+    if (
+        has_local_data
+        and str(wallet.quality_classification) in {
+            "SOSPETTO",
+            "NON_COPIABILE",
+        }
+    ):
         reasons.append(
             "FUNNEL_QUALITY_BLOCK"
         )
 
-    if str(wallet.activity_classification) == "INATTIVO":
+    if (
+        has_local_data
+        and str(wallet.activity_classification) == "INATTIVO"
+    ):
         reasons.append(
             "FUNNEL_INACTIVE_WALLET"
         )
@@ -195,7 +203,7 @@ def _hard_block_reasons(
         )
 
     if (
-        _has_local_data(wallet)
+        has_local_data
         and _clip(wallet.smart_score)
         < MIN_SMART_SCORE
     ):
