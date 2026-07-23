@@ -129,7 +129,15 @@ def run_extended_candidate_history(
         )
         if wallet is None:
             raise ValueError("Wallet scoperto non trovato")
-        if not force and wallet.quality_classification != "COPIABILE":
+        allowed_history_quality_classifications = {
+            "COPIABILE",
+            "OSSERVAZIONE",
+        }
+        if (
+            not force
+            and wallet.quality_classification
+            not in allowed_history_quality_classifications
+        ):
             raise ValueError(
                 "Lo storico esteso è consentito solo ai wallet COPIABILE."
             )

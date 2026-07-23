@@ -188,9 +188,9 @@ def test_extended_history_deduplicates_overlapping_pages(db, monkeypatch):
     assert db.query(Trade).count() == 14
 
 
-def test_extended_history_rejects_non_copyable_without_force(db):
+def test_extended_history_rejects_suspicious_without_force(db):
     wallet = db.query(DiscoveredWallet).filter_by(wallet_address=WALLET).one()
-    wallet.quality_classification = "OSSERVAZIONE"
+    wallet.quality_classification = "SOSPETTO"
     db.commit()
 
     with pytest.raises(ValueError, match="COPIABILE"):

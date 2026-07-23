@@ -253,7 +253,7 @@ function Discovery() {
           return current;
         }
         return (
-          rows.find((wallet) => wallet.quality_classification === "COPIABILE")
+          rows.find((wallet) => ["COPIABILE", "OSSERVAZIONE"].includes(wallet.quality_classification))
             ?.wallet_address ?? rows[0]?.wallet_address ?? ""
         );
       });
@@ -667,14 +667,14 @@ function Discovery() {
           </div>
           <div className="p-5">
             <label className="block text-sm text-slate-400">
-              Wallet candidato COPIABILE
+              Wallet candidato COPIABILE / OSSERVAZIONE
               <select
                 value={candidateWallet}
                 onChange={(event) => setCandidateWallet(event.target.value)}
                 className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 font-mono text-xs"
               >
                 {discoveredWallets
-                  .filter((wallet) => wallet.quality_classification === "COPIABILE")
+                  .filter((wallet) => ["COPIABILE", "OSSERVAZIONE"].includes(wallet.quality_classification))
                   .map((wallet) => (
                     <option key={wallet.wallet_address} value={wallet.wallet_address}>
                       {shortenAddress(wallet.wallet_address, 12, 10)} · Q {formatNumber(wallet.quality_score)} · {wallet.promotion_status}
@@ -1337,11 +1337,11 @@ function Discovery() {
                         <button
                           type="button"
                           onClick={() => handlePromotionBacktest(wallet.wallet_address)}
-                          disabled={runningBacktest || wallet.quality_classification !== "COPIABILE"}
+                          disabled={runningBacktest || !["COPIABILE", "OSSERVAZIONE"].includes(wallet.quality_classification)}
                           title={(wallet.promotion_reasons ?? []).join(", ")}
                           className={`rounded-full border px-2.5 py-1 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-60 ${promotion.className}`}
                         >
-                          {wallet.promotion_status === "NON_ANALIZZATO" && wallet.quality_classification === "COPIABILE"
+                          {wallet.promotion_status === "NON_ANALIZZATO" && ["COPIABILE", "OSSERVAZIONE"].includes(wallet.quality_classification)
                             ? "BACKTEST"
                             : promotion.label}
                         </button>
