@@ -1,125 +1,157 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
   getDiscoveredWallets,
+  refreshDiscoveredWalletActivity,
   runDiscovery,
   runSmartDiscovery,
 } from "../services/api";
 
-const DISCOVERY_HISTORY_KEY =
-  "smartmoney-discovery-history";
 
-function shortenAddress(address, start = 10, end = 8) {
-  if (!address) {
-    return "-";
-  }
+const DISCOVERY_HISTORY_KEY = "smartmoney-discovery-history";
+const ACTIVITY_OPTIONS = [
+  "ALL",
+  "ATTIVO",
+  "POCO_ATTIVO",
+  "INATTIVO",
+  "IPERATTIVO",
+  "NON_ANALIZZATO",
+];
 
-  if (address.length <= start + end + 3) {
-    return address;
-  }
 
+function shortenAddress(address, start = 9, end = 7) {
+  if (!address) return "-";
+  if (address.length <= start + end + 3) return address;
   return `${address.slice(0, start)}...${address.slice(-end)}`;
 }
 
+
 function formatNumber(value, digits = 2) {
   const number = Number(value);
-
-  if (!Number.isFinite(number)) {
-    return "0";
-  }
-
+  if (!Number.isFinite(number)) return "0";
   return number.toLocaleString("it-IT", {
+    minimumFractionDigits: 0,
     maximumFractionDigits: digits,
   });
 }
 
+
+function formatDate(value) {
+  if (!value) return "Nessuno swap";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("it-IT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+
+function formatFrequency(value) {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes <= 0) return "-";
+  if (minutes < 60) return `${formatNumber(minutes, 1)} min`;
+  return `${formatNumber(minutes / 60, 1)} h`;
+}
+
+
 function loadDiscoveryHistory() {
   try {
-    const storedValue = window.localStorage.getItem(
-      DISCOVERY_HISTORY_KEY
-    );
-
-    if (!storedValue) {
-      return [];
-    }
-
-    const parsedValue = JSON.parse(storedValue);
-
-    return Array.isArray(parsedValue) ? parsedValue : [];
+    const stored = window.localStorage.getItem(DISCOVERY_HISTORY_KEY);
+    if (!stored) return [];
+    const parsed = JSON.parse(stored);
+    return Array.isArray(parsed) ? parsed : [];
   } catch (error) {
-    console.error(
-      "Errore caricamento cronologia discovery:",
-      error
-    );
-
+    console.error("Errore caricamento cronologia discovery:", error);
     return [];
   }
 }
+
 
 function getResultWalletAddress(wallet) {
   return wallet?.wallet ?? wallet?.wallet_address ?? "";
 }
 
+
+function activityBadge(classification) {
+  const normalized = classification || "NON_ANALIZZATO";
+  const classes = {
+    ATTIVO: "border-green-700 bg-green-950/60 text-green-300",
+    POCO_ATTIVO: "border-amber-700 bg-amber-950/60 text-amber-300",
+    INATTIVO: "border-slate-600 bg-slate-900 text-slate-400",
+    IPERATTIVO: "border-red-700 bg-red-950/60 text-red-300",
+    NON_ANALIZZATO: "border-blue-800 bg-blue-950/40 text-blue-300",
+  };
+  return {
+    label: normalized.replace("_", " "),
+    className: classes[normalized] ?? classes.NON_ANALIZZATO,
+  };
+}
+
+
+function eligibilityBadge(wallet) {
+  if (wallet.eligible) {
+    return {
+      label: "IDONEO",
+      className: "border-green-700 bg-green-950/60 text-green-300",
+    };
+  }
+  return {
+    label: "ESCLUSO",
+    className: "border-red-800 bg-red-950/40 text-red-300",
+  };
+}
+
+
+function StatCard({ label, value, tone = "text-white", subtitle }) {
+  return (
+    <div className="rounded-xl border border-slate-700 bg-slate-800 p-5">
+      <p className="text-sm text-slate-400">{label}</p>
+      <p className={`mt-2 text-3xl font-bold ${tone}`}>{value}</p>
+      {subtitle && <p className="mt-2 text-xs text-slate-500">{subtitle}</p>}
+    </div>
+  );
+}
+
+
 function Discovery() {
   const [mode, setMode] = useState("FULL");
   const [seedWallet, setSeedWallet] = useState("");
-
   const [maxTokens, setMaxTokens] = useState(3);
-  const [maxWalletsPerToken, setMaxWalletsPerToken] =
-    useState(3);
-
+  const [maxWalletsPerToken, setMaxWalletsPerToken] = useState(3);
   const [maxDepth, setMaxDepth] = useState(2);
-  const [
-    maxTokensPerWallet,
-    setMaxTokensPerWallet,
-  ] = useState(5);
-  const [
-    smartMaxWalletsPerToken,
-    setSmartMaxWalletsPerToken,
-  ] = useState(5);
-  const [minSmartScore, setMinSmartScore] =
-    useState(60);
+  const [maxTokensPerWallet, setMaxTokensPerWallet] = useState(5);
+  const [smartMaxWalletsPerToken, setSmartMaxWalletsPerToken] = useState(5);
+  const [minSmartScore, setMinSmartScore] = useState(60);
 
-  const [discoveredWallets, setDiscoveredWallets] =
-    useState([]);
+  const [discoveredWallets, setDiscoveredWallets] = useState([]);
   const [result, setResult] = useState(null);
-  const [historyItems, setHistoryItems] = useState(
-    loadDiscoveryHistory
-  );
+  const [historyItems, setHistoryItems] = useState(loadDiscoveryHistory);
 
   const [search, setSearch] = useState("");
   const [minimumScore, setMinimumScore] = useState(0);
+  const [activityFilter, setActivityFilter] = useState("ALL");
+  const [eligibleOnly, setEligibleOnly] = useState(false);
+  const [sortBy, setSortBy] = useState("ranking_score");
 
-  const [loadingWallets, setLoadingWallets] =
-    useState(true);
+  const [loadingWallets, setLoadingWallets] = useState(true);
   const [running, setRunning] = useState(false);
+  const [refreshingActivity, setRefreshingActivity] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
   const loadDiscoveredWallets = useCallback(async () => {
     setLoadingWallets(true);
-
     try {
-      const response = await getDiscoveredWallets(0, 250);
-
-      setDiscoveredWallets(
-        Array.isArray(response.data) ? response.data : []
-      );
+      const response = await getDiscoveredWallets(0, 500);
+      setDiscoveredWallets(Array.isArray(response.data) ? response.data : []);
     } catch (requestError) {
-      console.error(
-        "Errore caricamento wallet scoperti:",
-        requestError
-      );
-
-      setError(
-        "Impossibile caricare i wallet scoperti dal backend."
-      );
+      console.error("Errore caricamento wallet scoperti:", requestError);
+      setError("Impossibile caricare i wallet scoperti dal backend.");
     } finally {
       setLoadingWallets(false);
     }
@@ -136,71 +168,63 @@ function Discovery() {
         JSON.stringify(historyItems)
       );
     } catch (storageError) {
-      console.error(
-        "Errore salvataggio cronologia:",
-        storageError
-      );
+      console.error("Errore salvataggio cronologia:", storageError);
     }
   }, [historyItems]);
 
   const filteredWallets = useMemo(() => {
-    const normalizedSearch = search
-      .trim()
-      .toLowerCase();
-
+    const normalizedSearch = search.trim().toLowerCase();
     return [...discoveredWallets]
       .filter((wallet) => {
-        const matchesScore =
-          Number(wallet.smart_score ?? 0) >=
-          Number(minimumScore || 0);
-
         const matchesSearch =
           !normalizedSearch ||
-          (wallet.wallet_address ?? "")
-            .toLowerCase()
-            .includes(normalizedSearch) ||
-          (wallet.status ?? "")
-            .toLowerCase()
-            .includes(normalizedSearch) ||
-          (wallet.discovered_from_token ?? "")
-            .toLowerCase()
-            .includes(normalizedSearch);
-
-        return matchesScore && matchesSearch;
+          String(wallet.wallet_address ?? "").toLowerCase().includes(normalizedSearch) ||
+          String(wallet.discovered_from_token ?? "").toLowerCase().includes(normalizedSearch) ||
+          String(wallet.activity_classification ?? "").toLowerCase().includes(normalizedSearch);
+        const matchesScore = Number(wallet.smart_score ?? 0) >= Number(minimumScore || 0);
+        const matchesActivity =
+          activityFilter === "ALL" || wallet.activity_classification === activityFilter;
+        const matchesEligibility = !eligibleOnly || Boolean(wallet.eligible);
+        return matchesSearch && matchesScore && matchesActivity && matchesEligibility;
       })
-      .sort(
-        (firstWallet, secondWallet) =>
-          Number(secondWallet.smart_score ?? 0) -
-          Number(firstWallet.smart_score ?? 0)
-      );
-  }, [discoveredWallets, search, minimumScore]);
+      .sort((first, second) => {
+        if (sortBy === "last_swap_at") {
+          return new Date(second.last_swap_at ?? 0) - new Date(first.last_swap_at ?? 0);
+        }
+        return Number(second[sortBy] ?? 0) - Number(first[sortBy] ?? 0);
+      });
+  }, [
+    discoveredWallets,
+    search,
+    minimumScore,
+    activityFilter,
+    eligibleOnly,
+    sortBy,
+  ]);
 
-  const resultRanking = useMemo(() => {
-    const ranking = result?.ranking;
+  const resultRanking = useMemo(
+    () => (Array.isArray(result?.ranking) ? result.ranking : []),
+    [result]
+  );
 
-    return Array.isArray(ranking) ? ranking : [];
-  }, [result]);
-
-  const bestDiscoveredScore = useMemo(() => {
-    if (discoveredWallets.length === 0) {
-      return "-";
-    }
-
-    return formatNumber(
-      Math.max(
-        ...discoveredWallets.map(
-          (wallet) =>
-            Number(wallet.smart_score) || 0
-        )
-      )
-    );
+  const summary = useMemo(() => {
+    const count = (classification) =>
+      discoveredWallets.filter(
+        (wallet) => wallet.activity_classification === classification
+      ).length;
+    return {
+      total: discoveredWallets.length,
+      eligible: discoveredWallets.filter((wallet) => wallet.eligible).length,
+      active: count("ATTIVO"),
+      low: count("POCO_ATTIVO"),
+      inactive: count("INATTIVO"),
+      hyperactive: count("IPERATTIVO"),
+    };
   }, [discoveredWallets]);
 
   function addHistoryItem(responseData) {
     const newItem = {
-      id:
-        globalThis.crypto?.randomUUID?.() ??
-        `${Date.now()}-${Math.random()}`,
+      id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
       mode,
       seed_wallet: seedWallet.trim(),
       created_at: new Date().toISOString(),
@@ -208,27 +232,16 @@ function Discovery() {
         mode === "SMART"
           ? responseData.smart_wallets_found ?? 0
           : responseData.wallets_discovered ?? 0,
-      wallets_analyzed:
-        responseData.wallets_analyzed ??
-        responseData.ranking?.length ??
-        0,
-      tokens_processed:
-        responseData.tokens_processed ?? null,
-      max_depth:
-        responseData.max_depth ?? null,
+      wallets_analyzed: responseData.wallets_analyzed ?? responseData.ranking?.length ?? 0,
+      wallets_eligible: responseData.wallets_eligible ?? 0,
     };
-
-    setHistoryItems((currentItems) => [
-      newItem,
-      ...currentItems,
-    ].slice(0, 20));
+    setHistoryItems((items) => [newItem, ...items].slice(0, 20));
   }
 
   async function handleRunDiscovery() {
     const normalizedWallet = seedWallet.trim();
-
     if (!normalizedWallet) {
-      alert("Inserisci il seed wallet");
+      setError("Inserisci un seed wallet.");
       return;
     }
 
@@ -252,49 +265,46 @@ function Discovery() {
               maxTokens,
               maxWalletsPerToken
             );
-
       setResult(response.data);
       addHistoryItem(response.data);
-
-      const walletsFound =
-        mode === "SMART"
-          ? response.data.smart_wallets_found ?? 0
-          : response.data.wallets_discovered ?? 0;
-
       setMessage(
-        `Discovery completata: ${walletsFound} wallet trovati`
+        `Discovery completata: ${response.data.wallets_analyzed ?? 0} wallet analizzati, ${response.data.wallets_eligible ?? 0} idonei.`
       );
-
       await loadDiscoveredWallets();
     } catch (requestError) {
-      console.error(
-        "Errore durante la discovery:",
-        requestError
-      );
-
-      const backendMessage =
-        requestError.response?.data?.detail;
-
+      console.error("Errore durante la discovery:", requestError);
+      const backendMessage = requestError.response?.data?.detail;
       setError(
         typeof backendMessage === "string"
           ? backendMessage
-          : "Discovery non completata. Controlla il backend e il seed wallet."
+          : "Discovery non completata. Controlla backend, seed wallet e limiti Helius."
       );
     } finally {
       setRunning(false);
     }
   }
 
-  function clearHistory() {
-    if (historyItems.length === 0) {
-      return;
+  async function handleRefreshActivity() {
+    setRefreshingActivity(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await refreshDiscoveredWalletActivity(500);
+      setMessage(
+        `${response.data.wallets_refreshed} wallet ricalcolati dal database. Richieste Helius: ${response.data.helius_requests}.`
+      );
+      await loadDiscoveredWallets();
+    } catch (requestError) {
+      console.error("Errore ricalcolo attività:", requestError);
+      setError("Impossibile ricalcolare il ranking attività dal database.");
+    } finally {
+      setRefreshingActivity(false);
     }
+  }
 
-    const confirmed = window.confirm(
-      "Vuoi cancellare tutta la cronologia delle discovery?"
-    );
-
-    if (confirmed) {
+  function clearHistory() {
+    if (!historyItems.length) return;
+    if (window.confirm("Vuoi cancellare la cronologia locale delle discovery?")) {
       setHistoryItems([]);
     }
   }
@@ -302,216 +312,171 @@ function Discovery() {
   return (
     <div className="min-h-screen bg-slate-900 text-white">
       <header className="border-b border-slate-700">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 p-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="mx-auto flex max-w-[1500px] flex-col gap-4 p-6 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <h1 className="text-3xl font-bold">
-              Discovery Center
-            </h1>
-
-            <p className="mt-2 text-slate-400">
-              Trova e analizza nuovi wallet partendo da
-              un seed wallet
+            <h1 className="text-3xl font-bold">Active Wallet Discovery & Ranking</h1>
+            <p className="mt-2 max-w-3xl text-slate-400">
+              Scopre wallet, misura l'attività recente e separa wallet attivi,
+              poco attivi, inattivi e iperattivi prima dell'idoneità.
             </p>
           </div>
-
-          <button
-            type="button"
-            onClick={loadDiscoveredWallets}
-            disabled={loadingWallets}
-            className="w-fit rounded-lg border border-blue-700 bg-blue-900/40 px-4 py-2 text-sm font-semibold text-blue-300 hover:bg-blue-900/70 disabled:opacity-50"
-          >
-            {loadingWallets
-              ? "Aggiornamento..."
-              : "Aggiorna wallet"}
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={handleRefreshActivity}
+              disabled={refreshingActivity}
+              className="rounded-lg border border-emerald-700 bg-emerald-950/50 px-4 py-2 text-sm font-semibold text-emerald-300 disabled:opacity-50"
+            >
+              {refreshingActivity ? "Ricalcolo..." : "Ricalcola attività DB"}
+            </button>
+            <button
+              type="button"
+              onClick={loadDiscoveredWallets}
+              disabled={loadingWallets}
+              className="rounded-lg border border-blue-700 bg-blue-950/50 px-4 py-2 text-sm font-semibold text-blue-300 disabled:opacity-50"
+            >
+              {loadingWallets ? "Aggiornamento..." : "Aggiorna elenco"}
+            </button>
+          </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl p-4 sm:p-8">
+      <main className="mx-auto max-w-[1500px] p-4 sm:p-8">
+        <div className="mb-6 rounded-xl border border-amber-800 bg-amber-950/30 p-4 text-sm text-amber-200">
+          Il ricalcolo attività usa solo i trade già salvati e non consuma crediti Helius.
+          Questo blocco non abilita lo stream, non arma LIVE e non applica wallet al worker.
+        </div>
+
         {error && (
-          <div className="mb-6 rounded-lg border border-red-700 bg-red-900/30 p-4 text-red-300">
+          <div className="mb-6 rounded-lg border border-red-700 bg-red-950/40 p-4 text-red-300">
             {error}
           </div>
         )}
-
         {message && (
-          <div className="mb-6 rounded-lg border border-green-700 bg-green-900/30 p-4 text-green-300">
+          <div className="mb-6 rounded-lg border border-green-700 bg-green-950/40 p-4 text-green-300">
             {message}
           </div>
         )}
 
+        <section className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+          <StatCard label="Wallet scoperti" value={summary.total} tone="text-blue-300" />
+          <StatCard label="Idonei" value={summary.eligible} tone="text-green-300" />
+          <StatCard label="Attivi" value={summary.active} tone="text-emerald-300" />
+          <StatCard label="Poco attivi" value={summary.low} tone="text-amber-300" />
+          <StatCard label="Inattivi" value={summary.inactive} tone="text-slate-300" />
+          <StatCard label="Iperattivi" value={summary.hyperactive} tone="text-red-300" />
+        </section>
+
         <section className="mb-8 overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
           <div className="border-b border-slate-700 p-5">
-            <h2 className="text-xl font-bold">
-              Nuova discovery
-            </h2>
-
+            <h2 className="text-xl font-bold">Nuova discovery</h2>
             <p className="mt-1 text-sm text-slate-400">
-              Full Discovery è più rapida. Smart Discovery
-              esplora il network a più livelli.
+              Ogni wallet importato viene sincronizzato, profilato, classificato e salvato nel ranking attività.
             </p>
           </div>
-
           <div className="p-5">
             <div className="mb-5 grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setMode("FULL")}
-                className={`rounded-lg border px-4 py-3 font-semibold ${
-                  mode === "FULL"
-                    ? "border-blue-600 bg-blue-600 text-white"
-                    : "border-slate-600 bg-slate-900 text-slate-300"
-                }`}
-              >
-                Full Discovery
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setMode("SMART")}
-                className={`rounded-lg border px-4 py-3 font-semibold ${
-                  mode === "SMART"
-                    ? "border-purple-600 bg-purple-600 text-white"
-                    : "border-slate-600 bg-slate-900 text-slate-300"
-                }`}
-              >
-                Smart Discovery
-              </button>
+              {[
+                ["FULL", "Full Discovery"],
+                ["SMART", "Smart Discovery"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setMode(value)}
+                  className={`rounded-lg border px-4 py-3 font-semibold ${
+                    mode === value
+                      ? value === "SMART"
+                        ? "border-purple-600 bg-purple-600"
+                        : "border-blue-600 bg-blue-600"
+                      : "border-slate-600 bg-slate-900 text-slate-300"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
 
             <input
               type="text"
               value={seedWallet}
-              onChange={(event) =>
-                setSeedWallet(event.target.value)
-              }
+              onChange={(event) => setSeedWallet(event.target.value)}
               onKeyDown={(event) => {
-                if (
-                  event.key === "Enter" &&
-                  !running
-                ) {
-                  handleRunDiscovery();
-                }
+                if (event.key === "Enter" && !running) handleRunDiscovery();
               }}
               placeholder="Seed wallet address..."
-              className="mb-5 w-full rounded-lg border border-slate-600 bg-slate-900 px-4 py-3 font-mono outline-none focus:border-blue-500"
+              className="mb-5 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 font-mono outline-none focus:border-blue-500"
             />
 
             {mode === "FULL" ? (
-              <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <label>
-                  <span className="mb-2 block text-sm text-slate-400">
-                    Max token
-                  </span>
-
-                  <input
-                    type="number"
-                    min="1"
-                    max="20"
-                    value={maxTokens}
-                    onChange={(event) =>
-                      setMaxTokens(
-                        Number(event.target.value)
-                      )
-                    }
-                    className="w-full rounded-lg border border-slate-600 bg-slate-900 px-4 py-3 outline-none focus:border-blue-500"
-                  />
-                </label>
-
-                <label>
-                  <span className="mb-2 block text-sm text-slate-400">
-                    Wallet per token
-                  </span>
-
-                  <input
-                    type="number"
-                    min="1"
-                    max="20"
-                    value={maxWalletsPerToken}
-                    onChange={(event) =>
-                      setMaxWalletsPerToken(
-                        Number(event.target.value)
-                      )
-                    }
-                    className="w-full rounded-lg border border-slate-600 bg-slate-900 px-4 py-3 outline-none focus:border-blue-500"
-                  />
-                </label>
-              </div>
-            ) : (
-              <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <label>
-                  <span className="mb-2 block text-sm text-slate-400">
-                    Profondità
-                  </span>
-
+              <div className="mb-5 grid gap-4 sm:grid-cols-2">
+                <label className="text-sm text-slate-400">
+                  Max token
                   <input
                     type="number"
                     min="1"
                     max="5"
+                    value={maxTokens}
+                    onChange={(event) => setMaxTokens(Number(event.target.value))}
+                    className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 text-white"
+                  />
+                </label>
+                <label className="text-sm text-slate-400">
+                  Wallet per token
+                  <input
+                    type="number"
+                    min="1"
+                    max="5"
+                    value={maxWalletsPerToken}
+                    onChange={(event) => setMaxWalletsPerToken(Number(event.target.value))}
+                    className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 text-white"
+                  />
+                </label>
+              </div>
+            ) : (
+              <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <label className="text-sm text-slate-400">
+                  Profondità
+                  <input
+                    type="number"
+                    min="1"
+                    max="3"
                     value={maxDepth}
-                    onChange={(event) =>
-                      setMaxDepth(
-                        Number(event.target.value)
-                      )
-                    }
-                    className="w-full rounded-lg border border-slate-600 bg-slate-900 px-4 py-3 outline-none focus:border-purple-500"
+                    onChange={(event) => setMaxDepth(Number(event.target.value))}
+                    className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 text-white"
                   />
                 </label>
-
-                <label>
-                  <span className="mb-2 block text-sm text-slate-400">
-                    Token per wallet
-                  </span>
-
+                <label className="text-sm text-slate-400">
+                  Token per wallet
                   <input
                     type="number"
                     min="1"
-                    max="20"
+                    max="10"
                     value={maxTokensPerWallet}
-                    onChange={(event) =>
-                      setMaxTokensPerWallet(
-                        Number(event.target.value)
-                      )
-                    }
-                    className="w-full rounded-lg border border-slate-600 bg-slate-900 px-4 py-3 outline-none focus:border-purple-500"
+                    onChange={(event) => setMaxTokensPerWallet(Number(event.target.value))}
+                    className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 text-white"
                   />
                 </label>
-
-                <label>
-                  <span className="mb-2 block text-sm text-slate-400">
-                    Wallet per token
-                  </span>
-
+                <label className="text-sm text-slate-400">
+                  Wallet per token
                   <input
                     type="number"
                     min="1"
-                    max="20"
+                    max="10"
                     value={smartMaxWalletsPerToken}
-                    onChange={(event) =>
-                      setSmartMaxWalletsPerToken(
-                        Number(event.target.value)
-                      )
-                    }
-                    className="w-full rounded-lg border border-slate-600 bg-slate-900 px-4 py-3 outline-none focus:border-purple-500"
+                    onChange={(event) => setSmartMaxWalletsPerToken(Number(event.target.value))}
+                    className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 text-white"
                   />
                 </label>
-
-                <label>
-                  <span className="mb-2 block text-sm text-slate-400">
-                    Smart Score minimo
-                  </span>
-
+                <label className="text-sm text-slate-400">
+                  Smart Score minimo
                   <input
                     type="number"
                     min="0"
                     max="100"
                     value={minSmartScore}
-                    onChange={(event) =>
-                      setMinSmartScore(
-                        Number(event.target.value)
-                      )
-                    }
-                    className="w-full rounded-lg border border-slate-600 bg-slate-900 px-4 py-3 outline-none focus:border-purple-500"
+                    onChange={(event) => setMinSmartScore(Number(event.target.value))}
+                    className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 text-white"
                   />
                 </label>
               </div>
@@ -521,19 +486,13 @@ function Discovery() {
               type="button"
               onClick={handleRunDiscovery}
               disabled={running}
-              className={`w-full rounded-lg px-6 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+              className={`w-full rounded-lg px-6 py-3 font-semibold disabled:opacity-50 ${
                 mode === "SMART"
                   ? "bg-purple-600 hover:bg-purple-700"
                   : "bg-blue-600 hover:bg-blue-700"
               }`}
             >
-              {running
-                ? "Discovery in esecuzione..."
-                : `Avvia ${
-                    mode === "SMART"
-                      ? "Smart Discovery"
-                      : "Full Discovery"
-                  }`}
+              {running ? "Discovery in esecuzione..." : `Avvia ${mode === "SMART" ? "Smart" : "Full"} Discovery`}
             </button>
           </div>
         </section>
@@ -541,134 +500,61 @@ function Discovery() {
         {result && (
           <section className="mb-8 overflow-hidden rounded-xl border border-green-800 bg-slate-800">
             <div className="border-b border-slate-700 p-5">
-              <h2 className="text-xl font-bold">
-                Ultimo risultato
-              </h2>
-
+              <h2 className="text-xl font-bold">Ultimo risultato</h2>
               <p className="mt-1 break-all font-mono text-sm text-slate-400">
-                {result.seed_wallet}
+                {result.seed_wallet ?? seedWallet}
               </p>
             </div>
-
-            <div className="grid grid-cols-2 gap-4 p-5 lg:grid-cols-4">
-              <div className="rounded-lg bg-slate-900 p-4">
-                <p className="text-sm text-slate-400">
-                  Modalità
-                </p>
-
-                <p className="mt-2 text-xl font-bold">
-                  {mode}
-                </p>
-              </div>
-
-              <div className="rounded-lg bg-slate-900 p-4">
-                <p className="text-sm text-slate-400">
-                  Wallet trovati
-                </p>
-
-                <p className="mt-2 text-xl font-bold text-green-300">
-                  {result.smart_wallets_found ??
-                    result.wallets_discovered ??
-                    0}
-                </p>
-              </div>
-
-              <div className="rounded-lg bg-slate-900 p-4">
-                <p className="text-sm text-slate-400">
-                  Wallet analizzati
-                </p>
-
-                <p className="mt-2 text-xl font-bold text-blue-300">
-                  {result.wallets_analyzed ??
-                    resultRanking.length}
-                </p>
-              </div>
-
-              <div className="rounded-lg bg-slate-900 p-4">
-                <p className="text-sm text-slate-400">
-                  Token processati
-                </p>
-
-                <p className="mt-2 text-xl font-bold text-purple-300">
-                  {result.tokens_processed ?? "-"}
-                </p>
-              </div>
+            <div className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-5">
+              <StatCard label="Stato" value={result.status ?? "COMPLETED"} />
+              <StatCard label="Analizzati" value={result.wallets_analyzed ?? 0} tone="text-blue-300" />
+              <StatCard label="Idonei" value={result.wallets_eligible ?? 0} tone="text-green-300" />
+              <StatCard label="Falliti" value={result.wallets_failed ?? 0} tone="text-red-300" />
+              <StatCard label="Token processati" value={result.tokens_processed ?? "-"} tone="text-purple-300" />
             </div>
-
             {resultRanking.length > 0 && (
               <div className="overflow-x-auto border-t border-slate-700">
-                <table className="w-full min-w-[760px]">
-                  <thead className="bg-slate-700">
+                <table className="w-full min-w-[1150px] text-sm">
+                  <thead className="bg-slate-900 text-slate-400">
                     <tr>
-                      <th className="p-4 text-left">
-                        Wallet
-                      </th>
-                      <th className="p-4">Score</th>
-                      <th className="p-4">DNA</th>
-                      <th className="p-4">ROI</th>
-                      <th className="p-4">
-                        Win Rate
-                      </th>
+                      <th className="p-4 text-left">Wallet</th>
+                      <th className="p-4">Ranking</th>
+                      <th className="p-4">Smart</th>
+                      <th className="p-4">Attività</th>
+                      <th className="p-4">Swap 24h / 7d</th>
+                      <th className="p-4">BUY / SELL 7d</th>
+                      <th className="p-4">Ultimo swap</th>
+                      <th className="p-4">Idoneità</th>
                     </tr>
                   </thead>
-
-                  <tbody>
-                    {resultRanking
-                      .slice(0, 10)
-                      .map((wallet, index) => {
-                        const walletAddress =
-                          getResultWalletAddress(wallet);
-
-                        return (
-                          <tr
-                            key={
-                              walletAddress || index
-                            }
-                            className="border-t border-slate-700"
-                          >
-                            <td className="p-4 font-mono text-sm">
-                              {walletAddress ? (
-                                <Link
-                                  to={`/wallet/${walletAddress}`}
-                                  className="text-blue-400 hover:underline"
-                                  title={walletAddress}
-                                >
-                                  {shortenAddress(
-                                    walletAddress
-                                  )}
-                                </Link>
-                              ) : (
-                                "-"
-                              )}
-                            </td>
-
-                            <td className="text-center font-bold text-green-300">
-                              {formatNumber(
-                                wallet.smart_score
-                              )}
-                            </td>
-
-                            <td className="text-center text-purple-300">
-                              {wallet.classification ??
-                                "NORMAL"}
-                            </td>
-
-                            <td className="text-center">
-                              {formatNumber(
-                                wallet.roi_percent
-                              )}
-                              %
-                            </td>
-
-                            <td className="text-center">
-                              {formatNumber(
-                                wallet.win_rate_percent
-                              )}
-                              %
-                            </td>
-                          </tr>
-                        );
-                      })}
+                  <tbody className="divide-y divide-slate-700">
+                    {resultRanking.slice(0, 15).map((wallet, index) => {
+                      const address = getResultWalletAddress(wallet);
+                      const activity = activityBadge(wallet.activity_classification);
+                      const eligibility = eligibilityBadge(wallet);
+                      return (
+                        <tr key={address || index}>
+                          <td className="p-4 font-mono text-xs">
+                            {address ? (
+                              <Link to={`/wallet/${address}`} className="text-blue-400 hover:underline">
+                                {shortenAddress(address)}
+                              </Link>
+                            ) : "-"}
+                          </td>
+                          <td className="p-4 text-center font-bold text-cyan-300">{formatNumber(wallet.ranking_score)}</td>
+                          <td className="p-4 text-center font-bold text-blue-300">{formatNumber(wallet.smart_score)}</td>
+                          <td className="p-4 text-center">
+                            <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${activity.className}`}>{activity.label}</span>
+                          </td>
+                          <td className="p-4 text-center text-slate-300">{wallet.swaps_24h ?? 0} / {wallet.swaps_7d ?? 0}</td>
+                          <td className="p-4 text-center text-slate-300">{wallet.buys_7d ?? 0} / {wallet.sells_7d ?? 0}</td>
+                          <td className="p-4 text-center text-xs text-slate-400">{formatDate(wallet.last_swap_at)}</td>
+                          <td className="p-4 text-center">
+                            <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${eligibility.className}`}>{eligibility.label}</span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -676,191 +562,128 @@ function Discovery() {
           </section>
         )}
 
-        <section className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-slate-700 bg-slate-800 p-5">
-            <p className="text-sm text-slate-400">
-              Wallet scoperti
-            </p>
-
-            <p className="mt-2 text-3xl font-bold text-blue-300">
-              {discoveredWallets.length}
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-slate-700 bg-slate-800 p-5">
-            <p className="text-sm text-slate-400">
-              Risultati visualizzati
-            </p>
-
-            <p className="mt-2 text-3xl font-bold text-purple-300">
-              {filteredWallets.length}
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-slate-700 bg-slate-800 p-5">
-            <p className="text-sm text-slate-400">
-              Miglior Smart Score
-            </p>
-
-            <p className="mt-2 text-3xl font-bold text-green-300">
-              {bestDiscoveredScore}
-            </p>
-          </div>
-        </section>
-
         <section className="mb-8 overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
           <div className="border-b border-slate-700 p-5">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <h2 className="text-xl font-bold">Ranking wallet scoperti</h2>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
               <input
                 type="text"
                 value={search}
-                onChange={(event) =>
-                  setSearch(event.target.value)
-                }
-                placeholder="Cerca wallet, token o stato..."
-                className="rounded-lg border border-slate-600 bg-slate-900 px-4 py-3 outline-none focus:border-blue-500 md:col-span-2"
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Wallet, token o classe..."
+                className="rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 xl:col-span-2"
               />
-
               <input
                 type="number"
                 min="0"
                 max="100"
                 value={minimumScore}
-                onChange={(event) =>
-                  setMinimumScore(
-                    Number(event.target.value)
-                  )
-                }
-                placeholder="Score minimo"
-                className="rounded-lg border border-slate-600 bg-slate-900 px-4 py-3 outline-none focus:border-blue-500"
+                onChange={(event) => setMinimumScore(Number(event.target.value))}
+                placeholder="Smart Score minimo"
+                className="rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
               />
+              <select
+                value={activityFilter}
+                onChange={(event) => setActivityFilter(event.target.value)}
+                className="rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+              >
+                {ACTIVITY_OPTIONS.map((option) => (
+                  <option key={option} value={option}>{option.replace("_", " ")}</option>
+                ))}
+              </select>
+              <select
+                value={sortBy}
+                onChange={(event) => setSortBy(event.target.value)}
+                className="rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+              >
+                <option value="ranking_score">Ranking Score</option>
+                <option value="smart_score">Smart Score</option>
+                <option value="activity_score">Activity Score</option>
+                <option value="last_swap_at">Ultimo swap</option>
+                <option value="volume_7d_sol">Volume 7d</option>
+              </select>
+              <label className="flex items-center gap-3 rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 text-sm text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={eligibleOnly}
+                  onChange={(event) => setEligibleOnly(event.target.checked)}
+                />
+                Solo idonei
+              </label>
             </div>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1050px]">
-              <thead className="bg-slate-700">
+            <table className="w-full min-w-[1650px] text-sm">
+              <thead className="bg-slate-900 text-slate-400">
                 <tr>
-                  <th className="p-4 text-left">
-                    Wallet
-                  </th>
-                  <th className="p-4">Score</th>
-                  <th className="p-4">ROI</th>
-                  <th className="p-4">Win Rate</th>
-                  <th className="p-4">Profit</th>
-                  <th className="p-4">
-                    Reliable Positions
-                  </th>
-                  <th className="p-4">
-                    Provenienza
-                  </th>
-                  <th className="p-4">Stato</th>
+                  <th className="p-4 text-left">Wallet</th>
+                  <th className="p-4">Ranking</th>
+                  <th className="p-4">Smart</th>
+                  <th className="p-4">Activity</th>
+                  <th className="p-4">Classe</th>
+                  <th className="p-4">Ultimo swap</th>
+                  <th className="p-4">Swap 24h</th>
+                  <th className="p-4">Swap 7d</th>
+                  <th className="p-4">BUY / SELL 7d</th>
+                  <th className="p-4">Volume 24h</th>
+                  <th className="p-4">Volume 7d</th>
+                  <th className="p-4">Giorni attivi</th>
+                  <th className="p-4">Swap/giorno</th>
+                  <th className="p-4">Frequenza media</th>
+                  <th className="p-4">Idoneità</th>
                 </tr>
               </thead>
-
-              <tbody>
-                {loadingWallets ? (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      className="p-10 text-center text-slate-400"
-                    >
-                      Caricamento wallet scoperti...
-                    </td>
-                  </tr>
-                ) : filteredWallets.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      className="p-10 text-center text-slate-400"
-                    >
-                      Nessun wallet trovato.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredWallets.map((wallet) => (
-                    <tr
-                      key={wallet.wallet_address}
-                      className="border-t border-slate-700 hover:bg-slate-700/60"
-                    >
-                      <td className="p-4 font-mono text-sm">
+              <tbody className="divide-y divide-slate-700">
+                {filteredWallets.map((wallet) => {
+                  const activity = activityBadge(wallet.activity_classification);
+                  const eligibility = eligibilityBadge(wallet);
+                  return (
+                    <tr key={wallet.wallet_address} className="hover:bg-slate-700/30">
+                      <td className="p-4 font-mono text-xs">
                         <Link
                           to={`/wallet/${wallet.wallet_address}`}
-                          className="text-blue-400 hover:underline"
                           title={wallet.wallet_address}
+                          className="text-blue-400 hover:underline"
                         >
-                          {shortenAddress(
-                            wallet.wallet_address
-                          )}
+                          {shortenAddress(wallet.wallet_address)}
                         </Link>
+                        <p className="mt-1 text-[10px] text-slate-600">
+                          {wallet.discovered_from_token || "-"}
+                        </p>
                       </td>
-
-                      <td className="text-center font-bold text-green-300">
-                        {formatNumber(
-                          wallet.smart_score
-                        )}
-                      </td>
-
-                      <td
-                        className={`text-center ${
-                          Number(wallet.roi_percent) >= 0
-                            ? "text-green-300"
-                            : "text-red-300"
-                        }`}
-                      >
-                        {formatNumber(
-                          wallet.roi_percent
-                        )}
-                        %
-                      </td>
-
-                      <td className="text-center">
-                        {formatNumber(
-                          wallet.win_rate_percent
-                        )}
-                        %
-                      </td>
-
-                      <td
-                        className={`text-center ${
-                          Number(
-                            wallet.profit_loss_sol
-                          ) >= 0
-                            ? "text-green-300"
-                            : "text-red-300"
-                        }`}
-                      >
-                        {formatNumber(
-                          wallet.profit_loss_sol,
-                          4
-                        )}{" "}
-                        SOL
-                      </td>
-
-                      <td className="text-center">
-                        {wallet.reliable_positions ?? 0}
-                      </td>
-
-                      <td
-                        className="p-4 text-center font-mono text-xs"
-                        title={
-                          wallet.discovered_from_token
-                        }
-                      >
-                        {shortenAddress(
-                          wallet.discovered_from_token,
-                          6,
-                          5
-                        )}
-                      </td>
-
+                      <td className="p-4 text-center font-bold text-cyan-300">{formatNumber(wallet.ranking_score)}</td>
+                      <td className="p-4 text-center font-bold text-blue-300">{formatNumber(wallet.smart_score)}</td>
+                      <td className="p-4 text-center font-bold text-purple-300">{formatNumber(wallet.activity_score)}</td>
                       <td className="p-4 text-center">
-                        <span className="rounded-full bg-blue-900/40 px-3 py-1 text-xs text-blue-300">
-                          {wallet.status ?? "DISCOVERED"}
+                        <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${activity.className}`}>{activity.label}</span>
+                      </td>
+                      <td className="p-4 text-center text-xs text-slate-400">{formatDate(wallet.last_swap_at)}</td>
+                      <td className="p-4 text-center text-slate-300">{wallet.swaps_24h}</td>
+                      <td className="p-4 text-center text-slate-300">{wallet.swaps_7d}</td>
+                      <td className="p-4 text-center text-slate-300">{wallet.buys_7d} / {wallet.sells_7d}</td>
+                      <td className="p-4 text-center text-slate-300">{formatNumber(wallet.volume_24h_sol, 4)} SOL</td>
+                      <td className="p-4 text-center text-slate-300">{formatNumber(wallet.volume_7d_sol, 4)} SOL</td>
+                      <td className="p-4 text-center text-slate-300">{wallet.active_days_7d}</td>
+                      <td className="p-4 text-center text-slate-300">{formatNumber(wallet.average_swaps_per_active_day_7d, 2)}</td>
+                      <td className="p-4 text-center text-slate-300">{formatFrequency(wallet.average_minutes_between_swaps_7d)}</td>
+                      <td className="p-4 text-center">
+                        <span
+                          title={(wallet.eligibility_reasons ?? []).join(", ")}
+                          className={`rounded-full border px-2.5 py-1 text-xs font-bold ${eligibility.className}`}
+                        >
+                          {eligibility.label}
                         </span>
                       </td>
                     </tr>
-                  ))
+                  );
+                })}
+                {!filteredWallets.length && (
+                  <tr>
+                    <td colSpan="15" className="p-10 text-center text-slate-500">
+                      Nessun wallet corrisponde ai filtri selezionati.
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
@@ -870,107 +693,29 @@ function Discovery() {
         <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
           <div className="flex items-center justify-between border-b border-slate-700 p-5">
             <div>
-              <h2 className="text-xl font-bold">
-                Cronologia discovery
-              </h2>
-
-              <p className="mt-1 text-sm text-slate-400">
-                Salvata localmente su questo browser
-              </p>
+              <h2 className="text-xl font-bold">Cronologia locale</h2>
+              <p className="mt-1 text-sm text-slate-400">Ultime 20 esecuzioni memorizzate nel browser.</p>
             </div>
-
             <button
               type="button"
               onClick={clearHistory}
-              disabled={historyItems.length === 0}
-              className="rounded-lg border border-red-700 bg-red-900/30 px-4 py-2 text-sm text-red-300 hover:bg-red-900/60 disabled:opacity-40"
+              className="rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-300"
             >
-              Cancella cronologia
+              Cancella
             </button>
           </div>
-
           <div className="divide-y divide-slate-700">
-            {historyItems.length === 0 ? (
-              <p className="p-8 text-center text-slate-400">
-                Nessuna discovery eseguita.
-              </p>
-            ) : (
-              historyItems.map((item) => (
-                <article
-                  key={item.id}
-                  className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between"
-                >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          item.mode === "SMART"
-                            ? "bg-purple-900/50 text-purple-300"
-                            : "bg-blue-900/50 text-blue-300"
-                        }`}
-                      >
-                        {item.mode}
-                      </span>
-
-                      <span className="text-sm text-slate-500">
-                        {new Date(
-                          item.created_at
-                        ).toLocaleString("it-IT")}
-                      </span>
-                    </div>
-
-                    <Link
-                      to={`/wallet/${item.seed_wallet}`}
-                      className="mt-2 block truncate font-mono text-sm text-blue-400 hover:underline"
-                      title={item.seed_wallet}
-                    >
-                      {item.seed_wallet}
-                    </Link>
-                  </div>
-
-                  <div className="flex flex-wrap gap-5 text-sm">
-                    <div>
-                      <p className="text-slate-500">
-                        Trovati
-                      </p>
-
-                      <p className="font-bold text-green-300">
-                        {item.wallets_found}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="text-slate-500">
-                        Analizzati
-                      </p>
-
-                      <p className="font-bold text-blue-300">
-                        {item.wallets_analyzed}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="text-slate-500">
-                        Token
-                      </p>
-
-                      <p className="font-bold">
-                        {item.tokens_processed ?? "-"}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="text-slate-500">
-                        Depth
-                      </p>
-
-                      <p className="font-bold">
-                        {item.max_depth ?? "-"}
-                      </p>
-                    </div>
-                  </div>
-                </article>
-              ))
+            {historyItems.map((item) => (
+              <div key={item.id} className="grid gap-3 p-4 text-sm md:grid-cols-5">
+                <span className="font-bold text-blue-300">{item.mode}</span>
+                <span className="font-mono text-xs text-slate-400">{shortenAddress(item.seed_wallet)}</span>
+                <span>Analizzati: {item.wallets_analyzed}</span>
+                <span className="text-green-300">Idonei: {item.wallets_eligible ?? 0}</span>
+                <span className="text-slate-500">{formatDate(item.created_at)}</span>
+              </div>
+            ))}
+            {!historyItems.length && (
+              <div className="p-8 text-center text-slate-500">Nessuna discovery nella cronologia locale.</div>
             )}
           </div>
         </section>
@@ -979,4 +724,5 @@ function Discovery() {
   );
 }
 
-export default Discovery;  
+
+export default Discovery;

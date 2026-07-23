@@ -1,12 +1,13 @@
+from __future__ import annotations
+
 from heapq import heappop, heappush
 
 from backend.app.services.discovery_engine import (
+    analyze_and_save_discovered_wallet,
     discover_wallets_from_token_onchain,
     get_traded_tokens_by_wallet,
 )
-from backend.app.services.profile_engine import build_wallet_profile
 from backend.app.services.wallet_graph_engine import save_wallet_edge
-from backend.app.services.wallet_sync_service import sync_wallet
 
 
 def smart_discovery_from_wallet(
@@ -17,46 +18,52 @@ def smart_discovery_from_wallet(
     max_wallets_per_token: int = 5,
     min_smart_score: float = 60,
 ):
-    queue = []
-    heappush(queue, (-100, 0, seed_wallet))
+    queue: list[tuple[float, int, str, str]] = []
+    heappush(queue, (-100.0, 0, seed_wallet, "SMART_SEED"))
 
-    visited = set()
-    smart_wallets = []
+    visited: set[str] = set()
+    ranked_wallets: list[dict] = []
+    analyzed_profiles: list[dict] = []
+    failed_wallets = 0
 
     while queue:
-        _, depth, wallet = heappop(queue)
-
+        _, depth, wallet, source = heappop(queue)
         if wallet in visited:
             continue
-
         visited.add(wallet)
 
         try:
-            sync_wallet(db, wallet)
-            profile = build_wallet_profile(db, wallet)
+            profile = analyze_and_save_discovered_wallet(
+                db,
+                wallet_address=wallet,
+                discovered_from_token=source,
+            )
         except Exception:
+            db.rollback()
+            failed_wallets += 1
             continue
 
-        smart_score = profile["smart_score"]
+        analyzed_profiles.append(profile)
 
-        if smart_score >= min_smart_score:
-            smart_wallets.append(profile)
+        smart_score = float(profile.get("smart_score") or 0)
+        activity_eligible = bool(profile.get("activity_eligible"))
+        if smart_score >= min_smart_score and activity_eligible:
+            ranked_wallets.append(profile)
 
         if depth >= max_depth:
             continue
-
-        if wallet != seed_wallet and smart_score < min_smart_score:
+        if wallet != seed_wallet and (
+            smart_score < min_smart_score or not activity_eligible
+        ):
             continue
 
         token_data = get_traded_tokens_by_wallet(db, wallet)
-
         for token in token_data["tokens"][:max_tokens_per_wallet]:
-            try:
-                discovery = discover_wallets_from_token_onchain(token)
-            except Exception:
+            discovery = discover_wallets_from_token_onchain(token)
+            if discovery.get("status") == "FAILED":
                 continue
 
-            for discovered_wallet in discovery["wallets"][:max_wallets_per_token]:
+            for discovered_wallet in discovery.get("wallets", [])[:max_wallets_per_token]:
                 if discovered_wallet == wallet:
                     continue
 
@@ -69,21 +76,45 @@ def smart_discovery_from_wallet(
                 )
 
                 if discovered_wallet not in visited:
+                    priority = float(profile.get("ranking_score") or smart_score)
                     heappush(
                         queue,
-                        (-smart_score, depth + 1, discovered_wallet),
+                        (-priority, depth + 1, discovered_wallet, token),
                     )
 
-    smart_wallets.sort(
-        key=lambda item: item["smart_score"],
+    ranked_wallets.sort(
+        key=lambda item: (
+            float(item.get("ranking_score") or 0),
+            float(item.get("smart_score") or 0),
+        ),
         reverse=True,
     )
 
+    activity_breakdown = {
+        classification: sum(
+            1
+            for item in analyzed_profiles
+            if item.get("activity_classification") == classification
+        )
+        for classification in (
+            "ATTIVO",
+            "POCO_ATTIVO",
+            "INATTIVO",
+            "IPERATTIVO",
+        )
+    }
+
     return {
+        "status": "COMPLETED" if failed_wallets == 0 else "PARTIAL",
         "seed_wallet": seed_wallet,
         "max_depth": max_depth,
-        "wallets_analyzed": len(visited),
-        "smart_wallets_found": len(smart_wallets),
+        "wallets_analyzed": len(visited) - failed_wallets,
+        "wallets_failed": failed_wallets,
+        "smart_wallets_found": len(ranked_wallets),
+        "wallets_eligible": sum(
+            1 for item in ranked_wallets if item.get("eligible")
+        ),
         "min_smart_score": min_smart_score,
-        "ranking": smart_wallets,
-    } 
+        "activity_breakdown": activity_breakdown,
+        "ranking": ranked_wallets,
+    }

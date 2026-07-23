@@ -78,6 +78,19 @@ export function getWallet(
 }
 
 
+export function refreshDiscoveredWalletActivity(
+  limit = 250
+) {
+  return api.post(
+    "/discovered-wallets/activity/refresh",
+    null,
+    {
+      params: { limit },
+    }
+  );
+}
+
+
 // =========================
 // WALLET INTELLIGENCE
 // =========================

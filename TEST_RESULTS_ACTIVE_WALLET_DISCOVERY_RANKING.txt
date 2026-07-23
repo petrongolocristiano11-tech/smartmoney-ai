@@ -1,0 +1,31 @@
+SMARTMONEY AI — RISULTATI VERIFICA ACTIVE WALLET DISCOVERY & RANKING
+Data: 2026-07-23
+
+BACKEND
+- Compilazione Python backend: SUPERATA.
+- Test specifici blocco: 15 superati.
+- Suite completa: 179 test superati.
+- Nuovo test API conferma refresh attività dal solo database.
+- Il refresh restituisce helius_requests = 0.
+
+DATABASE / ALEMBIC
+- Head unica: a3f7c9d2e641.
+- Migrazione precedente: e2f9a6b4c731.
+- Generazione SQL offline PostgreSQL upgrade: SUPERATA.
+- Generazione SQL offline PostgreSQL downgrade: SUPERATA.
+- La migrazione aggiunge metriche, classificazione, idoneità e indici senza cancellare dati o generazioni.
+
+FRONTEND
+- Controllo sintattico TypeScript/JSX su 45 file JS/JSX: SUPERATO.
+- npm ci / vite build non eseguibile in questo ambiente di verifica perché il registro npm non ha completato il download dei pacchetti entro il timeout.
+- Il blocco non ha prodotto un errore di parsing o sintassi frontend.
+- Eseguire npm ci e npm run build localmente o nel normale deploy Railway.
+
+SICUREZZA OPERATIVA
+- LIVE non abilitato e non armato.
+- Stream automatico non abilitato.
+- Worker non avviato.
+- Generazione #3 non resettata.
+- Generazione #4 non creata.
+- Nessun wallet applicato.
+- Telegram/Discord non implementati.

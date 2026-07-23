@@ -1,0 +1,41 @@
+SMARTMONEY AI — ACTIVE WALLET DISCOVERY & RANKING
+File completi da creare o sostituire
+Data blocco: 2026-07-23
+
+CREARE
+- alembic/versions/a3f7c9d2e641_add_active_wallet_discovery_ranking.py
+- backend/app/services/wallet_activity_service.py
+- tests/test_wallet_activity_ranking.py
+- tests/test_active_wallet_discovery_api.py
+- README_ACTIVE_WALLET_DISCOVERY_RANKING.md
+- TEST_ACTIVE_WALLET_DISCOVERY_RANKING.ps1
+- TEST_RESULTS_ACTIVE_WALLET_DISCOVERY_RANKING.txt
+- PATCH_FILES_ACTIVE_WALLET_DISCOVERY_RANKING.txt
+
+SOSTITUIRE
+- PATCH_MANIFEST_SHA256.txt
+- backend/app/api/discovered_wallets.py
+- backend/app/models/discovered_wallet.py
+- backend/app/models/live_wallet_score.py
+- backend/app/schemas/discovered_wallet.py
+- backend/app/schemas/live_platform.py
+- backend/app/services/discovered_wallet_service.py
+- backend/app/services/discovery_engine.py
+- backend/app/services/live_wallet_ranking_service.py
+- backend/app/services/smart_discovery_engine.py
+- frontend/src/components/liveTrading/LiveTradingPlatform.jsx
+- frontend/src/pages/Discovery.jsx
+- frontend/src/services/api.js
+- tests/test_discovery_resilience.py
+- tests/test_live_wallet_ranking_platform.py
+
+INVARIANTI DI SICUREZZA RISPETTATE
+- Modalità LIVE non abilitata e non armata.
+- Stream automatico non abilitato.
+- Worker non avviato da questo blocco.
+- Nessuna sottoscrizione Helius creata dal ricalcolo attività DB.
+- Generazione DRY_RUN #3 non modificata o resettata.
+- Generazione #4 non creata.
+- Nessun wallet applicato automaticamente.
+- Il comando/pulsante “Applica wallet idonei” resta manuale e non è stato eseguito.
+- Telegram e Discord non implementati in questo blocco.

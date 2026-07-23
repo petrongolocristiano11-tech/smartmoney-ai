@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from backend.app.models.discovered_wallet import DiscoveredWallet
 from backend.app.models.live_copy_order import LiveCopyOrder
 from backend.app.models.live_wallet_score import LiveWalletScore
 from backend.app.models.wallet_profile import WalletProfile
@@ -60,9 +61,7 @@ def normalize_performance_score(
     )
 
 
-def _resolved_order_wallets(
-    orders: list[LiveCopyOrder],
-) -> dict[int, str]:
+def _resolved_order_wallets(orders: list[LiveCopyOrder]) -> dict[int, str]:
     latest_buy_wallet: dict[tuple[str, int, str], str] = {}
 
     for order in sorted(orders, key=lambda item: (item.created_at, item.id)):
@@ -92,6 +91,20 @@ def _resolved_order_wallets(
     return resolved
 
 
+def _activity_reasons(discovered: DiscoveredWallet | None) -> list[str]:
+    if discovered is None:
+        return ["ACTIVITY_NOT_ANALYZED"]
+
+    reasons: list[str] = []
+    if discovered.activity_classification == "INATTIVO":
+        reasons.append("INACTIVE_WALLET")
+    elif discovered.activity_classification == "IPERATTIVO":
+        reasons.append("HYPERACTIVE_WALLET")
+    elif discovered.activity_classification == "POCO_ATTIVO":
+        reasons.append("LOW_RECENT_ACTIVITY")
+    return reasons
+
+
 def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
     policy = get_or_create_live_policy(db)
     config = get_or_create_platform_config(db)
@@ -109,23 +122,23 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
         for wallet in (policy.source_wallets or [])
         if str(wallet).strip()
     }
-
     candidate_wallets.update(
         wallet
         for wallet in resolved_wallets.values()
         if wallet and wallet != MANUAL_DRY_RUN_CLOSE_WALLET
     )
-
     candidate_wallets.update(
         address
         for (address,) in db.query(WalletProfile.wallet_address).all()
         if address
     )
-
+    candidate_wallets.update(
+        address
+        for (address,) in db.query(DiscoveredWallet.wallet_address).all()
+        if address
+    )
     candidate_wallets = {
-        wallet
-        for wallet in candidate_wallets
-        if 32 <= len(wallet) <= 44
+        wallet for wallet in candidate_wallets if 32 <= len(wallet) <= 44
     }
 
     stale_query = db.query(LiveWalletScore)
@@ -140,6 +153,12 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
         profile.wallet_address: profile
         for profile in db.query(WalletProfile)
         .filter(WalletProfile.wallet_address.in_(candidate_wallets or ["__none__"]))
+        .all()
+    }
+    activity_map = {
+        wallet.wallet_address: wallet
+        for wallet in db.query(DiscoveredWallet)
+        .filter(DiscoveredWallet.wallet_address.in_(candidate_wallets or ["__none__"]))
         .all()
     }
 
@@ -179,6 +198,7 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
 
     for wallet in sorted(candidate_wallets):
         profile = profile_map.get(wallet)
+        discovered = activity_map.get(wallet)
         wallet_stats = stats[wallet]
         closed = int(wallet_stats["closed"])
         wins = int(wallet_stats["wins"])
@@ -197,13 +217,22 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
         )
 
         if profile is not None and closed > 0:
-            smart_score = profile_score * 0.60 + live_score * 0.40
+            performance_score = profile_score * 0.60 + live_score * 0.40
         elif profile is not None:
-            smart_score = profile_score
+            performance_score = profile_score
         elif closed > 0:
-            smart_score = live_score
+            performance_score = live_score
         else:
-            smart_score = 0.0
+            performance_score = 0.0
+
+        activity_score = clamp(
+            safe_float(discovered.activity_score) if discovered else 0.0
+        )
+        smart_score = (
+            performance_score * 0.80 + activity_score * 0.20
+            if discovered is not None
+            else performance_score
+        )
 
         reasons: list[str] = []
         if profile is None:
@@ -214,6 +243,8 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
             reasons.append("LIMITED_LIVE_SAMPLE")
         if smart_score < config.min_wallet_smart_score:
             reasons.append("SMART_SCORE_BELOW_MINIMUM")
+        reasons.extend(_activity_reasons(discovered))
+        reasons = list(dict.fromkeys(reasons))
 
         row = (
             db.query(LiveWalletScore)
@@ -227,12 +258,31 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
         row.smart_score = round(clamp(smart_score), 4)
         row.profile_score = round(profile_score, 4)
         row.live_performance_score = round(live_score, 4)
+        row.activity_score = round(activity_score, 4)
+        row.activity_classification = (
+            discovered.activity_classification if discovered else "NON_ANALIZZATO"
+        )
+        row.last_swap_at = discovered.last_swap_at if discovered else None
+        row.swaps_24h = int(discovered.swaps_24h if discovered else 0)
+        row.swaps_7d = int(discovered.swaps_7d if discovered else 0)
+        row.buys_7d = int(discovered.buys_7d if discovered else 0)
+        row.sells_7d = int(discovered.sells_7d if discovered else 0)
+        row.volume_7d_sol = safe_float(discovered.volume_7d_sol if discovered else 0)
+        row.active_days_7d = int(discovered.active_days_7d if discovered else 0)
+        row.average_swaps_per_active_day_7d = safe_float(
+            discovered.average_swaps_per_active_day_7d if discovered else 0
+        )
+        row.average_minutes_between_swaps_7d = (
+            discovered.average_minutes_between_swaps_7d if discovered else None
+        )
         row.win_rate_percent = win_rate
         row.roi_percent = roi
         row.realized_pnl_sol = round(wallet_stats["pnl"], 8)
         row.closed_trades = closed
         row.eligible = (
-            smart_score >= config.min_wallet_smart_score
+            discovered is not None
+            and bool(discovered.activity_eligible)
+            and smart_score >= config.min_wallet_smart_score
             and closed >= minimum_sample
         )
         row.reasons = reasons
@@ -241,6 +291,7 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
 
     calculated_rows.sort(
         key=lambda item: (
+            bool(item.eligible),
             item.smart_score,
             item.realized_pnl_sol,
             item.wallet_address,
@@ -259,13 +310,24 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
     record_live_event(
         db,
         event_type="WALLET_RANKING_REFRESHED",
-        message="Ranking automatico dei wallet sorgente aggiornato.",
+        message="Ranking wallet aggiornato con attività recente e performance.",
         payload={
             "wallets_scored": len(calculated_rows),
             "wallets_returned": min(len(calculated_rows), MAX_RANKING_ROWS),
             "eligible_wallets": sum(1 for row in calculated_rows if row.eligible),
             "minimum_score": config.min_wallet_smart_score,
             "minimum_closed_trades": minimum_sample,
+            "activity_filter_enabled": True,
+            "inactive_wallets": sum(
+                1
+                for row in calculated_rows
+                if row.activity_classification == "INATTIVO"
+            ),
+            "hyperactive_wallets": sum(
+                1
+                for row in calculated_rows
+                if row.activity_classification == "IPERATTIVO"
+            ),
         },
     )
 
@@ -305,7 +367,6 @@ def apply_ranked_wallets(
         )
 
     config = get_or_create_platform_config(db)
-
     if not config.auto_wallet_selection_enabled:
         raise LiveTradingError(
             "Abilita prima la selezione wallet automatica nella configurazione.",
@@ -320,7 +381,7 @@ def apply_ranked_wallets(
     selected = [row.wallet_address for row in ranking if row.eligible][:resolved_limit]
     if not selected:
         raise LiveTradingError(
-            "Nessun wallet ha sia lo Smart Score richiesto sia il campione minimo di trade chiusi.",
+            "Nessun wallet supera insieme attività, Smart Score e campione minimo di trade chiusi.",
             code="NO_ELIGIBLE_SOURCE_WALLETS",
             status_code=409,
         )
@@ -335,6 +396,7 @@ def apply_ranked_wallets(
             "selected_count": len(selected),
             "wallets": selected,
             "minimum_closed_trades": config.min_wallet_closed_trades,
+            "activity_filter_enabled": True,
         },
     )
     db.commit()

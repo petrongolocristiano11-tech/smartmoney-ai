@@ -99,10 +99,6 @@ class LiveAnalyticsSummary(PlatformResponseModel):
     orders_completed: int
     buy_orders: int
     sell_orders: int
-    closed_trades: int
-    campaign_target_closed_trades: int
-    campaign_remaining_closed_trades: int
-    campaign_progress_percent: float
     open_positions: int
     closed_positions: int
     open_exposure_sol: float
@@ -189,6 +185,17 @@ class LiveWalletScoreResponse(PlatformResponseModel):
     smart_score: float
     profile_score: float
     live_performance_score: float
+    activity_score: float
+    activity_classification: str
+    last_swap_at: datetime | None
+    swaps_24h: int
+    swaps_7d: int
+    buys_7d: int
+    sells_7d: int
+    volume_7d_sol: float
+    active_days_7d: int
+    average_swaps_per_active_day_7d: float
+    average_minutes_between_swaps_7d: float | None
     win_rate_percent: float
     roi_percent: float
     realized_pnl_sol: float

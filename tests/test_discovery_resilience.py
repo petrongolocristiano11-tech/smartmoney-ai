@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from backend.app.services import discovery_engine
 from backend.app.services.helius import HeliusRequestError
 
@@ -76,8 +78,52 @@ def test_full_discovery_continues_when_one_discovered_wallet_fails(
     )
     monkeypatch.setattr(
         discovery_engine,
+        "analyze_wallet_activity",
+        lambda _db, _wallet: {
+            "activity_score": 70.0,
+            "activity_classification": "ATTIVO",
+            "activity_eligible": True,
+            "activity_reasons": [],
+            "last_swap_at": None,
+            "swaps_24h": 2,
+            "swaps_7d": 4,
+            "buys_24h": 1,
+            "sells_24h": 1,
+            "buys_7d": 2,
+            "sells_7d": 2,
+            "volume_24h_sol": 1.0,
+            "volume_7d_sol": 2.0,
+            "active_days_7d": 2,
+            "average_swaps_per_active_day_7d": 2.0,
+            "average_minutes_between_swaps_7d": 120.0,
+            "activity_calculated_at": None,
+        },
+    )
+    monkeypatch.setattr(
+        discovery_engine,
         "save_discovered_wallet",
-        lambda **_kwargs: None,
+        lambda **kwargs: SimpleNamespace(
+            ranking_score=76.0,
+            eligible=True,
+            eligibility_reasons=[],
+            last_swap_at=None,
+            swaps_24h=2,
+            swaps_7d=4,
+            buys_24h=1,
+            sells_24h=1,
+            buys_7d=2,
+            sells_7d=2,
+            volume_24h_sol=1.0,
+            volume_7d_sol=2.0,
+            active_days_7d=2,
+            average_swaps_per_active_day_7d=2.0,
+            average_minutes_between_swaps_7d=120.0,
+            activity_score=70.0,
+            activity_classification="ATTIVO",
+            activity_eligible=True,
+            activity_reasons=[],
+            activity_calculated_at=None,
+        ),
     )
 
     result = discovery_engine.discover_full_from_wallet(

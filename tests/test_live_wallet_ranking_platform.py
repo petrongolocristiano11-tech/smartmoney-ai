@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.database.base import Base
+from backend.app.models.discovered_wallet import DiscoveredWallet
 from backend.app.models.live_copy_order import LiveCopyOrder
 from backend.app.models.wallet_profile import WalletProfile
 from backend.app.services.live_platform_config_service import get_or_create_platform_config
@@ -39,7 +40,39 @@ def db():
         engine.dispose()
 
 
+def ensure_active_wallet(db, wallet: str):
+    if wallet == "MANUAL_DRY_RUN_CLOSE":
+        return
+    existing = (
+        db.query(DiscoveredWallet)
+        .filter(DiscoveredWallet.wallet_address == wallet)
+        .first()
+    )
+    if existing is None:
+        db.add(
+            DiscoveredWallet(
+                wallet_address=wallet,
+                smart_score=90,
+                ranking_score=85,
+                activity_score=75,
+                activity_classification="ATTIVO",
+                activity_eligible=True,
+                activity_reasons=[],
+                eligible=True,
+                eligibility_reasons=[],
+                swaps_24h=2,
+                swaps_7d=5,
+                buys_7d=3,
+                sells_7d=2,
+                active_days_7d=3,
+                average_swaps_per_active_day_7d=1.6667,
+            )
+        )
+        db.flush()
+
+
 def add_completed_order(db, wallet: str, key: str, side: str, pnl: float = 0.0):
+    ensure_active_wallet(db, wallet)
     db.add(
         LiveCopyOrder(
             idempotency_key=key,
@@ -150,6 +183,7 @@ def test_ranking_response_is_limited_to_fifty_rows(db):
                 smart_score=100 - index,
             )
         )
+        ensure_active_wallet(db, wallet)
     db.commit()
 
     ranking = refresh_live_wallet_ranking(db)

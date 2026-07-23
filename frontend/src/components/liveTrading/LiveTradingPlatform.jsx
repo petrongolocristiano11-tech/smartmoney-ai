@@ -170,6 +170,27 @@ function configToForm(config) {
 
 
 function getRankingStatus(row, minimumSample) {
+  if (row.activity_classification === "INATTIVO") {
+    return {
+      label: "INATTIVO",
+      className: "bg-slate-800 text-slate-400",
+    };
+  }
+
+  if (row.activity_classification === "IPERATTIVO") {
+    return {
+      label: "IPERATTIVO",
+      className: "bg-red-950 text-red-300",
+    };
+  }
+
+  if (row.activity_classification === "NON_ANALIZZATO") {
+    return {
+      label: "ATTIVITÀ N/D",
+      className: "bg-blue-950 text-blue-300",
+    };
+  }
+
   if (row.closed_trades === 0) {
     return {
       label: "SOLO STORICO",
@@ -198,9 +219,20 @@ function getRankingStatus(row, minimumSample) {
 }
 
 
+function getActivityClassName(classification) {
+  const classes = {
+    ATTIVO: "bg-green-950 text-green-300",
+    POCO_ATTIVO: "bg-amber-950 text-amber-300",
+    INATTIVO: "bg-slate-800 text-slate-400",
+    IPERATTIVO: "bg-red-950 text-red-300",
+    NON_ANALIZZATO: "bg-blue-950 text-blue-300",
+  };
+  return classes[classification] ?? classes.NON_ANALIZZATO;
+}
+
+
 function MetricGrid({ analytics }) {
   const summary = analytics?.summary;
-
   if (!summary) {
     return null;
   }
@@ -208,106 +240,26 @@ function MetricGrid({ analytics }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <LiveTradingMetric
-        label="Trade chiusi"
-        value={`${summary.closed_trades} / ${summary.campaign_target_closed_trades}`}
-        tone={
-          summary.closed_trades
-          >= summary.campaign_target_closed_trades
-            ? "positive"
-            : "info"
-        }
-        subtitle={`${summary.campaign_remaining_closed_trades} rimanenti · ${formatLiveNumber(
-          summary.campaign_progress_percent,
-          2
-        )}% completato`}
+        label="PnL realizzato"
+        value={`${formatLiveNumber(summary.net_realized_pnl_sol, 6)} SOL`}
+        tone={summary.net_realized_pnl_sol > 0 ? "positive" : summary.net_realized_pnl_sol < 0 ? "danger" : "default"}
+        subtitle={`ROI ${formatLiveNumber(summary.roi_percent, 2)}%`}
       />
-
-      <LiveTradingMetric
-        label="PnL generazione"
-        value={`${formatLiveNumber(
-          summary.net_realized_pnl_sol,
-          6
-        )} SOL`}
-        tone={
-          summary.net_realized_pnl_sol > 0
-            ? "positive"
-            : summary.net_realized_pnl_sol < 0
-              ? "danger"
-              : "default"
-        }
-        subtitle={`ROI ${formatLiveNumber(
-          summary.roi_percent,
-          2
-        )}%`}
-      />
-
       <LiveTradingMetric
         label="Win rate"
-        value={`${formatLiveNumber(
-          summary.win_rate_percent,
-          2
-        )}%`}
-        subtitle={`${summary.winning_trades} vinte · ${summary.losing_trades} perse · ${summary.breakeven_trades} pari`}
+        value={`${formatLiveNumber(summary.win_rate_percent, 2)}%`}
+        subtitle={`${summary.winning_trades} vinte · ${summary.losing_trades} perse`}
       />
-
-      <LiveTradingMetric
-        label="BUY / SELL"
-        value={`${summary.buy_orders} / ${summary.sell_orders}`}
-        subtitle={`${summary.orders_completed} ordini completati`}
-      />
-
       <LiveTradingMetric
         label="Profit factor"
-        value={
-          summary.profit_factor === null
-            ? "N/D"
-            : formatLiveNumber(
-                summary.profit_factor,
-                3
-              )
-        }
-        subtitle={`Media ${formatLiveNumber(
-          summary.average_trade_pnl_sol,
-          6
-        )} SOL`}
+        value={summary.profit_factor === null ? "N/D" : formatLiveNumber(summary.profit_factor, 3)}
+        subtitle={`${summary.sell_orders} SELL completati`}
       />
-
       <LiveTradingMetric
         label="Drawdown massimo"
-        value={`${formatLiveNumber(
-          summary.max_drawdown_sol,
-          6
-        )} SOL`}
-        tone={
-          summary.max_drawdown_sol > 0
-            ? "warning"
-            : "default"
-        }
-        subtitle={`${formatLiveNumber(
-          summary.max_drawdown_percent,
-          2
-        )}%`}
-      />
-
-      <LiveTradingMetric
-        label="Posizioni aperte"
-        value={summary.open_positions}
-        subtitle={`${formatLiveNumber(
-          summary.open_exposure_sol,
-          6
-        )} SOL esposti`}
-      />
-
-      <LiveTradingMetric
-        label="Migliore / peggiore"
-        value={`${formatLiveNumber(
-          summary.best_trade_pnl_sol,
-          5
-        )} / ${formatLiveNumber(
-          summary.worst_trade_pnl_sol,
-          5
-        )}`}
-        subtitle="PnL SOL per trade"
+        value={`${formatLiveNumber(summary.max_drawdown_sol, 6)} SOL`}
+        tone={summary.max_drawdown_sol > 0 ? "warning" : "default"}
+        subtitle={`${formatLiveNumber(summary.max_drawdown_percent, 2)}%`}
       />
     </div>
   );
@@ -701,7 +653,7 @@ function LiveTradingPlatform({
 
       <LiveTradingSection
         title="Smart Wallet Ranking"
-        description="Combina Smart Score storico e performance copy-trading per ordinare fino a 50 wallet sorgente."
+        description="Combina profilo storico, performance copy-trading e attività recente. INATTIVO e IPERATTIVO vengono esclusi prima dell'idoneità."
       >
         <div className="flex flex-wrap gap-3">
           <button
@@ -728,7 +680,11 @@ function LiveTradingPlatform({
               <tr>
                 <th className="px-4 py-3">#</th>
                 <th className="px-4 py-3">Wallet</th>
-                <th className="px-4 py-3">Smart Score</th>
+                <th className="px-4 py-3">Ranking</th>
+                <th className="px-4 py-3">Attività</th>
+                <th className="px-4 py-3">Swap 24h / 7d</th>
+                <th className="px-4 py-3">BUY / SELL 7d</th>
+                <th className="px-4 py-3">Ultimo swap</th>
                 <th className="px-4 py-3">Win rate</th>
                 <th className="px-4 py-3">ROI</th>
                 <th className="px-4 py-3">Campione</th>
@@ -744,6 +700,23 @@ function LiveTradingPlatform({
                   </td>
                   <td className="px-4 py-3 font-bold text-blue-300">
                     {formatLiveNumber(row.smart_score, 2)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${getActivityClassName(row.activity_classification)}`}>
+                      {String(row.activity_classification ?? "NON_ANALIZZATO").replace("_", " ")}
+                    </span>
+                    <div className="mt-1 text-xs text-slate-500">
+                      score {formatLiveNumber(row.activity_score, 2)}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-slate-300">
+                    {row.swaps_24h ?? 0} / {row.swaps_7d ?? 0}
+                  </td>
+                  <td className="px-4 py-3 text-slate-300">
+                    {row.buys_7d ?? 0} / {row.sells_7d ?? 0}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-400">
+                    {formatLiveDate(row.last_swap_at)}
                   </td>
                   <td className="px-4 py-3 text-slate-300">
                     {formatLiveNumber(row.win_rate_percent, 2)}%
@@ -769,7 +742,7 @@ function LiveTradingPlatform({
               ))}
               {!ranking.length && (
                 <tr>
-                  <td colSpan="7" className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan="11" className="px-4 py-8 text-center text-slate-500">
                     Nessun wallet disponibile per il ranking.
                   </td>
                 </tr>

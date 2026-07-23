@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -9,6 +10,7 @@ from backend.app.models.trade import Trade
 from backend.app.services.discovered_wallet_service import save_discovered_wallet
 from backend.app.services.helius import HeliusRequestError, get_wallet_history
 from backend.app.services.profile_engine import build_wallet_profile
+from backend.app.services.wallet_activity_service import analyze_wallet_activity
 from backend.app.services.wallet_sync_service import sync_wallet
 
 
@@ -29,7 +31,6 @@ def _safe_rollback(db: Session) -> None:
     try:
         db.rollback()
     except Exception:
-        # Non sostituisce l'errore originale con un errore di rollback.
         pass
 
 
@@ -66,11 +67,7 @@ def _issue(
     }
 
 
-def _result_status(
-    errors: list[dict[str, Any]],
-    *,
-    made_progress: bool,
-) -> str:
+def _result_status(errors: list[dict[str, Any]], *, made_progress: bool) -> str:
     if not errors:
         return "COMPLETED"
     return "PARTIAL" if made_progress else "FAILED"
@@ -80,10 +77,32 @@ def _analytics_from_score(score: dict[str, Any]) -> dict[str, Any]:
     return score.get("dna", {}).get("analytics", {})
 
 
-def get_traded_tokens_by_wallet(
-    db: Session,
-    wallet_address: str,
-):
+def _sort_ranking(items: list[dict[str, Any]]) -> None:
+    items.sort(
+        key=lambda item: (
+            bool(item.get("eligible")),
+            float(item.get("ranking_score") or 0),
+            float(item.get("smart_score") or 0),
+        ),
+        reverse=True,
+    )
+
+
+def _activity_breakdown(items: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(
+        str(item.get("activity_classification") or "NON_ANALIZZATO")
+        for item in items
+    )
+    return {
+        "ATTIVO": counts.get("ATTIVO", 0),
+        "POCO_ATTIVO": counts.get("POCO_ATTIVO", 0),
+        "INATTIVO": counts.get("INATTIVO", 0),
+        "IPERATTIVO": counts.get("IPERATTIVO", 0),
+        "NON_ANALIZZATO": counts.get("NON_ANALIZZATO", 0),
+    }
+
+
+def get_traded_tokens_by_wallet(db: Session, wallet_address: str):
     rows = (
         db.query(Trade.token_mint)
         .filter(Trade.wallet_address == wallet_address)
@@ -91,9 +110,7 @@ def get_traded_tokens_by_wallet(
         .distinct()
         .all()
     )
-
     tokens = [row[0] for row in rows if row[0]]
-
     return {
         "wallet": wallet_address,
         "tokens_found": len(tokens),
@@ -101,19 +118,14 @@ def get_traded_tokens_by_wallet(
     }
 
 
-def get_wallets_by_token(
-    db: Session,
-    token_mint: str,
-):
+def get_wallets_by_token(db: Session, token_mint: str):
     rows = (
         db.query(Trade.wallet_address)
         .filter(Trade.token_mint == token_mint)
         .distinct()
         .all()
     )
-
     wallets = [row[0] for row in rows if row[0]]
-
     return {
         "token_mint": token_mint,
         "wallets_found": len(wallets),
@@ -121,17 +133,11 @@ def get_wallets_by_token(
     }
 
 
-def discover_wallets_from_token_onchain(
-    token_mint: str,
-):
+def discover_wallets_from_token_onchain(token_mint: str):
     try:
         transactions = get_wallet_history(token_mint)
     except Exception as error:
-        issue = _issue(
-            stage="TOKEN_HISTORY",
-            error=error,
-            token_mint=token_mint,
-        )
+        issue = _issue(stage="TOKEN_HISTORY", error=error, token_mint=token_mint)
         return {
             "status": "FAILED",
             "token_mint": token_mint,
@@ -141,11 +147,9 @@ def discover_wallets_from_token_onchain(
         }
 
     wallets: set[str] = set()
-
     for transaction in transactions:
         if transaction.get("type") != "SWAP":
             continue
-
         fee_payer = transaction.get("feePayer")
         if fee_payer:
             wallets.add(str(fee_payer))
@@ -159,7 +163,7 @@ def discover_wallets_from_token_onchain(
     }
 
 
-def _save_ranked_wallet(
+def analyze_and_save_discovered_wallet(
     db: Session,
     *,
     wallet_address: str,
@@ -167,12 +171,10 @@ def _save_ranked_wallet(
 ) -> dict[str, Any]:
     score = sync_wallet(db, wallet_address)
     analytics = _analytics_from_score(score)
-    profile = build_wallet_profile(
-        db=db,
-        wallet_address=wallet_address,
-    )
+    profile = build_wallet_profile(db=db, wallet_address=wallet_address)
+    activity = analyze_wallet_activity(db, wallet_address)
 
-    save_discovered_wallet(
+    saved = save_discovered_wallet(
         db=db,
         wallet_address=wallet_address,
         discovered_from_token=discovered_from_token,
@@ -181,8 +183,38 @@ def _save_ranked_wallet(
         win_rate_percent=analytics.get("win_rate_percent", 0),
         profit_loss_sol=analytics.get("total_profit_loss_sol", 0),
         reliable_positions=analytics.get("reliable_positions", 0),
+        activity=activity,
     )
-    return profile
+
+    return {
+        **profile,
+        "wallet": wallet_address,
+        "wallet_address": wallet_address,
+        "ranking_score": saved.ranking_score,
+        "eligible": saved.eligible,
+        "eligibility_reasons": list(saved.eligibility_reasons or []),
+        "last_swap_at": saved.last_swap_at,
+        "swaps_24h": saved.swaps_24h,
+        "swaps_7d": saved.swaps_7d,
+        "buys_24h": saved.buys_24h,
+        "sells_24h": saved.sells_24h,
+        "buys_7d": saved.buys_7d,
+        "sells_7d": saved.sells_7d,
+        "volume_24h_sol": saved.volume_24h_sol,
+        "volume_7d_sol": saved.volume_7d_sol,
+        "active_days_7d": saved.active_days_7d,
+        "average_swaps_per_active_day_7d": (
+            saved.average_swaps_per_active_day_7d
+        ),
+        "average_minutes_between_swaps_7d": (
+            saved.average_minutes_between_swaps_7d
+        ),
+        "activity_score": saved.activity_score,
+        "activity_classification": saved.activity_classification,
+        "activity_eligible": saved.activity_eligible,
+        "activity_reasons": list(saved.activity_reasons or []),
+        "activity_calculated_at": saved.activity_calculated_at,
+    }
 
 
 def discover_import_and_score_wallets_from_token(
@@ -199,7 +231,7 @@ def discover_import_and_score_wallets_from_token(
         for wallet_address in discovery["wallets"][:limit]:
             try:
                 results.append(
-                    _save_ranked_wallet(
+                    analyze_and_save_discovered_wallet(
                         db,
                         wallet_address=wallet_address,
                         discovered_from_token=token_mint,
@@ -210,28 +242,23 @@ def discover_import_and_score_wallets_from_token(
                 _safe_rollback(db)
                 errors.append(
                     _issue(
-                        stage="DISCOVERED_WALLET_SYNC",
+                        stage="DISCOVERED_WALLET_ANALYSIS",
                         error=error,
                         wallet_address=wallet_address,
                         token_mint=token_mint,
                     )
                 )
 
-    results.sort(
-        key=lambda item: item.get("smart_score", 0),
-        reverse=True,
-    )
-
-    made_progress = bool(results) or (
-        discovery.get("status") == "COMPLETED"
-    )
-
+    _sort_ranking(results)
+    made_progress = bool(results) or discovery.get("status") == "COMPLETED"
     return {
         "status": _result_status(errors, made_progress=made_progress),
         "token_mint": token_mint,
         "wallets_discovered": discovery.get("wallets_found", 0),
         "wallets_analyzed": len(results),
+        "wallets_eligible": sum(1 for item in results if item.get("eligible")),
         "wallets_failed": failed_wallets,
+        "activity_breakdown": _activity_breakdown(results),
         "ranking": results,
         "errors": errors,
         "error_count": len(errors),
@@ -253,13 +280,9 @@ def discover_full_from_wallet(
         seed_score = sync_wallet(db, wallet_address)
         seed_analytics = _analytics_from_score(seed_score)
         seed_trades = int(seed_analytics.get("total_trades", 0))
-
         if seed_trades > 0:
             try:
-                build_wallet_profile(
-                    db=db,
-                    wallet_address=wallet_address,
-                )
+                build_wallet_profile(db=db, wallet_address=wallet_address)
             except Exception as error:
                 _safe_rollback(db)
                 errors.append(
@@ -273,11 +296,7 @@ def discover_full_from_wallet(
         seed_sync_status = "FAILED"
         _safe_rollback(db)
         errors.append(
-            _issue(
-                stage="SEED_SYNC",
-                error=error,
-                wallet_address=wallet_address,
-            )
+            _issue(stage="SEED_SYNC", error=error, wallet_address=wallet_address)
         )
 
     try:
@@ -302,7 +321,9 @@ def discover_full_from_wallet(
             "tokens_failed": 0,
             "wallets_discovered": 0,
             "wallets_analyzed": 0,
+            "wallets_eligible": 0,
             "wallets_failed": 0,
+            "activity_breakdown": _activity_breakdown([]),
             "ranking": [],
             "errors": errors,
             "error_count": len(errors),
@@ -316,7 +337,6 @@ def discover_full_from_wallet(
     for token_mint in tokens:
         discovery = discover_wallets_from_token_onchain(token_mint)
         discovery_errors = discovery.get("errors", [])
-
         if discovery.get("status") == "FAILED":
             tokens_failed += 1
             errors.extend(discovery_errors)
@@ -324,20 +344,16 @@ def discover_full_from_wallet(
 
         tokens_processed += 1
         errors.extend(discovery_errors)
-
-        for discovered_wallet in discovery.get("wallets", [])[
-            :max_wallets_per_token
-        ]:
+        for discovered_wallet in discovery.get("wallets", [])[:max_wallets_per_token]:
             if discovered_wallet and discovered_wallet != wallet_address:
                 discovered_wallets.add(discovered_wallet)
 
     results: list[dict[str, Any]] = []
     wallets_failed = 0
-
     for discovered_wallet in sorted(discovered_wallets):
         try:
             results.append(
-                _save_ranked_wallet(
+                analyze_and_save_discovered_wallet(
                     db,
                     wallet_address=discovered_wallet,
                     discovered_from_token="MULTI_TOKEN",
@@ -348,25 +364,14 @@ def discover_full_from_wallet(
             _safe_rollback(db)
             errors.append(
                 _issue(
-                    stage="DISCOVERED_WALLET_SYNC",
+                    stage="DISCOVERED_WALLET_ANALYSIS",
                     error=error,
                     wallet_address=discovered_wallet,
                 )
             )
 
-    results.sort(
-        key=lambda item: item.get("smart_score", 0),
-        reverse=True,
-    )
-
-    made_progress = any(
-        (
-            seed_score is not None,
-            tokens_processed > 0,
-            bool(results),
-        )
-    )
-
+    _sort_ranking(results)
+    made_progress = any((seed_score is not None, tokens_processed > 0, bool(results)))
     return {
         "status": _result_status(errors, made_progress=made_progress),
         "seed_wallet": wallet_address,
@@ -378,7 +383,9 @@ def discover_full_from_wallet(
         "tokens_failed": tokens_failed,
         "wallets_discovered": len(discovered_wallets),
         "wallets_analyzed": len(results),
+        "wallets_eligible": sum(1 for item in results if item.get("eligible")),
         "wallets_failed": wallets_failed,
+        "activity_breakdown": _activity_breakdown(results),
         "ranking": results,
         "errors": errors,
         "error_count": len(errors),
