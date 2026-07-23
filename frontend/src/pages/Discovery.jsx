@@ -12,6 +12,7 @@ import {
   runCandidatePositionLifecycleAudit,
   runCandidateExitPriceAudit,
   refreshExitabilityGate,
+  refreshCandidateFunnel,
   runDiscovery,
   runSmartDiscovery,
 } from "../services/api";
@@ -55,6 +56,16 @@ const EXITABILITY_GATE_OPTIONS = [
   "REVIEW",
   "BLOCKED",
   "NON_ANALIZZATO",
+];
+
+
+const DISCOVERY_FUNNEL_OPTIONS = [
+  "ALL",
+  "READY",
+  "REVIEW",
+  "BLOCKED",
+  "NEEDS_LOCAL_DATA",
+  "NEEDS_HISTORY",
 ];
 
 
@@ -174,6 +185,37 @@ function exitPriceBadge(status) {
   return {
     label: normalized.replace("_", " "),
     className: classes[normalized] ?? classes.NON_ANALIZZATO,
+  };
+}
+
+
+function exitabilityGateBadge(status) {
+  const normalized = status || "NON_ANALIZZATO";
+  const classes = {
+    READY: "border-green-700 bg-green-950/60 text-green-300",
+    REVIEW: "border-amber-700 bg-amber-950/60 text-amber-300",
+    BLOCKED: "border-red-700 bg-red-950/60 text-red-300",
+    NON_ANALIZZATO: "border-blue-800 bg-blue-950/40 text-blue-300",
+  };
+  return {
+    label: normalized.replaceAll("_", " "),
+    className: classes[normalized] ?? classes.NON_ANALIZZATO,
+  };
+}
+
+
+function discoveryFunnelBadge(status) {
+  const normalized = status || "NEEDS_LOCAL_DATA";
+  const classes = {
+    READY: "border-green-700 bg-green-950/60 text-green-300",
+    REVIEW: "border-amber-700 bg-amber-950/60 text-amber-300",
+    BLOCKED: "border-red-700 bg-red-950/60 text-red-300",
+    NEEDS_LOCAL_DATA: "border-blue-700 bg-blue-950/50 text-blue-300",
+    NEEDS_HISTORY: "border-cyan-700 bg-cyan-950/50 text-cyan-300",
+  };
+  return {
+    label: normalized.replaceAll("_", " "),
+    className: classes[normalized] ?? classes.NEEDS_LOCAL_DATA,
   };
 }
 
@@ -530,7 +572,7 @@ function ExitPriceAuditPanel({ result }) {
             Exit Price Provenance &amp; Cached Coverage Audit
           </h2>
           <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${readiness.className}`}>
-            {readiness.label} Â· {formatNumber(result.readiness_score)}%
+            {readiness.label} · {formatNumber(result.readiness_score)}%
           </span>
         </div>
         <p className="mt-2 text-xs text-amber-300">
@@ -593,7 +635,7 @@ function ExitPriceAuditPanel({ result }) {
         </div>
 
         <div className="mt-5 overflow-x-auto">
-          <h3 className="mb-3 font-bold text-rose-300">Provenienza prezzi alla fine dellâ€™analisi</h3>
+          <h3 className="mb-3 font-bold text-rose-300">Provenienza prezzi alla fine dell’analisi</h3>
           <table className="w-full min-w-[1400px] text-xs">
             <thead className="bg-slate-950 text-slate-400">
               <tr>
@@ -601,7 +643,7 @@ function ExitPriceAuditPanel({ result }) {
                 <th className="p-3">Bootstrap</th>
                 <th className="p-3">Stato evidenza</th>
                 <th className="p-3">Prezzo</th>
-                <th className="p-3">EtÃ  prezzo</th>
+                <th className="p-3">Età prezzo</th>
                 <th className="p-3">Side / fonte</th>
                 <th className="p-3">Cache</th>
                 <th className="p-3">Route attuale</th>
@@ -686,6 +728,7 @@ function Discovery() {
   const [promotionFilter, setPromotionFilter] = useState("ALL");
   const [exitPriceFilter, setExitPriceFilter] = useState("ALL");
   const [exitabilityGateFilter, setExitabilityGateFilter] = useState("ALL");
+  const [discoveryFunnelFilter, setDiscoveryFunnelFilter] = useState("ALL");
   const [eligibleOnly, setEligibleOnly] = useState(false);
   const [sortBy, setSortBy] = useState("ranking_score");
 
@@ -696,6 +739,11 @@ function Discovery() {
   const [refreshingQuality, setRefreshingQuality] = useState(false);
   const [refreshingExitabilityGate, setRefreshingExitabilityGate] = useState(false);
   const [exitabilityGateResult, setExitabilityGateResult] = useState(null);
+  const [refreshingCandidateFunnel, setRefreshingCandidateFunnel] = useState(false);
+  const [candidateFunnelResult, setCandidateFunnelResult] = useState(null);
+  const [funnelHistoryBudget, setFunnelHistoryBudget] = useState(10);
+  const [funnelMaxHistoryWallets, setFunnelMaxHistoryWallets] = useState(5);
+  const [funnelTargetHistoryDays, setFunnelTargetHistoryDays] = useState(30);
   const [runningBackfill, setRunningBackfill] = useState(false);
   const [runningBacktest, setRunningBacktest] = useState(false);
   const [runningReconstructionAudit, setRunningReconstructionAudit] = useState(false);
@@ -755,7 +803,10 @@ function Discovery() {
           String(wallet.promotion_status ?? "").toLowerCase().includes(normalizedSearch) ||
           String(wallet.hydration_status ?? "").toLowerCase().includes(normalizedSearch) ||
           String(wallet.extended_history_status ?? "").toLowerCase().includes(normalizedSearch) ||
-          String(wallet.exit_price_coverage_status ?? "").toLowerCase().includes(normalizedSearch);
+          String(wallet.exit_price_coverage_status ?? "").toLowerCase().includes(normalizedSearch) ||
+          String(wallet.exitability_gate_status ?? "").toLowerCase().includes(normalizedSearch) ||
+          String(wallet.discovery_funnel_status ?? "").toLowerCase().includes(normalizedSearch) ||
+          String(wallet.discovery_funnel_action ?? "").toLowerCase().includes(normalizedSearch);
         const matchesScore = Number(wallet.smart_score ?? 0) >= Number(minimumScore || 0);
         const matchesActivity =
           activityFilter === "ALL" || wallet.activity_classification === activityFilter;
@@ -769,12 +820,22 @@ function Discovery() {
         const matchesExitabilityGate =
           exitabilityGateFilter === "ALL" ||
           wallet.exitability_gate_status === exitabilityGateFilter;
+        const matchesDiscoveryFunnel =
+          discoveryFunnelFilter === "ALL" ||
+          wallet.discovery_funnel_status === discoveryFunnelFilter;
         const matchesEligibility = !eligibleOnly || Boolean(wallet.eligible);
-        return matchesSearch && matchesScore && matchesActivity && matchesQuality && matchesPromotion && matchesExitPrice && matchesExitabilityGate && matchesEligibility;
+        return matchesSearch && matchesScore && matchesActivity && matchesQuality && matchesPromotion && matchesExitPrice && matchesExitabilityGate && matchesDiscoveryFunnel && matchesEligibility;
       })
       .sort((first, second) => {
         if (sortBy === "last_swap_at") {
           return new Date(second.last_swap_at ?? 0) - new Date(first.last_swap_at ?? 0);
+        }
+        if (sortBy === "discovery_funnel_priority") {
+          const firstPriority = Number(first.discovery_funnel_priority ?? 0);
+          const secondPriority = Number(second.discovery_funnel_priority ?? 0);
+          const normalizedFirst = firstPriority > 0 ? firstPriority : Number.MAX_SAFE_INTEGER;
+          const normalizedSecond = secondPriority > 0 ? secondPriority : Number.MAX_SAFE_INTEGER;
+          return normalizedFirst - normalizedSecond;
         }
         return Number(second[sortBy] ?? 0) - Number(first[sortBy] ?? 0);
       });
@@ -787,6 +848,7 @@ function Discovery() {
     promotionFilter,
     exitPriceFilter,
     exitabilityGateFilter,
+    discoveryFunnelFilter,
     eligibleOnly,
     sortBy,
   ]);
@@ -914,7 +976,7 @@ function Discovery() {
       setError(
         typeof backendMessage === "string"
           ? backendMessage
-          : "Discovery Hydration non completata. Nessun worker o stream Ã¨ stato avviato."
+          : "Discovery Hydration non completata. Nessun worker o stream è stato avviato."
       );
     } finally {
       setHydrating(false);
@@ -933,8 +995,8 @@ function Discovery() {
       );
       await loadDiscoveredWallets();
     } catch (requestError) {
-      console.error("Errore ricalcolo attivitÃ :", requestError);
-      setError("Impossibile ricalcolare il ranking attivitÃ  dal database.");
+      console.error("Errore ricalcolo attività:", requestError);
+      setError("Impossibile ricalcolare il ranking attività dal database.");
     } finally {
       setRefreshingActivity(false);
     }
@@ -947,12 +1009,12 @@ function Discovery() {
     try {
       const response = await refreshDiscoveredWalletQuality(500);
       setMessage(
-        `QualitÃ  ricalcolata su ${response.data.wallets_refreshed} wallet: ${response.data.copyable} copiabili, ${response.data.observation} in osservazione, ${response.data.suspicious} sospetti e ${response.data.not_copyable} non copiabili. Helius: ${response.data.helius_requests}.`
+        `Qualità ricalcolata su ${response.data.wallets_refreshed} wallet: ${response.data.copyable} copiabili, ${response.data.observation} in osservazione, ${response.data.suspicious} sospetti e ${response.data.not_copyable} non copiabili. Helius: ${response.data.helius_requests}.`
       );
       await loadDiscoveredWallets();
     } catch (requestError) {
-      console.error("Errore ricalcolo qualitÃ :", requestError);
-      setError("Impossibile ricalcolare la qualitÃ  di esecuzione dal database.");
+      console.error("Errore ricalcolo qualità:", requestError);
+      setError("Impossibile ricalcolare la qualità di esecuzione dal database.");
     } finally {
       setRefreshingQuality(false);
     }
@@ -980,6 +1042,38 @@ function Discovery() {
       setError("Impossibile aggiornare il safety gate di exitability.");
     } finally {
       setRefreshingExitabilityGate(false);
+    }
+  }
+
+
+  async function handleRefreshCandidateFunnel() {
+    setRefreshingCandidateFunnel(true);
+    setError("");
+    setMessage("");
+    setCandidateFunnelResult(null);
+    try {
+      const response = await refreshCandidateFunnel({
+        limit: 500,
+        historyRequestBudget: Number(funnelHistoryBudget),
+        maxHistoryWallets: Number(funnelMaxHistoryWallets),
+        targetHistoryDays: Number(funnelTargetHistoryDays),
+      });
+      setCandidateFunnelResult(response.data);
+      const funnelSummary = response.data?.summary ?? {};
+      setMessage(
+        `Candidate funnel: ${funnelSummary.wallets_ready ?? 0} ready, ` +
+        `${funnelSummary.wallets_review ?? 0} review, ` +
+        `${funnelSummary.wallets_blocked ?? 0} blocked, ` +
+        `${funnelSummary.wallets_needs_local_data ?? 0} con dati locali insufficienti, ` +
+        `${funnelSummary.wallets_needs_history ?? 0} da approfondire. ` +
+        `Budget storico allocato: ${funnelSummary.history_budget_allocated ?? 0}.`
+      );
+      await loadDiscoveredWallets();
+    } catch (requestError) {
+      console.error("Errore candidate funnel:", requestError);
+      setError("Impossibile calcolare il candidate funnel.");
+    } finally {
+      setRefreshingCandidateFunnel(false);
     }
   }
 
@@ -1059,7 +1153,7 @@ function Discovery() {
       setError(
         typeof backendMessage === "string"
           ? backendMessage
-          : "Backtest candidato non completato. Nessuna transazione Ã¨ stata firmata o inviata."
+          : "Backtest candidato non completato. Nessuna transazione è stata firmata o inviata."
       );
     } finally {
       setRunningBacktest(false);
@@ -1283,7 +1377,7 @@ async function handleExitPriceAudit(
               disabled={refreshingQuality}
               className="rounded-lg border border-purple-700 bg-purple-950/50 px-4 py-2 text-sm font-semibold text-purple-300 disabled:opacity-50"
             >
-              {refreshingQuality ? "Analisi qualitÃ ..." : "Ricalcola qualitÃ  DB"}
+              {refreshingQuality ? "Analisi qualità..." : "Ricalcola qualità DB"}
             </button>
             <button
               type="button"
@@ -1295,11 +1389,19 @@ async function handleExitPriceAudit(
             </button>
             <button
               type="button"
+              onClick={handleRefreshCandidateFunnel}
+              disabled={refreshingCandidateFunnel}
+              className="rounded-lg border border-cyan-700 bg-cyan-950/50 px-4 py-2 text-sm font-semibold text-cyan-300 disabled:opacity-50"
+            >
+              {refreshingCandidateFunnel ? "Funnel in corso..." : "Calcola candidate funnel"}
+            </button>
+            <button
+              type="button"
               onClick={handleRefreshActivity}
               disabled={refreshingActivity}
               className="rounded-lg border border-emerald-700 bg-emerald-950/50 px-4 py-2 text-sm font-semibold text-emerald-300 disabled:opacity-50"
             >
-              {refreshingActivity ? "Ricalcolo..." : "Ricalcola attivitÃ  DB"}
+              {refreshingActivity ? "Ricalcolo..." : "Ricalcola attività DB"}
             </button>
             <button
               type="button"
@@ -1315,8 +1417,8 @@ async function handleExitPriceAudit(
 
       <main className="mx-auto max-w-[1500px] p-4 sm:p-8">
         <div className="mb-6 rounded-xl border border-amber-800 bg-amber-950/30 p-4 text-sm text-amber-200">
-          Il backfill storico Ã¨ manuale e limitato dal budget Helius. Il backtest usa poi
-          soltanto trade salvati e quote Jupiter SOLâ†’tokenâ†’SOL di sola lettura. Nessuna
+          Il backfill storico è manuale e limitato dal budget Helius. Il backtest usa poi
+          soltanto trade salvati e quote Jupiter SOL→token→SOL di sola lettura. Nessuna
           funzione firma transazioni, abilita LIVE o stream, avvia worker, applica wallet
           oppure crea o resetta generazioni.
         </div>
@@ -1330,6 +1432,112 @@ async function handleExitPriceAudit(
           <div className="mb-6 rounded-lg border border-green-700 bg-green-950/40 p-4 text-green-300">
             {message}
           </div>
+        )}
+
+        <section className="mb-6 rounded-xl border border-cyan-900 bg-cyan-950/20 p-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-cyan-200">Discovery Candidate Funnel + Budgeted History Queue</h2>
+              <p className="mt-2 max-w-4xl text-sm text-cyan-100/80">
+                Pre-screen locale di tutti i wallet. Il budget crea soltanto una coda consigliata:
+                non avvia backfill e non effettua richieste Helius.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="text-xs text-slate-400">
+                Budget richieste storico
+                <input
+                  type="number"
+                  min="0"
+                  max="50"
+                  value={funnelHistoryBudget}
+                  onChange={(event) => setFunnelHistoryBudget(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white"
+                />
+              </label>
+              <label className="text-xs text-slate-400">
+                Wallet massimi in coda
+                <input
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={funnelMaxHistoryWallets}
+                  onChange={(event) => setFunnelMaxHistoryWallets(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white"
+                />
+              </label>
+              <label className="text-xs text-slate-400">
+                Storico obiettivo (giorni)
+                <input
+                  type="number"
+                  min="7"
+                  max="90"
+                  value={funnelTargetHistoryDays}
+                  onChange={(event) => setFunnelTargetHistoryDays(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white"
+                />
+              </label>
+            </div>
+          </div>
+        </section>
+
+        {candidateFunnelResult && (
+          <section className="mb-6 overflow-hidden rounded-xl border border-cyan-800 bg-slate-800">
+            <div className="border-b border-slate-700 p-5">
+              <h2 className="text-lg font-bold text-cyan-200">Candidate Funnel Result</h2>
+              <p className="mt-2 text-sm text-slate-300">
+                Valutati {candidateFunnelResult.summary?.wallets_evaluated ?? 0} wallet ·
+                {" "}{candidateFunnelResult.summary?.wallets_ready ?? 0} READY ·
+                {" "}{candidateFunnelResult.summary?.wallets_review ?? 0} REVIEW ·
+                {" "}{candidateFunnelResult.summary?.wallets_blocked ?? 0} BLOCKED ·
+                {" "}{candidateFunnelResult.summary?.wallets_needs_local_data ?? 0} NEEDS LOCAL DATA ·
+                {" "}{candidateFunnelResult.summary?.wallets_needs_history ?? 0} NEEDS HISTORY.
+              </p>
+            </div>
+            <div className="p-5">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <StatCard label="Wallet in coda" value={candidateFunnelResult.summary?.history_queue_wallets ?? 0} tone="text-cyan-300" />
+                <StatCard label="Budget richiesto" value={candidateFunnelResult.summary?.history_budget_requested ?? 0} tone="text-blue-300" />
+                <StatCard label="Budget allocato" value={candidateFunnelResult.summary?.history_budget_allocated ?? 0} tone="text-green-300" />
+                <StatCard label="Budget residuo" value={candidateFunnelResult.summary?.history_budget_unallocated ?? 0} tone="text-amber-300" />
+              </div>
+              <div className="mt-5 overflow-x-auto">
+                <table className="w-full min-w-[900px] text-sm">
+                  <thead className="bg-slate-900 text-slate-400">
+                    <tr>
+                      <th className="p-3">Priorità</th>
+                      <th className="p-3 text-left">Wallet</th>
+                      <th className="p-3">Funnel score</th>
+                      <th className="p-3">Storico attuale</th>
+                      <th className="p-3">Richieste consigliate</th>
+                      <th className="p-3">Budget allocato</th>
+                      <th className="p-3 text-left">Azione</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-700">
+                    {(candidateFunnelResult.history_queue ?? []).map((row) => (
+                      <tr key={row.wallet_address}>
+                        <td className="p-3 text-center font-bold text-cyan-300">#{row.priority}</td>
+                        <td className="p-3 font-mono text-xs text-blue-300">{shortenAddress(row.wallet_address, 12, 10)}</td>
+                        <td className="p-3 text-center">{formatNumber(row.funnel_score)}%</td>
+                        <td className="p-3 text-center">{formatNumber(row.current_history_span_days, 1)} g</td>
+                        <td className="p-3 text-center">{row.recommended_requests}</td>
+                        <td className="p-3 text-center font-bold text-green-300">{row.allocated_requests}</td>
+                        <td className="p-3 text-left text-slate-300">Backfill manuale consigliato</td>
+                      </tr>
+                    ))}
+                    {!(candidateFunnelResult.history_queue ?? []).length && (
+                      <tr>
+                        <td colSpan="7" className="p-6 text-center text-slate-500">
+                          Nessun wallet promettente richiede storico aggiuntivo con i dati attuali.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
         )}
 
         {exitabilityGateResult && (
@@ -1362,7 +1570,7 @@ async function handleExitPriceAudit(
             </h2>
             <p className="mt-1 text-sm text-slate-400">
               Prima estende lo storico con paginazione controllata; poi usa una finestra di
-              warmup per ricostruire le posizioni giÃ  aperte e valuta se il campione Ã¨ sufficiente.
+              warmup per ricostruire le posizioni già aperte e valuta se il campione è sufficiente.
             </p>
           </div>
           <div className="p-5">
@@ -1376,7 +1584,7 @@ async function handleExitPriceAudit(
                 {discoveredWallets
                   .map((wallet) => (
                     <option key={wallet.wallet_address} value={wallet.wallet_address}>
-                      {shortenAddress(wallet.wallet_address, 12, 10)} Â· Q {formatNumber(wallet.quality_score)} Â· {wallet.promotion_status}
+                      {shortenAddress(wallet.wallet_address, 12, 10)} · Q {formatNumber(wallet.quality_score)} · {wallet.promotion_status}
                     </option>
                   ))}
               </select>
@@ -1612,7 +1820,7 @@ async function handleExitPriceAudit(
                   <div>
                     <p className="font-mono text-xs text-slate-400">{promotionResult.wallet_address}</p>
                     <h3 className="mt-1 text-2xl font-bold text-emerald-300">
-                      {promotionResult.decision} Â· score {formatNumber(promotionResult.score)}
+                      {promotionResult.decision} · score {formatNumber(promotionResult.score)}
                     </h3>
                   </div>
                   <span className={`rounded-full border px-3 py-1 text-sm font-bold ${promotionBadge(promotionResult.decision).className}`}>
@@ -1630,10 +1838,10 @@ async function handleExitPriceAudit(
                   <StatCard label="Jupiter" value={`${formatNumber(promotionResult.jupiter_compatibility_percent)}%`} tone="text-fuchsia-300" subtitle={promotionResult.jupiter_status} />
                 </div>
                 <p className="mt-4 text-sm text-slate-400">
-                  Analisi: <strong>{promotionResult.analysis_source_trades}</strong> trade Â· warmup: <strong>{promotionResult.warmup_source_trades}</strong> Â· bootstrap: <strong>{promotionResult.bootstrap_positions}</strong> ({promotionResult.bootstrap_positions_closed} chiuse) Â· posizioni chiuse: <strong>{promotionResult.completed_positions}</strong> Â· aperte: <strong>{promotionResult.open_positions}</strong>.
+                  Analisi: <strong>{promotionResult.analysis_source_trades}</strong> trade · warmup: <strong>{promotionResult.warmup_source_trades}</strong> · bootstrap: <strong>{promotionResult.bootstrap_positions}</strong> ({promotionResult.bootstrap_positions_closed} chiuse) · posizioni chiuse: <strong>{promotionResult.completed_positions}</strong> · aperte: <strong>{promotionResult.open_positions}</strong>.
                 </p>
                 <p className="mt-2 text-sm text-slate-400">
-                  Copertura: <strong>{formatNumber(promotionResult.execution_coverage_percent)}%</strong> Â· SELL abbinate: <strong>{formatNumber(promotionResult.matched_sell_ratio_percent)}%</strong> Â· posizioni aperte: <strong>{formatNumber(promotionResult.open_position_ratio_percent)}%</strong> Â· richieste Jupiter: <strong>{promotionResult.jupiter_requests}</strong> Â· cache: <strong>{promotionResult.jupiter_cache_hits ?? 0}</strong> Â· controlli live: <strong>{promotionResult.jupiter_live_checks ?? 0}</strong>.
+                  Copertura: <strong>{formatNumber(promotionResult.execution_coverage_percent)}%</strong> · SELL abbinate: <strong>{formatNumber(promotionResult.matched_sell_ratio_percent)}%</strong> · posizioni aperte: <strong>{formatNumber(promotionResult.open_position_ratio_percent)}%</strong> · richieste Jupiter: <strong>{promotionResult.jupiter_requests}</strong> · cache: <strong>{promotionResult.jupiter_cache_hits ?? 0}</strong> · controlli live: <strong>{promotionResult.jupiter_live_checks ?? 0}</strong>.
                 </p>
                 {(promotionResult.data_sufficiency_reasons ?? []).length > 0 && (
                   <p className="mt-3 text-xs text-orange-300">
@@ -1900,8 +2108,8 @@ async function handleExitPriceAudit(
           <div className="border-b border-slate-700 p-5">
             <h2 className="text-xl font-bold text-cyan-300">Discovery Hydration controllata</h2>
             <p className="mt-1 text-sm text-slate-400">
-              Recupera gli swap recenti dei wallet con Smart Score piÃ¹ alto, li salva con
-              data reale, elimina i duplicati e aggiorna ranking e idoneitÃ .
+              Recupera gli swap recenti dei wallet con Smart Score più alto, li salva con
+              data reale, elimina i duplicati e aggiorna ranking e idoneità.
             </p>
           </div>
           <div className="p-5">
@@ -1973,7 +2181,7 @@ async function handleExitPriceAudit(
           <div className="border-b border-slate-700 p-5">
             <h2 className="text-xl font-bold">Nuova discovery</h2>
             <p className="mt-1 text-sm text-slate-400">
-              Ogni wallet importato viene sincronizzato, profilato, classificato e salvato nel ranking attivitÃ .
+              Ogni wallet importato viene sincronizzato, profilato, classificato e salvato nel ranking attività.
             </p>
           </div>
           <div className="p-5">
@@ -2038,7 +2246,7 @@ async function handleExitPriceAudit(
             ) : (
               <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <label className="text-sm text-slate-400">
-                  ProfonditÃ 
+                  Profondità
                   <input
                     type="number"
                     min="1"
@@ -2122,12 +2330,12 @@ async function handleExitPriceAudit(
                       <th className="p-4 text-left">Wallet</th>
                       <th className="p-4">Ranking</th>
                       <th className="p-4">Smart</th>
-                      <th className="p-4">AttivitÃ </th>
-                      <th className="p-4">QualitÃ </th>
+                      <th className="p-4">Attività</th>
+                      <th className="p-4">Qualità</th>
                       <th className="p-4">Swap 24h / 7d</th>
                       <th className="p-4">BUY / SELL 7d</th>
                       <th className="p-4">Ultimo swap</th>
-                      <th className="p-4">IdoneitÃ </th>
+                      <th className="p-4">Idoneità</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-700">
@@ -2237,6 +2445,15 @@ async function handleExitPriceAudit(
                 ))}
               </select>
               <select
+                value={discoveryFunnelFilter}
+                onChange={(event) => setDiscoveryFunnelFilter(event.target.value)}
+                className="rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+              >
+                {DISCOVERY_FUNNEL_OPTIONS.map((option) => (
+                  <option key={option} value={option}>{option.replaceAll("_", " ")}</option>
+                ))}
+              </select>
+              <select
                 value={sortBy}
                 onChange={(event) => setSortBy(event.target.value)}
                 className="rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
@@ -2250,10 +2467,13 @@ async function handleExitPriceAudit(
                 <option value="exit_price_coverage_score">Exit price score</option>
                 <option value="exit_price_local_observable_percent">Prezzi locali freschi</option>
                 <option value="exit_price_current_route_percent">Route cached attuale</option>
+                <option value="discovery_funnel_score">Candidate funnel score</option>
+                <option value="discovery_funnel_priority">Priorità coda storico</option>
+                <option value="discovery_funnel_history_budget">Budget storico allocato</option>
                 <option value="backtest_total_return_percent">Rendimento backtest</option>
                 <option value="backtest_max_drawdown_percent">Drawdown backtest</option>
                 <option value="median_swap_sol_7d">Mediana swap</option>
-                <option value="size_compatibility_ratio_7d">CompatibilitÃ  size</option>
+                <option value="size_compatibility_ratio_7d">Compatibilità size</option>
                 <option value="last_swap_at">Ultimo swap</option>
                 <option value="volume_7d_sol">Volume 7d</option>
               </select>
@@ -2269,7 +2489,7 @@ async function handleExitPriceAudit(
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[3700px] text-sm">
+            <table className="w-full min-w-[4100px] text-sm">
               <thead className="bg-slate-900 text-slate-400">
                 <tr>
                   <th className="p-4 text-left">Wallet</th>
@@ -2279,7 +2499,7 @@ async function handleExitPriceAudit(
                   <th className="p-4">Ranking</th>
                   <th className="p-4">Smart</th>
                   <th className="p-4">Activity</th>
-                  <th className="p-4">Classe attivitÃ </th>
+                  <th className="p-4">Classe attività</th>
                   <th className="p-4">Quality</th>
                   <th className="p-4">Suitability</th>
                   <th className="p-4">Promotion</th>
@@ -2290,11 +2510,13 @@ async function handleExitPriceAudit(
                   <th className="p-4">DD / Coverage</th>
                   <th className="p-4">Jupiter</th>
                   <th className="p-4">Exit price</th>
+                  <th className="p-4">Exitability gate</th>
+                  <th className="p-4">Candidate funnel</th>
                   <th className="p-4">Mediana</th>
                   <th className="p-4">Dust</th>
                   <th className="p-4">Size compat.</th>
                   <th className="p-4">Token / conc.</th>
-                  <th className="p-4">Cicli Bâ†’S</th>
+                  <th className="p-4">Cicli B→S</th>
                   <th className="p-4">Ultimo swap</th>
                   <th className="p-4">Swap 24h</th>
                   <th className="p-4">Swap 7d</th>
@@ -2304,7 +2526,7 @@ async function handleExitPriceAudit(
                   <th className="p-4">Giorni attivi</th>
                   <th className="p-4">Swap/giorno</th>
                   <th className="p-4">Frequenza media</th>
-                  <th className="p-4">IdoneitÃ </th>
+                  <th className="p-4">Idoneità</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700">
@@ -2313,6 +2535,8 @@ async function handleExitPriceAudit(
                   const quality = qualityBadge(wallet.quality_classification);
                   const promotion = promotionBadge(wallet.promotion_status);
                   const exitPrice = exitPriceBadge(wallet.exit_price_coverage_status);
+                  const exitabilityGate = exitabilityGateBadge(wallet.exitability_gate_status);
+                  const discoveryFunnel = discoveryFunnelBadge(wallet.discovery_funnel_status);
                   const eligibility = eligibilityBadge(wallet);
                   return (
                     <tr key={wallet.wallet_address} className="hover:bg-slate-700/30">
@@ -2354,7 +2578,7 @@ async function handleExitPriceAudit(
                           );
                         })()}
                         <p className="mt-1 text-[10px] text-slate-500">
-                          {wallet.extended_history_helius_requests ?? 0} req Â· {wallet.extended_history_trades_imported ?? 0} nuovi
+                          {wallet.extended_history_helius_requests ?? 0} req · {wallet.extended_history_trades_imported ?? 0} nuovi
                         </p>
                       </td>
                       <td className="p-4 text-center text-slate-300">
@@ -2398,7 +2622,7 @@ async function handleExitPriceAudit(
                           {wallet.backtest_data_sufficient ? "SUFFICIENTE" : "INSUFFICIENTE"}
                         </span>
                         <p className="mt-1 text-[10px] text-slate-500">
-                          {formatNumber(wallet.backtest_data_sufficiency_score)}% Â· {formatNumber(wallet.backtest_history_span_days, 1)} g
+                          {formatNumber(wallet.backtest_data_sufficiency_score)}% · {formatNumber(wallet.backtest_history_span_days, 1)} g
                         </p>
                       </td>
                       <td className="p-4 text-center text-slate-300">
@@ -2430,8 +2654,35 @@ async function handleExitPriceAudit(
                             : exitPrice.label}
                         </button>
                         <p className="mt-1 text-[10px] text-slate-500">
-                          {formatNumber(wallet.exit_price_coverage_score)}% Â· local {formatNumber(wallet.exit_price_local_observable_percent)}% Â· route {formatNumber(wallet.exit_price_current_route_percent)}%
+                          {formatNumber(wallet.exit_price_coverage_score)}% · local {formatNumber(wallet.exit_price_local_observable_percent)}% · route {formatNumber(wallet.exit_price_current_route_percent)}%
                         </p>
+                      </td>
+                      <td className="p-4 text-center">
+                        <span
+                          title={(wallet.exitability_gate_reasons ?? []).join(", ")}
+                          className={`rounded-full border px-2.5 py-1 text-xs font-bold ${exitabilityGate.className}`}
+                        >
+                          {exitabilityGate.label}
+                        </span>
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          {formatNumber(wallet.exitability_gate_score)}%
+                        </p>
+                      </td>
+                      <td className="p-4 text-center">
+                        <span
+                          title={(wallet.discovery_funnel_reasons ?? []).join(", ")}
+                          className={`rounded-full border px-2.5 py-1 text-xs font-bold ${discoveryFunnel.className}`}
+                        >
+                          {discoveryFunnel.label}
+                        </span>
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          {formatNumber(wallet.discovery_funnel_score)}% · {wallet.discovery_funnel_action || "-"}
+                        </p>
+                        {Number(wallet.discovery_funnel_priority ?? 0) > 0 && (
+                          <p className="mt-1 text-[10px] font-bold text-cyan-300">
+                            Coda #{wallet.discovery_funnel_priority} · {wallet.discovery_funnel_history_budget ?? 0} req
+                          </p>
+                        )}
                       </td>
                       <td className="p-4 text-center text-slate-300">{formatNumber(wallet.median_swap_sol_7d, 4)} SOL</td>
                       <td className="p-4 text-center text-slate-300">{formatNumber(Number(wallet.dust_ratio_7d ?? 0) * 100, 1)}%</td>
@@ -2460,7 +2711,7 @@ async function handleExitPriceAudit(
                 })}
                 {!filteredWallets.length && (
                   <tr>
-                    <td colSpan="32" className="p-10 text-center text-slate-500">
+                    <td colSpan="35" className="p-10 text-center text-slate-500">
                       Nessun wallet corrisponde ai filtri selezionati.
                     </td>
                   </tr>

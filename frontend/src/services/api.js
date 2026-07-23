@@ -329,6 +329,34 @@ export function refreshExitabilityGate(
 }
 
 
+export function refreshCandidateFunnel({
+  limit = 500,
+  historyRequestBudget = 10,
+  maxHistoryWallets = 5,
+  targetHistoryDays = 30,
+} = {}) {
+  return api.post(
+    "/discovered-wallets/candidate-funnel/refresh",
+    null,
+    {
+      params: {
+        limit,
+        history_request_budget: historyRequestBudget,
+        max_history_wallets: maxHistoryWallets,
+        target_history_days: targetHistoryDays,
+      },
+    }
+  );
+}
+
+
+export function getLatestCandidateFunnel() {
+  return api.get(
+    "/discovered-wallets/candidate-funnel/latest"
+  );
+}
+
+
 // =========================
 // WALLET INTELLIGENCE
 // =========================

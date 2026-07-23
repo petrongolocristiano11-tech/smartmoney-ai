@@ -13,6 +13,9 @@ from backend.app.models.candidate_exit_price_audit import (
 from backend.app.models.candidate_exitability_gate import (
     CandidateExitabilityGateRun,
 )
+from backend.app.models.candidate_discovery_funnel import (
+    CandidateDiscoveryFunnelRun,
+)
 from backend.app.models.candidate_history_backfill import (
     CandidateHistoryBackfillRun,
 )
@@ -87,6 +90,7 @@ __all__ = [
     "CandidatePositionLifecycleAuditRun",
     "CandidateExitPriceAuditRun",
     "CandidateExitabilityGateRun",
+    "CandidateDiscoveryFunnelRun",
     "CandidateHistoryBackfillRun",
     "CandidateTokenCompatibility",
     "DiscoveryJob",

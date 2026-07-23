@@ -1,7 +1,7 @@
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc
+from sqlalchemy import asc, case, desc
 from sqlalchemy.orm import Session
 
 from backend.app.database.session import get_db
@@ -24,6 +24,7 @@ from backend.app.schemas.discovered_wallet import (
     DiscoveredWalletQualityRefreshResponse,
     DiscoveredWalletResponse,
     CandidateExitabilityGateResponse,
+    CandidateDiscoveryFunnelResponse,
 )
 from backend.app.services.candidate_backtest_service import (
     get_latest_candidate_backtest,
@@ -53,6 +54,10 @@ from backend.app.services.discovered_wallet_service import (
 )
 from backend.app.services.candidate_exitability_gate_service import (
     run_exitability_gate_refresh,
+)
+from backend.app.services.candidate_discovery_funnel_service import (
+    get_latest_candidate_discovery_funnel,
+    run_candidate_discovery_funnel,
 )
 from backend.app.services.discovery_hydration_service import (
     HydrationAlreadyRunningError,
@@ -109,6 +114,14 @@ def get_discovered_wallets(
         "BLOCKED",
         "NON_ANALIZZATO",
     ] = "ALL",
+    discovery_funnel: Literal[
+        "ALL",
+        "READY",
+        "REVIEW",
+        "BLOCKED",
+        "NEEDS_LOCAL_DATA",
+        "NEEDS_HISTORY",
+    ] = "ALL",
     sort_by: Literal[
         "ranking_score",
         "smart_score",
@@ -122,6 +135,9 @@ def get_discovered_wallets(
         "exit_price_coverage_score",
         "exit_price_local_observable_percent",
         "exit_price_current_route_percent",
+        "discovery_funnel_score",
+        "discovery_funnel_priority",
+        "discovery_funnel_history_budget",
         "median_swap_sol_7d",
         "size_compatibility_ratio_7d",
         "last_swap_at",
@@ -152,6 +168,26 @@ def get_discovered_wallets(
     if exitability_gate != "ALL":
         query = query.filter(
             DiscoveredWallet.exitability_gate_status == exitability_gate
+        )
+    if discovery_funnel != "ALL":
+        query = query.filter(
+            DiscoveredWallet.discovery_funnel_status == discovery_funnel
+        )
+
+    if sort_by == "discovery_funnel_priority":
+        priority_order = case(
+            (DiscoveredWallet.discovery_funnel_priority <= 0, 999999),
+            else_=DiscoveredWallet.discovery_funnel_priority,
+        )
+        return (
+            query.order_by(
+                desc(DiscoveredWallet.eligible),
+                asc(priority_order),
+                desc(DiscoveredWallet.discovery_funnel_score),
+                desc(DiscoveredWallet.smart_score),
+            )
+            .limit(limit)
+            .all()
         )
 
     order_column = getattr(DiscoveredWallet, sort_by)
@@ -422,6 +458,42 @@ def refresh_exitability_gate(
     db: Session = Depends(get_db),
 ):
     return run_exitability_gate_refresh(db, limit=limit)
+
+
+@router.post(
+    "/candidate-funnel/refresh",
+    response_model=CandidateDiscoveryFunnelResponse,
+)
+def refresh_candidate_discovery_funnel(
+    limit: int = Query(default=500, ge=1, le=500),
+    history_request_budget: int = Query(default=10, ge=0, le=50),
+    max_history_wallets: int = Query(default=5, ge=1, le=20),
+    target_history_days: int = Query(default=30, ge=7, le=90),
+    db: Session = Depends(get_db),
+):
+    return run_candidate_discovery_funnel(
+        db,
+        limit=limit,
+        history_request_budget=history_request_budget,
+        max_history_wallets=max_history_wallets,
+        target_history_days=target_history_days,
+    )
+
+
+@router.get(
+    "/candidate-funnel/latest",
+    response_model=CandidateDiscoveryFunnelResponse,
+)
+def read_latest_candidate_discovery_funnel(
+    db: Session = Depends(get_db),
+):
+    run = get_latest_candidate_discovery_funnel(db)
+    if run is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Candidate funnel non trovato",
+        )
+    return run
 
 
 @router.get("/{wallet_address}", response_model=DiscoveredWalletResponse)

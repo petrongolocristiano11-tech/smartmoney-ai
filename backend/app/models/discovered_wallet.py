@@ -245,6 +245,28 @@ class DiscoveredWallet(Base):
         DateTime(timezone=True), nullable=True, index=True
     )
 
+    discovery_funnel_status: Mapped[str] = mapped_column(
+        String(24), default="NEEDS_LOCAL_DATA", index=True
+    )
+    discovery_funnel_score: Mapped[float] = mapped_column(
+        Float, default=0.0, index=True
+    )
+    discovery_funnel_priority: Mapped[int] = mapped_column(
+        Integer, default=0, index=True
+    )
+    discovery_funnel_action: Mapped[str] = mapped_column(
+        String(40), default="RUN_CONTROLLED_HYDRATION"
+    )
+    discovery_funnel_reasons: Mapped[list] = mapped_column(
+        JSON, default=list
+    )
+    discovery_funnel_history_budget: Mapped[int] = mapped_column(
+        Integer, default=0
+    )
+    discovery_funnel_calculated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
     eligible: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     eligibility_reasons: Mapped[list] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String(20), default="DISCOVERED")

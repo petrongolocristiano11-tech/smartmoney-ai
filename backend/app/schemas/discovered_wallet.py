@@ -123,6 +123,13 @@ class DiscoveredWalletResponse(BaseModel):
     exitability_gate_eligible: bool
     exitability_gate_reasons: list[str]
     exitability_gate_calculated_at: datetime | None
+    discovery_funnel_status: str
+    discovery_funnel_score: float
+    discovery_funnel_priority: int
+    discovery_funnel_action: str
+    discovery_funnel_reasons: list[str]
+    discovery_funnel_history_budget: int
+    discovery_funnel_calculated_at: datetime | None
 
     eligible: bool
     eligibility_reasons: list[str]
@@ -210,6 +217,21 @@ class CandidateExitabilityGateResponse(BaseModel):
     safety: dict
     summary: dict
     wallet_results: list[dict]
+    started_at: datetime
+    completed_at: datetime | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class CandidateDiscoveryFunnelResponse(BaseModel):
+    id: int
+    run_id: str
+    status: str
+    parameters: dict
+    safety: dict
+    summary: dict
+    wallet_results: list[dict]
+    history_queue: list[dict]
     started_at: datetime
     completed_at: datetime | None
     created_at: datetime
