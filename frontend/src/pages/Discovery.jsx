@@ -635,7 +635,7 @@ async function handleReconstructionAudit(
     setError(
       typeof backendMessage === "string"
         ? backendMessage
-        : "Audit non completato. Nessuna funzione LIVE ? stata modificata."
+        : "Audit non completato. Nessuna funzione LIVE e stata modificata."
     );
   } finally {
     setRunningReconstructionAudit(false);
@@ -740,20 +740,23 @@ async function handleReconstructionAudit(
           </div>
           <div className="p-5">
             <label className="block text-sm text-slate-400">
-              Wallet candidato COPIABILE / OSSERVAZIONE
+              Wallet scoperto da analizzare
               <select
                 value={candidateWallet}
                 onChange={(event) => setCandidateWallet(event.target.value)}
                 className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 font-mono text-xs"
               >
                 {discoveredWallets
-                  .filter((wallet) => ["COPIABILE", "OSSERVAZIONE"].includes(wallet.quality_classification))
                   .map((wallet) => (
                     <option key={wallet.wallet_address} value={wallet.wallet_address}>
                       {shortenAddress(wallet.wallet_address, 12, 10)} · Q {formatNumber(wallet.quality_score)} · {wallet.promotion_status}
                     </option>
                   ))}
               </select>
+              <span className="mt-2 block text-xs text-slate-500">
+                L'audit e disponibile per ogni wallet scoperto. Storico esteso e
+                Promotion Gate richiedono qualita COPIABILE o OSSERVAZIONE.
+              </span>
             </label>
 
             <div className="mt-5 rounded-xl border border-cyan-900 bg-cyan-950/20 p-4">
@@ -789,7 +792,7 @@ async function handleReconstructionAudit(
                 <button
                   type="button"
                   onClick={() => handleExtendedHistoryBackfill()}
-                  disabled={runningBackfill || !candidateWallet}
+                  disabled={runningBackfill || !candidateWallet || !["COPIABILE", "OSSERVAZIONE"].includes(discoveredWallets.find((wallet) => wallet.wallet_address === candidateWallet)?.quality_classification)}
                   className="self-end rounded-lg bg-cyan-600 px-5 py-3 font-bold text-white disabled:opacity-50"
                 >
                   {runningBackfill ? "Backfill in corso..." : "Estendi storico"}
@@ -916,7 +919,7 @@ async function handleReconstructionAudit(
   <button
     type="button"
     onClick={() => handlePromotionBacktest()}
-    disabled={runningBacktest || !candidateWallet}
+    disabled={runningBacktest || !candidateWallet || !["COPIABILE", "OSSERVAZIONE"].includes(discoveredWallets.find((wallet) => wallet.wallet_address === candidateWallet)?.quality_classification)}
     className="rounded-lg bg-emerald-600 px-5 py-3 font-bold text-white disabled:opacity-50"
   >
     {runningBacktest
@@ -935,7 +938,7 @@ async function handleReconstructionAudit(
   >
     {runningReconstructionAudit
       ? "Audit in corso..."
-      : "Audit ricostruzione + sensibilit?"}
+      : "Audit ricostruzione + sensibilita"}
   </button>
 </div>
             </div>
