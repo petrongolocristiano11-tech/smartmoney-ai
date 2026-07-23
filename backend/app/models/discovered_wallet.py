@@ -122,6 +122,43 @@ class DiscoveredWallet(Base):
         nullable=True,
     )
 
+    extended_history_status: Mapped[str] = mapped_column(
+        String(24), default="NEVER", index=True
+    )
+    extended_history_run_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, index=True
+    )
+    extended_history_last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    extended_history_last_success_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    extended_history_lookback_days: Mapped[int] = mapped_column(Integer, default=0)
+    extended_history_request_budget: Mapped[int] = mapped_column(Integer, default=0)
+    extended_history_helius_requests: Mapped[int] = mapped_column(Integer, default=0)
+    extended_history_pages_fetched: Mapped[int] = mapped_column(Integer, default=0)
+    extended_history_transactions_found: Mapped[int] = mapped_column(Integer, default=0)
+    extended_history_swaps_found: Mapped[int] = mapped_column(Integer, default=0)
+    extended_history_trades_imported: Mapped[int] = mapped_column(Integer, default=0)
+    extended_history_trades_updated: Mapped[int] = mapped_column(Integer, default=0)
+    extended_history_parse_failures: Mapped[int] = mapped_column(Integer, default=0)
+    extended_history_oldest_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    extended_history_newest_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    extended_history_stop_reason: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    extended_history_error_code: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    extended_history_error_message: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
+    )
+
     promotion_status: Mapped[str] = mapped_column(
         String(24),
         default="NON_ANALIZZATO",
@@ -152,6 +189,20 @@ class DiscoveredWallet(Base):
         String(24), default="NOT_CHECKED"
     )
     backtest_jupiter_compatibility_percent: Mapped[float] = mapped_column(
+        Float, default=0.0
+    )
+    backtest_data_sufficient: Mapped[bool] = mapped_column(
+        Boolean, default=False, index=True
+    )
+    backtest_data_sufficiency_score: Mapped[float] = mapped_column(
+        Float, default=0.0
+    )
+    backtest_data_sufficiency_reasons: Mapped[list] = mapped_column(
+        JSON, default=list
+    )
+    backtest_history_span_days: Mapped[float] = mapped_column(Float, default=0.0)
+    backtest_bootstrap_positions: Mapped[int] = mapped_column(Integer, default=0)
+    backtest_matched_sell_ratio_percent: Mapped[float] = mapped_column(
         Float, default=0.0
     )
 

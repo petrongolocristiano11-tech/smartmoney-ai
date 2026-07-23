@@ -5,7 +5,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class CandidateBacktestRequest(BaseModel):
     wallet_address: str = Field(min_length=32, max_length=64)
-    lookback_days: int = Field(default=7, ge=1, le=30)
+    lookback_days: int = Field(default=30, ge=1, le=90)
+    warmup_days: int = Field(default=14, ge=0, le=60)
     starting_capital_sol: float = Field(default=1.0, gt=0, le=1000)
     fixed_buy_size_sol: float = Field(default=0.05, gt=0, le=100)
     slippage_bps: int = Field(default=100, ge=0, le=1000)
@@ -15,6 +16,8 @@ class CandidateBacktestRequest(BaseModel):
     max_open_positions: int = Field(default=5, ge=1, le=50)
     check_jupiter: bool = True
     jupiter_token_limit: int = Field(default=10, ge=1, le=20)
+    jupiter_cache_ttl_hours: int = Field(default=6, ge=1, le=24)
+    force_jupiter_refresh: bool = False
 
     @field_validator("wallet_address")
     @classmethod
@@ -37,6 +40,10 @@ class CandidateBacktestResponse(BaseModel):
     safety: dict
 
     source_trades: int
+    warmup_source_trades: int
+    analysis_source_trades: int
+    bootstrap_positions: int
+    bootstrap_positions_closed: int
     valid_priced_trades: int
     buy_signals: int
     sell_signals: int
@@ -54,6 +61,7 @@ class CandidateBacktestResponse(BaseModel):
     unique_tokens: int
 
     starting_capital_sol: float
+    effective_starting_equity_sol: float
     ending_equity_sol: float
     realized_pnl_sol: float
     unrealized_pnl_sol: float
@@ -63,15 +71,75 @@ class CandidateBacktestResponse(BaseModel):
     profit_factor: float | None
     max_drawdown_percent: float
     execution_coverage_percent: float
+    matched_sell_ratio_percent: float
+    open_position_ratio_percent: float
+    history_span_days: float
+    history_oldest_at: datetime | None
+    history_newest_at: datetime | None
+    data_sufficient: bool
+    data_sufficiency_score: float
+    data_sufficiency_reasons: list[str]
 
     jupiter_checked: bool
     jupiter_status: str
     jupiter_tokens_checked: int
     jupiter_tokens_compatible: int
     jupiter_requests: int
+    jupiter_cache_hits: int
+    jupiter_live_checks: int
     jupiter_compatibility_percent: float
     jupiter_results: list[dict]
     position_results: list[dict]
+
+    started_at: datetime
+    completed_at: datetime | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CandidateHistoryBackfillRequest(BaseModel):
+    wallet_address: str = Field(min_length=32, max_length=64)
+    lookback_days: int = Field(default=30, ge=7, le=90)
+    max_helius_requests: int = Field(default=5, ge=1, le=20)
+    page_size: int = Field(default=100, ge=10, le=100)
+    force: bool = False
+
+    @field_validator("wallet_address")
+    @classmethod
+    def normalize_wallet(cls, value: str) -> str:
+        wallet = str(value or "").strip()
+        if not 32 <= len(wallet) <= 64:
+            raise ValueError("Wallet address non valido")
+        return wallet
+
+
+class CandidateHistoryBackfillResponse(BaseModel):
+    id: int
+    run_id: str
+    wallet_address: str
+    status: str
+    stop_reason: str
+    error_code: str | None
+    error_message: str | None
+
+    requested_lookback_days: int
+    page_size: int
+    request_budget: int
+    helius_requests: int
+    pages_fetched: int
+    transactions_found: int
+    swaps_found: int
+    trades_imported: int
+    trades_updated: int
+    parse_failures: int
+    duplicate_transactions: int
+
+    oldest_transaction_at: datetime | None
+    newest_transaction_at: datetime | None
+    next_before_signature: str | None
+    parameters: dict
+    safety: dict
 
     started_at: datetime
     completed_at: datetime | None

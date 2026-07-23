@@ -79,20 +79,22 @@ def api_client():
     engine.dispose()
 
 
-def test_backtest_api_persists_observation_without_jupiter(api_client):
+def test_backtest_api_persists_data_insufficient_without_jupiter(api_client):
     response = api_client.post(
         "/discovered-wallets/promotion/backtest",
         json={
             "wallet_address": WALLET,
             "check_jupiter": False,
             "lookback_days": 7,
+            "warmup_days": 14,
             "starting_capital_sol": 1,
             "fixed_buy_size_sol": 0.05,
         },
     )
     assert response.status_code == 200
     payload = response.json()
-    assert payload["decision"] == "OSSERVAZIONE"
+    assert payload["decision"] == "DATI_INSUFFICIENTI"
+    assert payload["data_sufficient"] is False
     assert payload["safety"]["live_enabled"] is False
     assert payload["safety"]["generation_created"] is False
 
@@ -101,7 +103,7 @@ def test_backtest_api_persists_observation_without_jupiter(api_client):
     assert latest.json()["run_id"] == payload["run_id"]
 
     listing = api_client.get(
-        "/discovered-wallets", params={"promotion": "OSSERVAZIONE"}
+        "/discovered-wallets", params={"promotion": "DATI_INSUFFICIENTI"}
     )
     assert listing.status_code == 200
     assert [row["wallet_address"] for row in listing.json()] == [WALLET]

@@ -129,9 +129,37 @@ export function runControlledDiscoveryHydration({
 }
 
 
+export function runExtendedCandidateHistoryBackfill({
+  walletAddress,
+  lookbackDays = 30,
+  maxHeliusRequests = 5,
+  pageSize = 100,
+  force = false,
+}) {
+  return api.post(
+    "/discovered-wallets/promotion/history/backfill",
+    {
+      wallet_address: walletAddress,
+      lookback_days: lookbackDays,
+      max_helius_requests: maxHeliusRequests,
+      page_size: pageSize,
+      force,
+    }
+  );
+}
+
+
+export function getLatestExtendedCandidateHistory(walletAddress) {
+  return api.get(
+    `/discovered-wallets/promotion/history/${encodeURIComponent(walletAddress)}/latest`
+  );
+}
+
+
 export function runCandidatePromotionBacktest({
   walletAddress,
-  lookbackDays = 7,
+  lookbackDays = 30,
+  warmupDays = 14,
   startingCapitalSol = 1,
   fixedBuySizeSol = 0.05,
   slippageBps = 100,
@@ -141,12 +169,15 @@ export function runCandidatePromotionBacktest({
   maxOpenPositions = 5,
   checkJupiter = true,
   jupiterTokenLimit = 10,
+  jupiterCacheTtlHours = 6,
+  forceJupiterRefresh = false,
 }) {
   return api.post(
     "/discovered-wallets/promotion/backtest",
     {
       wallet_address: walletAddress,
       lookback_days: lookbackDays,
+      warmup_days: warmupDays,
       starting_capital_sol: startingCapitalSol,
       fixed_buy_size_sol: fixedBuySizeSol,
       slippage_bps: slippageBps,
@@ -156,6 +187,8 @@ export function runCandidatePromotionBacktest({
       max_open_positions: maxOpenPositions,
       check_jupiter: checkJupiter,
       jupiter_token_limit: jupiterTokenLimit,
+      jupiter_cache_ttl_hours: jupiterCacheTtlHours,
+      force_jupiter_refresh: forceJupiterRefresh,
     }
   );
 }

@@ -11,29 +11,35 @@ from backend.app.core.constants import SOL_MINT
 from backend.app.models.candidate_backtest import CandidateBacktestRun
 from backend.app.models.discovered_wallet import DiscoveredWallet
 from backend.app.models.trade import Trade
+from backend.app.services.candidate_jupiter_compatibility_service import (
+    JUPITER_FAILED,
+    JUPITER_NOT_CHECKED,
+    JUPITER_PASSED,
+    JUPITER_UNAVAILABLE,
+    check_candidate_jupiter_compatibility,
+)
 from backend.app.services.jupiter_swap_client import JupiterSwapClient
-from backend.app.services.live_trading_errors import JupiterSwapError
 from backend.app.services.wallet_activity_service import ensure_aware, safe_float
 
 
 PROMOTION_PROMOTED = "PROMOSSO"
 PROMOTION_OBSERVATION = "OSSERVAZIONE"
 PROMOTION_REJECTED = "BOCCIATO"
+PROMOTION_INSUFFICIENT = "DATI_INSUFFICIENTI"
 PROMOTION_NOT_ANALYZED = "NON_ANALIZZATO"
 
-JUPITER_PASSED = "PASSED"
-JUPITER_FAILED = "FAILED"
-JUPITER_UNAVAILABLE = "UNAVAILABLE"
-JUPITER_NOT_CHECKED = "NOT_CHECKED"
-
 MIN_SMART_SCORE = 60.0
-MIN_COMPLETED_POSITIONS = 3
+MIN_COMPLETED_POSITIONS = 5
+MIN_HISTORY_SPAN_DAYS = 5.0
+MIN_ANALYSIS_SOURCE_TRADES = 10
+MIN_MATCHED_SELL_RATIO_PERCENT = 50.0
 MIN_WIN_RATE_PERCENT = 40.0
 MIN_PROFIT_FACTOR = 1.10
 MAX_DRAWDOWN_PERCENT = 25.0
 MAX_REJECT_DRAWDOWN_PERCENT = 40.0
-MIN_EXECUTION_COVERAGE_PERCENT = 50.0
+MIN_EXECUTION_COVERAGE_PERCENT = 40.0
 MAX_OPEN_POSITIONS_AT_END = 2
+MAX_OPEN_POSITION_RATIO_PERCENT = 50.0
 MIN_JUPITER_COMPATIBILITY_PERCENT = 80.0
 
 
@@ -45,6 +51,7 @@ class SimulatedPosition:
     entry_price_sol: float
     entry_at: datetime
     entry_signature: str
+    bootstrap: bool = False
 
 
 def utc_now() -> datetime:
@@ -93,98 +100,133 @@ def _mark_to_market(
     return max(0.0, value)
 
 
-def _check_jupiter_compatibility(
-    tokens: list[str],
+def _open_position(
     *,
+    token: str,
+    trade: Trade,
+    timestamp: datetime,
+    price: float,
     fixed_buy_size_sol: float,
-    slippage_bps: int,
-    token_limit: int,
-    client: JupiterSwapClient,
-) -> dict[str, Any]:
-    selected = [token for token in tokens if token and token != SOL_MINT][:token_limit]
-    if not selected:
-        return {
-            "checked": True,
-            "status": JUPITER_FAILED,
-            "tokens_checked": 0,
-            "tokens_compatible": 0,
-            "requests": 0,
-            "compatibility_percent": 0.0,
-            "results": [],
-        }
+    friction_ratio: float,
+    fee_ratio: float,
+) -> SimulatedPosition | None:
+    entry_fee = fixed_buy_size_sol * fee_ratio
+    net_input = max(0.0, fixed_buy_size_sol - entry_fee)
+    execution_price = price * (1.0 + friction_ratio)
+    quantity = net_input / execution_price if execution_price > 0 else 0.0
+    if quantity <= 0:
+        return None
+    return SimulatedPosition(
+        token_mint=token,
+        quantity=quantity,
+        cost_basis_sol=fixed_buy_size_sol,
+        entry_price_sol=execution_price,
+        entry_at=timestamp,
+        entry_signature=str(trade.signature),
+    )
 
-    amount_raw = max(1, int(fixed_buy_size_sol * 1_000_000_000))
-    results: list[dict[str, Any]] = []
-    compatible = 0
-    requests = 0
-    unavailable = False
 
-    for token in selected:
-        item: dict[str, Any] = {
-            "token_mint": token,
-            "buy_quote": False,
-            "sell_quote": False,
-            "compatible": False,
-            "error_code": None,
-            "error_message": None,
-        }
-        try:
-            requests += 1
-            buy_quote = client.get_order(
-                input_mint=SOL_MINT,
-                output_mint=token,
-                amount_raw=amount_raw,
-                taker=None,
-                slippage_bps=slippage_bps,
+def _prepare_bootstrap_state(
+    trades: list[Trade],
+    *,
+    cutoff: datetime,
+    starting_capital_sol: float,
+    fixed_buy_size_sol: float,
+    friction_bps: float,
+    fee_bps: int,
+    max_open_positions: int,
+) -> tuple[float, dict[str, SimulatedPosition], dict[str, float], int]:
+    friction_ratio = friction_bps / 10_000.0
+    fee_ratio = fee_bps / 10_000.0
+    cash = float(starting_capital_sol)
+    positions: dict[str, SimulatedPosition] = {}
+    last_prices: dict[str, float] = {}
+
+    for trade in trades:
+        token = str(trade.token_mint or "").strip()
+        side = str(trade.side or "UNKNOWN").strip().upper()
+        price = _source_price(trade)
+        timestamp = ensure_aware(trade.block_time) or cutoff
+        if not token or token == SOL_MINT or side not in {"BUY", "SELL"} or price is None:
+            continue
+        last_prices[token] = price
+
+        if side == "BUY":
+            if token in positions or len(positions) >= max_open_positions:
+                continue
+            if cash + 1e-12 < fixed_buy_size_sol:
+                continue
+            position = _open_position(
+                token=token,
+                trade=trade,
+                timestamp=timestamp,
+                price=price,
+                fixed_buy_size_sol=fixed_buy_size_sol,
+                friction_ratio=friction_ratio,
+                fee_ratio=fee_ratio,
             )
-            item["buy_quote"] = buy_quote.out_amount > 0
+            if position is not None:
+                positions[token] = position
+                cash -= fixed_buy_size_sol
+        else:
+            position = positions.get(token)
+            if position is None:
+                continue
+            execution_price = price * max(0.0, 1.0 - friction_ratio)
+            gross_proceeds = position.quantity * execution_price
+            proceeds = max(0.0, gross_proceeds - gross_proceeds * fee_ratio)
+            cash += proceeds
+            del positions[token]
 
-            if buy_quote.out_amount > 0:
-                requests += 1
-                sell_quote = client.get_order(
-                    input_mint=token,
-                    output_mint=SOL_MINT,
-                    amount_raw=buy_quote.out_amount,
-                    taker=None,
-                    slippage_bps=slippage_bps,
-                )
-                item["sell_quote"] = sell_quote.out_amount > 0
+    # Rebase carried positions at the start of the analysis window. This prevents
+    # warmup-period PnL from leaking into the measured backtest return.
+    for token, position in positions.items():
+        price = last_prices.get(token, position.entry_price_sol)
+        gross = position.quantity * price * max(0.0, 1.0 - friction_ratio)
+        marked_value = gross * max(0.0, 1.0 - fee_ratio)
+        position.cost_basis_sol = max(0.0, marked_value)
+        position.entry_price_sol = price
+        position.entry_at = cutoff
+        position.entry_signature = f"BOOTSTRAP:{position.entry_signature}"
+        position.bootstrap = True
 
-            item["compatible"] = bool(item["buy_quote"] and item["sell_quote"])
-            if item["compatible"]:
-                compatible += 1
+    return cash, positions, last_prices, len(positions)
 
-        except JupiterSwapError as error:
-            item["error_code"] = error.code
-            item["error_message"] = str(error)
-            if error.code == "JUPITER_NOT_CONFIGURED":
-                unavailable = True
-                results.append(item)
-                break
-        except Exception as error:  # defensive boundary around external quote provider
-            item["error_code"] = "JUPITER_UNEXPECTED_ERROR"
-            item["error_message"] = str(error)[:500]
 
-        results.append(item)
+def _data_sufficiency(metrics: dict[str, Any]) -> tuple[bool, float, list[str]]:
+    reasons: list[str] = []
+    completed = int(metrics["completed_positions"])
+    history_span = safe_float(metrics["history_span_days"])
+    analysis_trades = int(metrics["analysis_source_trades"])
+    coverage = safe_float(metrics["execution_coverage_percent"])
+    matched_sell_ratio = safe_float(metrics["matched_sell_ratio_percent"])
+    open_ratio = safe_float(metrics["open_position_ratio_percent"])
 
-    checked = len(results)
-    compatibility = compatible / checked * 100.0 if checked else 0.0
-    if unavailable:
-        status = JUPITER_UNAVAILABLE
-    elif checked > 0 and compatibility >= MIN_JUPITER_COMPATIBILITY_PERCENT:
-        status = JUPITER_PASSED
-    else:
-        status = JUPITER_FAILED
+    if completed < MIN_COMPLETED_POSITIONS:
+        reasons.append("COMPLETED_POSITIONS_BELOW_SUFFICIENCY_MINIMUM")
+    if history_span < MIN_HISTORY_SPAN_DAYS:
+        reasons.append("HISTORY_SPAN_TOO_SHORT")
+    if analysis_trades < MIN_ANALYSIS_SOURCE_TRADES:
+        reasons.append("ANALYSIS_SAMPLE_TOO_SMALL")
+    if coverage < MIN_EXECUTION_COVERAGE_PERCENT:
+        reasons.append("EXECUTION_COVERAGE_TOO_LOW")
+    if matched_sell_ratio < MIN_MATCHED_SELL_RATIO_PERCENT:
+        reasons.append("MATCHED_SELL_RATIO_TOO_LOW")
+    if open_ratio > MAX_OPEN_POSITION_RATIO_PERCENT:
+        reasons.append("OPEN_POSITION_RATIO_TOO_HIGH")
 
-    return {
-        "checked": True,
-        "status": status,
-        "tokens_checked": checked,
-        "tokens_compatible": compatible,
-        "requests": requests,
-        "compatibility_percent": _round(compatibility, 4),
-        "results": results,
-    }
+    components = (
+        min(1.0, completed / MIN_COMPLETED_POSITIONS),
+        min(1.0, history_span / MIN_HISTORY_SPAN_DAYS),
+        min(1.0, analysis_trades / MIN_ANALYSIS_SOURCE_TRADES),
+        min(1.0, coverage / MIN_EXECUTION_COVERAGE_PERCENT),
+        min(1.0, matched_sell_ratio / MIN_MATCHED_SELL_RATIO_PERCENT),
+        min(1.0, MAX_OPEN_POSITION_RATIO_PERCENT / open_ratio)
+        if open_ratio > 0
+        else 1.0,
+    )
+    score = sum(components) / len(components) * 100.0
+    return not reasons, _round(score, 4), reasons
 
 
 def _backtest_score(metrics: dict[str, Any]) -> float:
@@ -195,17 +237,19 @@ def _backtest_score(metrics: dict[str, Any]) -> float:
     coverage = safe_float(metrics["execution_coverage_percent"])
     completed = int(metrics["completed_positions"])
     jupiter = safe_float(metrics["jupiter_compatibility_percent"])
+    sufficiency = safe_float(metrics["data_sufficiency_score"])
 
-    return_component = max(0.0, min(20.0, 10.0 + total_return / 2.0))
-    win_component = max(0.0, min(15.0, win_rate / 100.0 * 15.0))
+    return_component = max(0.0, min(17.5, 8.75 + total_return / 2.0))
+    win_component = max(0.0, min(12.5, win_rate / 100.0 * 12.5))
     if profit_factor is None:
         pf_component = 0.0
     else:
-        pf_component = max(0.0, min(20.0, safe_float(profit_factor) / 2.0 * 20.0))
-    drawdown_component = max(0.0, 15.0 * (1.0 - min(drawdown, 50.0) / 50.0))
+        pf_component = max(0.0, min(17.5, safe_float(profit_factor) / 2.0 * 17.5))
+    drawdown_component = max(0.0, 12.5 * (1.0 - min(drawdown, 50.0) / 50.0))
     coverage_component = max(0.0, min(10.0, coverage / 100.0 * 10.0))
     sample_component = max(0.0, min(10.0, completed / 10.0 * 10.0))
     jupiter_component = max(0.0, min(10.0, jupiter / 100.0 * 10.0))
+    sufficiency_component = max(0.0, min(10.0, sufficiency / 100.0 * 10.0))
     return _round(
         return_component
         + win_component
@@ -213,12 +257,16 @@ def _backtest_score(metrics: dict[str, Any]) -> float:
         + drawdown_component
         + coverage_component
         + sample_component
-        + jupiter_component,
+        + jupiter_component
+        + sufficiency_component,
         4,
     )
 
 
-def _promotion_decision(wallet: DiscoveredWallet, metrics: dict[str, Any]) -> tuple[str, list[str]]:
+def _promotion_decision(
+    wallet: DiscoveredWallet,
+    metrics: dict[str, Any],
+) -> tuple[str, list[str]]:
     reasons: list[str] = []
     if wallet.activity_classification != "ATTIVO":
         reasons.append("ACTIVITY_NOT_ACTIVE")
@@ -226,6 +274,18 @@ def _promotion_decision(wallet: DiscoveredWallet, metrics: dict[str, Any]) -> tu
         reasons.append("QUALITY_NOT_COPYABLE")
     if safe_float(wallet.smart_score) < MIN_SMART_SCORE:
         reasons.append("SMART_SCORE_BELOW_PROMOTION_MINIMUM")
+
+    preconditions_passed = (
+        wallet.activity_classification == "ATTIVO"
+        and wallet.quality_classification == "COPIABILE"
+        and safe_float(wallet.smart_score) >= MIN_SMART_SCORE
+    )
+    if not preconditions_passed:
+        return PROMOTION_OBSERVATION, list(dict.fromkeys(reasons))
+
+    if not bool(metrics["data_sufficient"]):
+        reasons.extend(metrics["data_sufficiency_reasons"])
+        return PROMOTION_INSUFFICIENT, list(dict.fromkeys(reasons))
 
     completed = int(metrics["completed_positions"])
     total_return = safe_float(metrics["total_return_percent"])
@@ -237,8 +297,6 @@ def _promotion_decision(wallet: DiscoveredWallet, metrics: dict[str, Any]) -> tu
     jupiter_status = str(metrics["jupiter_status"])
     jupiter_compatibility = safe_float(metrics["jupiter_compatibility_percent"])
 
-    if completed < MIN_COMPLETED_POSITIONS:
-        reasons.append("INSUFFICIENT_COMPLETED_POSITIONS")
     if total_return <= 0:
         reasons.append("NON_POSITIVE_NET_RETURN")
     if win_rate < MIN_WIN_RATE_PERCENT:
@@ -262,21 +320,8 @@ def _promotion_decision(wallet: DiscoveredWallet, metrics: dict[str, Any]) -> tu
     elif jupiter_compatibility < MIN_JUPITER_COMPATIBILITY_PERCENT:
         reasons.append("JUPITER_COMPATIBILITY_TOO_LOW")
 
-    hard_rejection = any(
-        (
-            completed == 0,
-            total_return <= -5.0,
-            drawdown > MAX_REJECT_DRAWDOWN_PERCENT,
-            profit_factor is not None and safe_float(profit_factor) < 0.80,
-            jupiter_status == JUPITER_FAILED and jupiter_compatibility == 0,
-        )
-    )
-
     promoted = all(
         (
-            wallet.activity_classification == "ATTIVO",
-            wallet.quality_classification == "COPIABILE",
-            safe_float(wallet.smart_score) >= MIN_SMART_SCORE,
             completed >= MIN_COMPLETED_POSITIONS,
             total_return > 0,
             win_rate >= MIN_WIN_RATE_PERCENT,
@@ -288,9 +333,17 @@ def _promotion_decision(wallet: DiscoveredWallet, metrics: dict[str, Any]) -> tu
             jupiter_compatibility >= MIN_JUPITER_COMPATIBILITY_PERCENT,
         )
     )
-
     if promoted:
         return PROMOTION_PROMOTED, []
+
+    hard_rejection = any(
+        (
+            total_return <= -5.0,
+            drawdown > MAX_REJECT_DRAWDOWN_PERCENT,
+            profit_factor is not None and safe_float(profit_factor) < 0.80,
+            jupiter_status == JUPITER_FAILED and jupiter_compatibility == 0,
+        )
+    )
     if hard_rejection:
         return PROMOTION_REJECTED, list(dict.fromkeys(reasons))
     return PROMOTION_OBSERVATION, list(dict.fromkeys(reasons))
@@ -300,7 +353,8 @@ def run_candidate_backtest(
     db: Session,
     *,
     wallet_address: str,
-    lookback_days: int = 7,
+    lookback_days: int = 30,
+    warmup_days: int = 14,
     starting_capital_sol: float = 1.0,
     fixed_buy_size_sol: float = 0.05,
     slippage_bps: int = 100,
@@ -310,6 +364,8 @@ def run_candidate_backtest(
     max_open_positions: int = 5,
     check_jupiter: bool = True,
     jupiter_token_limit: int = 10,
+    jupiter_cache_ttl_hours: int = 6,
+    force_jupiter_refresh: bool = False,
     now: datetime | None = None,
     jupiter_client: JupiterSwapClient | None = None,
 ) -> CandidateBacktestRun:
@@ -322,16 +378,26 @@ def run_candidate_backtest(
     if wallet is None:
         raise ValueError("Wallet scoperto non trovato")
 
-    cutoff = started_at - timedelta(days=lookback_days)
+    effective_lookback = max(1, min(int(lookback_days), 90))
+    effective_warmup = max(0, min(int(warmup_days), 60))
+    cutoff = started_at - timedelta(days=effective_lookback)
+    warmup_cutoff = cutoff - timedelta(days=effective_warmup)
     trades = (
         db.query(Trade)
         .filter(Trade.wallet_address == wallet_address)
         .filter(Trade.success.is_(True))
         .filter(Trade.block_time.isnot(None))
-        .filter(Trade.block_time >= cutoff)
+        .filter(Trade.block_time >= warmup_cutoff)
+        .filter(Trade.block_time <= started_at)
         .order_by(Trade.block_time.asc(), Trade.id.asc())
         .all()
     )
+    warmup_trades = [
+        trade for trade in trades if (ensure_aware(trade.block_time) or started_at) < cutoff
+    ]
+    analysis_trades = [
+        trade for trade in trades if (ensure_aware(trade.block_time) or started_at) >= cutoff
+    ]
 
     friction_bps = _effective_market_friction_bps(
         slippage_bps=slippage_bps,
@@ -340,11 +406,32 @@ def run_candidate_backtest(
     )
     friction_ratio = friction_bps / 10_000.0
     fee_ratio = fee_bps / 10_000.0
-    cash = float(starting_capital_sol)
-    positions: dict[str, SimulatedPosition] = {}
-    last_prices: dict[str, float] = {}
+    cash, positions, last_prices, bootstrap_positions = _prepare_bootstrap_state(
+        warmup_trades,
+        cutoff=cutoff,
+        starting_capital_sol=starting_capital_sol,
+        fixed_buy_size_sol=fixed_buy_size_sol,
+        friction_bps=friction_bps,
+        fee_bps=fee_bps,
+        max_open_positions=max_open_positions,
+    )
+    effective_starting_equity = _mark_to_market(
+        cash=cash,
+        positions=positions,
+        last_prices=last_prices,
+        friction_bps=friction_bps,
+        fee_bps=fee_bps,
+    )
+    if effective_starting_equity <= 0:
+        effective_starting_equity = float(starting_capital_sol)
+        cash = float(starting_capital_sol)
+        positions = {}
+        last_prices = {}
+        bootstrap_positions = 0
+
     closed_results: list[dict[str, Any]] = []
-    all_tokens: set[str] = set()
+    all_tokens: set[str] = set(positions)
+    bootstrap_closed = 0
     counters = {
         "valid_priced_trades": 0,
         "buy_signals": 0,
@@ -357,10 +444,10 @@ def run_candidate_backtest(
         "skipped_insufficient_capital": 0,
         "unmatched_sells": 0,
     }
-    peak_equity = float(starting_capital_sol)
+    peak_equity = float(effective_starting_equity)
     max_drawdown_percent = 0.0
 
-    for trade in trades:
+    for trade in analysis_trades:
         token = str(trade.token_mint or "").strip()
         side = str(trade.side or "UNKNOWN").strip().upper()
         price = _source_price(trade)
@@ -383,21 +470,19 @@ def run_candidate_backtest(
             elif cash + 1e-12 < fixed_buy_size_sol:
                 counters["skipped_insufficient_capital"] += 1
             else:
-                entry_fee = fixed_buy_size_sol * fee_ratio
-                net_input = max(0.0, fixed_buy_size_sol - entry_fee)
-                execution_price = price * (1.0 + friction_ratio)
-                quantity = net_input / execution_price if execution_price > 0 else 0.0
-                if quantity <= 0:
+                position = _open_position(
+                    token=token,
+                    trade=trade,
+                    timestamp=timestamp,
+                    price=price,
+                    fixed_buy_size_sol=fixed_buy_size_sol,
+                    friction_ratio=friction_ratio,
+                    fee_ratio=fee_ratio,
+                )
+                if position is None:
                     counters["skipped_invalid"] += 1
                 else:
-                    positions[token] = SimulatedPosition(
-                        token_mint=token,
-                        quantity=quantity,
-                        cost_basis_sol=fixed_buy_size_sol,
-                        entry_price_sol=execution_price,
-                        entry_at=timestamp,
-                        entry_signature=str(trade.signature),
-                    )
+                    positions[token] = position
                     cash -= fixed_buy_size_sol
                     counters["executed_buys"] += 1
 
@@ -414,6 +499,8 @@ def run_candidate_backtest(
                 pnl = proceeds - position.cost_basis_sol
                 cash += proceeds
                 counters["completed_positions"] += 1
+                if position.bootstrap:
+                    bootstrap_closed += 1
                 closed_results.append(
                     {
                         "token_mint": token,
@@ -421,6 +508,7 @@ def run_candidate_backtest(
                         "exit_at": timestamp.isoformat(),
                         "entry_signature": position.entry_signature,
                         "exit_signature": str(trade.signature),
+                        "bootstrap": position.bootstrap,
                         "cost_basis_sol": _round(position.cost_basis_sol),
                         "proceeds_sol": _round(proceeds),
                         "pnl_sol": _round(pnl),
@@ -453,7 +541,11 @@ def run_candidate_backtest(
     losing = sum(1 for item in closed_results if safe_float(item["pnl_sol"]) < -1e-12)
     breakeven = len(closed_results) - winning - losing
     win_rate = winning / len(closed_results) * 100.0 if closed_results else 0.0
-    profit_factor = gross_profit / abs(gross_loss) if gross_loss < 0 else (999.0 if gross_profit > 0 else None)
+    profit_factor = (
+        gross_profit / abs(gross_loss)
+        if gross_loss < 0
+        else (999.0 if gross_profit > 0 else None)
+    )
 
     ending_equity = _mark_to_market(
         cash=cash,
@@ -465,19 +557,45 @@ def run_candidate_backtest(
     open_cost = sum(position.cost_basis_sol for position in positions.values())
     open_value = max(0.0, ending_equity - cash)
     unrealized_pnl = open_value - open_cost
-    net_pnl = ending_equity - starting_capital_sol
-    total_return = net_pnl / starting_capital_sol * 100.0 if starting_capital_sol > 0 else 0.0
+    net_pnl = ending_equity - effective_starting_equity
+    total_return = (
+        net_pnl / effective_starting_equity * 100.0
+        if effective_starting_equity > 0
+        else 0.0
+    )
     actionable = counters["buy_signals"] + counters["sell_signals"]
     executed_actions = counters["executed_buys"] + counters["completed_positions"]
     coverage = executed_actions / actionable * 100.0 if actionable else 0.0
+    matched_sell_ratio = (
+        counters["completed_positions"] / counters["sell_signals"] * 100.0
+        if counters["sell_signals"]
+        else 0.0
+    )
+    opened_total = counters["executed_buys"] + bootstrap_positions
+    open_position_ratio = len(positions) / opened_total * 100.0 if opened_total else 0.0
+
+    timestamps = [ensure_aware(trade.block_time) for trade in trades]
+    timestamps = [item for item in timestamps if item is not None]
+    history_oldest_at = min(timestamps) if timestamps else None
+    history_newest_at = max(timestamps) if timestamps else None
+    history_span_days = (
+        (history_newest_at - history_oldest_at).total_seconds() / 86_400.0
+        if history_oldest_at and history_newest_at
+        else 0.0
+    )
 
     if check_jupiter:
-        jupiter = _check_jupiter_compatibility(
+        jupiter = check_candidate_jupiter_compatibility(
+            db,
             sorted(all_tokens),
             fixed_buy_size_sol=fixed_buy_size_sol,
             slippage_bps=slippage_bps,
             token_limit=jupiter_token_limit,
             client=jupiter_client or JupiterSwapClient(),
+            cache_ttl_hours=jupiter_cache_ttl_hours,
+            force_refresh=force_jupiter_refresh,
+            minimum_compatibility_percent=MIN_JUPITER_COMPATIBILITY_PERCENT,
+            now=started_at,
         )
     else:
         jupiter = {
@@ -486,12 +604,18 @@ def run_candidate_backtest(
             "tokens_checked": 0,
             "tokens_compatible": 0,
             "requests": 0,
+            "cache_hits": 0,
+            "live_checks": 0,
             "compatibility_percent": 0.0,
             "results": [],
         }
 
     metrics: dict[str, Any] = {
         "source_trades": len(trades),
+        "warmup_source_trades": len(warmup_trades),
+        "analysis_source_trades": len(analysis_trades),
+        "bootstrap_positions": bootstrap_positions,
+        "bootstrap_positions_closed": bootstrap_closed,
         **counters,
         "winning_positions": winning,
         "losing_positions": losing,
@@ -499,6 +623,7 @@ def run_candidate_backtest(
         "open_positions": len(positions),
         "unique_tokens": len(all_tokens),
         "starting_capital_sol": _round(starting_capital_sol),
+        "effective_starting_equity_sol": _round(effective_starting_equity),
         "ending_equity_sol": _round(ending_equity),
         "realized_pnl_sol": _round(realized_pnl),
         "unrealized_pnl_sol": _round(unrealized_pnl),
@@ -508,19 +633,32 @@ def run_candidate_backtest(
         "profit_factor": _round(profit_factor, 4) if profit_factor is not None else None,
         "max_drawdown_percent": _round(max_drawdown_percent, 4),
         "execution_coverage_percent": _round(coverage, 4),
+        "matched_sell_ratio_percent": _round(matched_sell_ratio, 4),
+        "open_position_ratio_percent": _round(open_position_ratio, 4),
+        "history_span_days": _round(history_span_days, 4),
+        "history_oldest_at": history_oldest_at,
+        "history_newest_at": history_newest_at,
         "jupiter_checked": bool(jupiter["checked"]),
         "jupiter_status": jupiter["status"],
         "jupiter_tokens_checked": jupiter["tokens_checked"],
         "jupiter_tokens_compatible": jupiter["tokens_compatible"],
         "jupiter_requests": jupiter["requests"],
+        "jupiter_cache_hits": jupiter["cache_hits"],
+        "jupiter_live_checks": jupiter["live_checks"],
         "jupiter_compatibility_percent": jupiter["compatibility_percent"],
     }
+    data_sufficient, sufficiency_score, sufficiency_reasons = _data_sufficiency(metrics)
+    metrics["data_sufficient"] = data_sufficient
+    metrics["data_sufficiency_score"] = sufficiency_score
+    metrics["data_sufficiency_reasons"] = sufficiency_reasons
+
     decision, reasons = _promotion_decision(wallet, metrics)
     score = _backtest_score(metrics)
     completed_at = utc_now()
 
     parameters = {
-        "lookback_days": lookback_days,
+        "lookback_days": effective_lookback,
+        "warmup_days": effective_warmup,
         "starting_capital_sol": starting_capital_sol,
         "fixed_buy_size_sol": fixed_buy_size_sol,
         "slippage_bps": slippage_bps,
@@ -531,6 +669,16 @@ def run_candidate_backtest(
         "max_open_positions": max_open_positions,
         "check_jupiter": check_jupiter,
         "jupiter_token_limit": jupiter_token_limit,
+        "jupiter_cache_ttl_hours": max(1, min(int(jupiter_cache_ttl_hours), 24)),
+        "force_jupiter_refresh": force_jupiter_refresh,
+        "sufficiency_thresholds": {
+            "minimum_completed_positions": MIN_COMPLETED_POSITIONS,
+            "minimum_history_span_days": MIN_HISTORY_SPAN_DAYS,
+            "minimum_analysis_source_trades": MIN_ANALYSIS_SOURCE_TRADES,
+            "minimum_execution_coverage_percent": MIN_EXECUTION_COVERAGE_PERCENT,
+            "minimum_matched_sell_ratio_percent": MIN_MATCHED_SELL_RATIO_PERCENT,
+            "maximum_open_position_ratio_percent": MAX_OPEN_POSITION_RATIO_PERCENT,
+        },
     }
     safety = {
         "dry_run_only": True,
@@ -564,7 +712,7 @@ def run_candidate_backtest(
     db.flush()
 
     wallet.promotion_status = decision
-    wallet.promotion_eligible = decision == PROMOTION_PROMOTED
+    wallet.promotion_eligible = decision == PROMOTION_PROMOTED and data_sufficient
     wallet.promotion_reasons = reasons
     wallet.promotion_calculated_at = completed_at
     wallet.latest_backtest_run_id = run.run_id
@@ -581,17 +729,32 @@ def run_candidate_backtest(
     wallet.backtest_jupiter_compatibility_percent = metrics[
         "jupiter_compatibility_percent"
     ]
+    wallet.backtest_data_sufficient = data_sufficient
+    wallet.backtest_data_sufficiency_score = sufficiency_score
+    wallet.backtest_data_sufficiency_reasons = sufficiency_reasons
+    wallet.backtest_history_span_days = metrics["history_span_days"]
+    wallet.backtest_bootstrap_positions = bootstrap_positions
+    wallet.backtest_matched_sell_ratio_percent = metrics[
+        "matched_sell_ratio_percent"
+    ]
     wallet.eligible = bool(
         wallet.activity_eligible
         and wallet.quality_eligible
         and wallet.promotion_eligible
+        and wallet.backtest_data_sufficient
         and safe_float(wallet.smart_score) >= MIN_SMART_SCORE
     )
     base_reasons = list(wallet.activity_reasons or []) + list(wallet.quality_reasons or [])
-    wallet.eligibility_reasons = list(dict.fromkeys(base_reasons + reasons))
+    wallet.eligibility_reasons = list(
+        dict.fromkeys(base_reasons + sufficiency_reasons + reasons)
+    )
     if not wallet.promotion_eligible:
         wallet.eligibility_reasons = list(
             dict.fromkeys([*wallet.eligibility_reasons, "PROMOTION_GATE_NOT_PASSED"])
+        )
+    if not wallet.backtest_data_sufficient:
+        wallet.eligibility_reasons = list(
+            dict.fromkeys([*wallet.eligibility_reasons, "BACKTEST_DATA_INSUFFICIENT"])
         )
     wallet.status = "PROMOTED" if wallet.promotion_eligible else "UPDATED"
 

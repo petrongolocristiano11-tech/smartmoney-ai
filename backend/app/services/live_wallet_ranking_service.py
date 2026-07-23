@@ -125,6 +125,9 @@ def _promotion_reasons(discovered: DiscoveredWallet | None) -> list[str]:
     if discovered is None:
         return ["PROMOTION_DATA_NOT_AVAILABLE"]
     reasons = list(discovered.promotion_reasons or [])
+    reasons.extend(discovered.backtest_data_sufficiency_reasons or [])
+    if not discovered.backtest_data_sufficient:
+        reasons.append("BACKTEST_DATA_INSUFFICIENT")
     if not discovered.promotion_eligible:
         reasons.append("PROMOTION_GATE_NOT_PASSED")
     return list(dict.fromkeys(reasons))
@@ -318,6 +321,12 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
         row.backtest_jupiter_status = (
             discovered.backtest_jupiter_status if discovered else "NOT_CHECKED"
         )
+        row.backtest_data_sufficient = (
+            bool(discovered.backtest_data_sufficient) if discovered else False
+        )
+        row.backtest_data_sufficiency_score = safe_float(
+            discovered.backtest_data_sufficiency_score if discovered else 0
+        )
         row.last_swap_at = discovered.last_swap_at if discovered else None
         row.swaps_24h = int(discovered.swaps_24h if discovered else 0)
         row.swaps_7d = int(discovered.swaps_7d if discovered else 0)
@@ -340,6 +349,7 @@ def refresh_live_wallet_ranking(db: Session) -> list[LiveWalletScore]:
             and bool(discovered.activity_eligible)
             and bool(discovered.quality_eligible)
             and bool(discovered.promotion_eligible)
+            and bool(discovered.backtest_data_sufficient)
             and smart_score >= config.min_wallet_smart_score
             and closed >= minimum_sample
         )

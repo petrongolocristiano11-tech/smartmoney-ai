@@ -8,6 +8,8 @@ from backend.app.database.session import get_db
 from backend.app.schemas.candidate_backtest import (
     CandidateBacktestRequest,
     CandidateBacktestResponse,
+    CandidateHistoryBackfillRequest,
+    CandidateHistoryBackfillResponse,
 )
 from backend.app.models.discovered_wallet import DiscoveredWallet
 from backend.app.schemas.discovered_wallet import (
@@ -19,6 +21,11 @@ from backend.app.schemas.discovered_wallet import (
 from backend.app.services.candidate_backtest_service import (
     get_latest_candidate_backtest,
     run_candidate_backtest,
+)
+from backend.app.services.candidate_history_service import (
+    CandidateHistoryAlreadyRunningError,
+    get_latest_extended_candidate_history,
+    run_extended_candidate_history,
 )
 from backend.app.services.discovered_wallet_service import (
     refresh_discovered_wallet_activity,
@@ -62,6 +69,7 @@ def get_discovered_wallets(
         "PROMOSSO",
         "OSSERVAZIONE",
         "BOCCIATO",
+        "DATI_INSUFFICIENTI",
         "NON_ANALIZZATO",
     ] = "ALL",
     sort_by: Literal[
@@ -70,6 +78,7 @@ def get_discovered_wallets(
         "activity_score",
         "quality_score",
         "backtest_score",
+        "backtest_data_sufficiency_score",
         "backtest_total_return_percent",
         "backtest_max_drawdown_percent",
         "backtest_jupiter_compatibility_percent",
@@ -156,6 +165,36 @@ def run_discovery_hydration(
         )
     except HydrationAlreadyRunningError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.post(
+    "/promotion/history/backfill",
+    response_model=CandidateHistoryBackfillResponse,
+)
+def run_candidate_history_backfill(
+    request: CandidateHistoryBackfillRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return run_extended_candidate_history(db, **request.model_dump())
+    except CandidateHistoryAlreadyRunningError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@router.get(
+    "/promotion/history/{wallet_address}/latest",
+    response_model=CandidateHistoryBackfillResponse,
+)
+def read_latest_candidate_history_backfill(
+    wallet_address: str,
+    db: Session = Depends(get_db),
+):
+    run = get_latest_extended_candidate_history(db, wallet_address)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Backfill storico non trovato")
+    return run
 
 
 @router.post(

@@ -183,6 +183,38 @@ def _save_transactions(
     }
 
 
+
+
+def save_wallet_history_transactions(
+    db: Session,
+    *,
+    wallet_address: str,
+    transactions: list[dict[str, Any]],
+) -> dict[str, int]:
+    """Persist parsed swap history with signature-level deduplication."""
+    return _save_transactions(
+        db,
+        wallet_address=wallet_address,
+        transactions=transactions,
+    )
+
+
+def apply_discovered_wallet_score(
+    wallet: DiscoveredWallet,
+    score: dict[str, Any],
+) -> None:
+    _apply_score(wallet, score)
+
+
+def upsert_wallet_sync_marker(
+    db: Session,
+    wallet_address: str,
+    *,
+    synced_at: datetime,
+) -> None:
+    _upsert_wallet_sync_marker(db, wallet_address, synced_at=synced_at)
+
+
 def _mark_failure(
     db: Session,
     *,

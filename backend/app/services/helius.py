@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -36,6 +37,7 @@ class HeliusRequestError(RuntimeError):
     retryable: bool = False
     attempts: int = 1
     error_code: str = "HELIUS_REQUEST_FAILED"
+    continuation_signature: str | None = None
 
     def __post_init__(self) -> None:
         RuntimeError.__init__(self, self.message)
@@ -48,6 +50,7 @@ class HeliusRequestError(RuntimeError):
             "status_code": self.status_code,
             "retryable": self.retryable,
             "attempts": self.attempts,
+            "continuation_signature": self.continuation_signature,
         }
 
 
@@ -166,20 +169,50 @@ def _request_json(
                 time.sleep(delay)
                 continue
 
+            continuation_signature: str | None = None
+            try:
+                error_payload = response.json()
+            except ValueError:
+                error_payload = None
+            if isinstance(error_payload, dict):
+                raw_error = str(
+                    error_payload.get("error")
+                    or error_payload.get("message")
+                    or ""
+                )
+                marker_index = raw_error.lower().find("before-signature")
+                if marker_index >= 0:
+                    continuation_candidates = re.findall(
+                        r"\b[1-9A-HJ-NP-Za-km-z]{40,128}\b",
+                        raw_error[marker_index + len("before-signature"):],
+                    )
+                    if continuation_candidates:
+                        continuation_signature = continuation_candidates[0]
+
             raise HeliusRequestError(
                 message=(
-                    "Helius ha risposto HTTP "
-                    f"{status_code} dopo {attempt} tentativi."
+                    "Helius richiede una firma di continuazione per proseguire "
+                    "la ricerca filtrata."
+                    if continuation_signature
+                    else (
+                        "Helius ha risposto HTTP "
+                        f"{status_code} dopo {attempt} tentativi."
+                    )
                 ),
                 endpoint=safe_endpoint,
                 status_code=status_code,
-                retryable=retryable,
+                retryable=retryable or bool(continuation_signature),
                 attempts=attempt,
                 error_code=(
-                    "HELIUS_RETRY_EXHAUSTED"
-                    if retryable
-                    else "HELIUS_HTTP_ERROR"
+                    "HELIUS_CONTINUATION_REQUIRED"
+                    if continuation_signature
+                    else (
+                        "HELIUS_RETRY_EXHAUSTED"
+                        if retryable
+                        else "HELIUS_HTTP_ERROR"
+                    )
                 ),
+                continuation_signature=continuation_signature,
             ) from None
 
         try:
@@ -282,6 +315,8 @@ def get_wallet_history(
     limit: int = 100,
     transaction_type: str | None = None,
     gte_time: int | None = None,
+    lte_time: int | None = None,
+    before_signature: str | None = None,
     commitment: str = "finalized",
     token_accounts: str = "none",
     max_retries: int | None = None,
@@ -301,6 +336,10 @@ def get_wallet_history(
         params["type"] = str(transaction_type).upper()
     if gte_time is not None:
         params["gte-time"] = int(gte_time)
+    if lte_time is not None:
+        params["lte-time"] = int(lte_time)
+    if before_signature:
+        params["before-signature"] = str(before_signature)
 
     result = _request_json(
         "GET",

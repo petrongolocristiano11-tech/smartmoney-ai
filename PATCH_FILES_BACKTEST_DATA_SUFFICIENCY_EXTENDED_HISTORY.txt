@@ -1,0 +1,52 @@
+SMARTMONEY AI — BACKTEST DATA SUFFICIENCY & EXTENDED CANDIDATE HISTORY
+File completi da creare o sostituire
+Data blocco: 2026-07-23
+
+CREARE
+- alembic/versions/f6a8d3c1e927_add_extended_candidate_history_sufficiency.py
+- backend/app/models/candidate_history_backfill.py
+- backend/app/models/candidate_token_compatibility.py
+- backend/app/services/candidate_history_service.py
+- backend/app/services/candidate_jupiter_compatibility_service.py
+- tests/test_extended_candidate_history.py
+- tests/test_extended_candidate_history_api.py
+- tests/test_candidate_jupiter_compatibility_cache.py
+- README_BACKTEST_DATA_SUFFICIENCY_EXTENDED_HISTORY.md
+- ROLLBACK_BACKTEST_DATA_SUFFICIENCY_EXTENDED_HISTORY.md
+- TEST_BACKTEST_DATA_SUFFICIENCY_EXTENDED_HISTORY.ps1
+- TEST_RESULTS_BACKTEST_DATA_SUFFICIENCY_EXTENDED_HISTORY.txt
+- PATCH_FILES_BACKTEST_DATA_SUFFICIENCY_EXTENDED_HISTORY.txt
+- APPLY_AND_TEST_BACKTEST_DATA_SUFFICIENCY_EXTENDED_HISTORY.ps1
+
+SOSTITUIRE
+- PATCH_MANIFEST_SHA256.txt
+- backend/app/api/discovered_wallets.py
+- backend/app/models/__init__.py
+- backend/app/models/candidate_backtest.py
+- backend/app/models/discovered_wallet.py
+- backend/app/models/live_wallet_score.py
+- backend/app/schemas/candidate_backtest.py
+- backend/app/schemas/discovered_wallet.py
+- backend/app/schemas/live_platform.py
+- backend/app/services/candidate_backtest_service.py
+- backend/app/services/discovered_wallet_service.py
+- backend/app/services/discovery_hydration_service.py
+- backend/app/services/helius.py
+- backend/app/services/live_wallet_ranking_service.py
+- frontend/src/pages/Discovery.jsx
+- frontend/src/services/api.js
+- tests/test_candidate_backtest_api.py
+- tests/test_candidate_backtest_promotion_gate.py
+- tests/test_live_wallet_ranking_platform.py
+
+INVARIANTI DI SICUREZZA
+- LIVE non abilitato e non armato.
+- Stream automatico non abilitato.
+- Worker non avviato.
+- Nessuna sottoscrizione Helius creata.
+- Backfill manuale e limitato dal budget.
+- Nessuna richiesta Helius durante il backtest.
+- Nessuna transazione firmata o inviata.
+- Nessun wallet applicato automaticamente.
+- Generazione DRY_RUN #3 non modificata o resettata.
+- Generazione #4 non creata.

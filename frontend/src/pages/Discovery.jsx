@@ -6,6 +6,7 @@ import {
   refreshDiscoveredWalletActivity,
   refreshDiscoveredWalletQuality,
   runControlledDiscoveryHydration,
+  runExtendedCandidateHistoryBackfill,
   runCandidatePromotionBacktest,
   runDiscovery,
   runSmartDiscovery,
@@ -34,6 +35,7 @@ const PROMOTION_OPTIONS = [
   "PROMOSSO",
   "OSSERVAZIONE",
   "BOCCIATO",
+  "DATI_INSUFFICIENTI",
   "NON_ANALIZZATO",
 ];
 
@@ -133,6 +135,7 @@ function promotionBadge(status) {
     PROMOSSO: "border-green-700 bg-green-950/60 text-green-300",
     OSSERVAZIONE: "border-amber-700 bg-amber-950/60 text-amber-300",
     BOCCIATO: "border-red-700 bg-red-950/60 text-red-300",
+    DATI_INSUFFICIENTI: "border-orange-700 bg-orange-950/60 text-orange-300",
     NON_ANALIZZATO: "border-blue-800 bg-blue-950/40 text-blue-300",
   };
   return {
@@ -201,13 +204,20 @@ function Discovery() {
   const [hydrationResult, setHydrationResult] = useState(null);
 
   const [candidateWallet, setCandidateWallet] = useState("");
-  const [backtestLookbackDays, setBacktestLookbackDays] = useState(7);
+  const [historyLookbackDays, setHistoryLookbackDays] = useState(30);
+  const [historyRequestBudget, setHistoryRequestBudget] = useState(5);
+  const [historyPageSize, setHistoryPageSize] = useState(100);
+  const [extendedHistoryResult, setExtendedHistoryResult] = useState(null);
+  const [backtestLookbackDays, setBacktestLookbackDays] = useState(30);
+  const [backtestWarmupDays, setBacktestWarmupDays] = useState(14);
   const [backtestStartingCapital, setBacktestStartingCapital] = useState(1);
   const [backtestBuySize, setBacktestBuySize] = useState(0.05);
   const [backtestSlippageBps, setBacktestSlippageBps] = useState(100);
   const [backtestFeeBps, setBacktestFeeBps] = useState(10);
   const [backtestDelaySeconds, setBacktestDelaySeconds] = useState(8);
   const [backtestCheckJupiter, setBacktestCheckJupiter] = useState(true);
+  const [backtestJupiterCacheTtlHours, setBacktestJupiterCacheTtlHours] = useState(6);
+  const [backtestForceJupiterRefresh, setBacktestForceJupiterRefresh] = useState(false);
   const [promotionResult, setPromotionResult] = useState(null);
 
   const [discoveredWallets, setDiscoveredWallets] = useState([]);
@@ -227,6 +237,7 @@ function Discovery() {
   const [hydrating, setHydrating] = useState(false);
   const [refreshingActivity, setRefreshingActivity] = useState(false);
   const [refreshingQuality, setRefreshingQuality] = useState(false);
+  const [runningBackfill, setRunningBackfill] = useState(false);
   const [runningBacktest, setRunningBacktest] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -280,7 +291,8 @@ function Discovery() {
           String(wallet.activity_classification ?? "").toLowerCase().includes(normalizedSearch) ||
           String(wallet.quality_classification ?? "").toLowerCase().includes(normalizedSearch) ||
           String(wallet.promotion_status ?? "").toLowerCase().includes(normalizedSearch) ||
-          String(wallet.hydration_status ?? "").toLowerCase().includes(normalizedSearch);
+          String(wallet.hydration_status ?? "").toLowerCase().includes(normalizedSearch) ||
+          String(wallet.extended_history_status ?? "").toLowerCase().includes(normalizedSearch);
         const matchesScore = Number(wallet.smart_score ?? 0) >= Number(minimumScore || 0);
         const matchesActivity =
           activityFilter === "ALL" || wallet.activity_classification === activityFilter;
@@ -338,6 +350,7 @@ function Discovery() {
       promoted: promotionCount("PROMOSSO"),
       promotionObservation: promotionCount("OSSERVAZIONE"),
       rejected: promotionCount("BOCCIATO"),
+      insufficient: promotionCount("DATI_INSUFFICIENTI"),
       promotionNotAnalyzed: promotionCount("NON_ANALIZZATO"),
     };
   }, [discoveredWallets]);
@@ -475,6 +488,43 @@ function Discovery() {
   }
 
 
+  async function handleExtendedHistoryBackfill(walletAddress = candidateWallet) {
+    const wallet = String(walletAddress || "").trim();
+    if (!wallet) {
+      setError("Seleziona un wallet candidato per lo storico esteso.");
+      return;
+    }
+    setRunningBackfill(true);
+    setError("");
+    setMessage("");
+    setExtendedHistoryResult(null);
+    try {
+      const response = await runExtendedCandidateHistoryBackfill({
+        walletAddress: wallet,
+        lookbackDays: historyLookbackDays,
+        maxHeliusRequests: historyRequestBudget,
+        pageSize: historyPageSize,
+      });
+      setExtendedHistoryResult(response.data);
+      setCandidateWallet(wallet);
+      setMessage(
+        `Storico esteso ${response.data.status}: ${response.data.trades_imported} nuovi swap, ${response.data.trades_updated} aggiornati, ${response.data.helius_requests}/${response.data.request_budget} richieste Helius.`
+      );
+      await loadDiscoveredWallets();
+    } catch (requestError) {
+      console.error("Errore Extended Candidate History:", requestError);
+      const backendMessage = requestError.response?.data?.detail;
+      setError(
+        typeof backendMessage === "string"
+          ? backendMessage
+          : "Storico esteso non completato. LIVE, stream e worker non sono stati modificati."
+      );
+    } finally {
+      setRunningBackfill(false);
+    }
+  }
+
+
   async function handlePromotionBacktest(walletAddress = candidateWallet) {
     const wallet = String(walletAddress || "").trim();
     if (!wallet) {
@@ -489,6 +539,7 @@ function Discovery() {
       const response = await runCandidatePromotionBacktest({
         walletAddress: wallet,
         lookbackDays: backtestLookbackDays,
+        warmupDays: backtestWarmupDays,
         startingCapitalSol: backtestStartingCapital,
         fixedBuySizeSol: backtestBuySize,
         slippageBps: backtestSlippageBps,
@@ -496,6 +547,8 @@ function Discovery() {
         copyDelaySeconds: backtestDelaySeconds,
         checkJupiter: backtestCheckJupiter,
         jupiterTokenLimit: 10,
+        jupiterCacheTtlHours: backtestJupiterCacheTtlHours,
+        forceJupiterRefresh: backtestForceJupiterRefresh,
       });
       setPromotionResult(response.data);
       setCandidateWallet(wallet);
@@ -529,10 +582,10 @@ function Discovery() {
       <header className="border-b border-slate-700">
         <div className="mx-auto flex max-w-[1500px] flex-col gap-4 p-6 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Historical Candidate Backtest & Promotion Gate</h1>
+            <h1 className="text-3xl font-bold">Backtest Data Sufficiency & Extended Candidate History</h1>
             <p className="mt-2 max-w-3xl text-slate-400">
-              Simula i candidati con capitale, size, slippage, commissioni e ritardo reali.
-              Solo un backtest PROMOSSO rende il wallet idoneo finale.
+              Estende lo storico dei soli candidati copiabili, ricostruisce le posizioni
+              precedenti alla finestra e impedisce decisioni definitive con dati insufficienti.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -574,9 +627,10 @@ function Discovery() {
 
       <main className="mx-auto max-w-[1500px] p-4 sm:p-8">
         <div className="mb-6 rounded-xl border border-amber-800 bg-amber-950/30 p-4 text-sm text-amber-200">
-          Il backtest usa trade storici salvati e, quando richiesto, sole quote Jupiter
-          SOL→token→SOL. Non firma o invia transazioni, non abilita stream o LIVE,
-          non avvia worker, non applica wallet e non crea o resetta generazioni.
+          Il backfill storico è manuale e limitato dal budget Helius. Il backtest usa poi
+          soltanto trade salvati e quote Jupiter SOL→token→SOL di sola lettura. Nessuna
+          funzione firma transazioni, abilita LIVE o stream, avvia worker, applica wallet
+          oppure crea o resetta generazioni.
         </div>
 
         {error && (
@@ -590,11 +644,12 @@ function Discovery() {
           </div>
         )}
 
-        <section className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+        <section className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-7">
           <StatCard label="Wallet scoperti" value={summary.total} tone="text-blue-300" />
           <StatCard label="Idonei finali" value={summary.eligible} tone="text-green-300" />
           <StatCard label="Promossi" value={summary.promoted} tone="text-emerald-300" />
           <StatCard label="Gate osservazione" value={summary.promotionObservation} tone="text-amber-300" />
+          <StatCard label="Dati insufficienti" value={summary.insufficient} tone="text-orange-300" />
           <StatCard label="Bocciati" value={summary.rejected} tone="text-red-300" />
           <StatCard label="Gate non analizzati" value={summary.promotionNotAnalyzed} tone="text-blue-300" />
         </section>
@@ -603,94 +658,175 @@ function Discovery() {
         <section className="mb-8 overflow-hidden rounded-xl border border-emerald-900 bg-slate-800">
           <div className="border-b border-slate-700 p-5">
             <h2 className="text-xl font-bold text-emerald-300">
-              Historical Candidate Backtest & Promotion Gate
+              Backtest Data Sufficiency & Extended Candidate History
             </h2>
             <p className="mt-1 text-sm text-slate-400">
-              Il gate simula una copia conservativa: una posizione per token, size fissa,
-              costi, slippage e ritardo. Le quote Jupiter sono di sola lettura.
+              Prima estende lo storico con paginazione controllata; poi usa una finestra di
+              warmup per ricostruire le posizioni già aperte e valuta se il campione è sufficiente.
             </p>
           </div>
           <div className="p-5">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <label className="text-sm text-slate-400 xl:col-span-2">
-                Wallet candidato
-                <select
-                  value={candidateWallet}
-                  onChange={(event) => setCandidateWallet(event.target.value)}
-                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 font-mono text-xs"
+            <label className="block text-sm text-slate-400">
+              Wallet candidato COPIABILE
+              <select
+                value={candidateWallet}
+                onChange={(event) => setCandidateWallet(event.target.value)}
+                className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 font-mono text-xs"
+              >
+                {discoveredWallets
+                  .filter((wallet) => wallet.quality_classification === "COPIABILE")
+                  .map((wallet) => (
+                    <option key={wallet.wallet_address} value={wallet.wallet_address}>
+                      {shortenAddress(wallet.wallet_address, 12, 10)} · Q {formatNumber(wallet.quality_score)} · {wallet.promotion_status}
+                    </option>
+                  ))}
+              </select>
+            </label>
+
+            <div className="mt-5 rounded-xl border border-cyan-900 bg-cyan-950/20 p-4">
+              <h3 className="font-bold text-cyan-300">1. Estendi storico candidato</h3>
+              <p className="mt-1 text-xs text-slate-400">
+                Una richiesta Helius per pagina, zero retry automatici. Il budget massimo resta rigido.
+              </p>
+              <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <label className="text-sm text-slate-400">
+                  Storico giorni
+                  <input
+                    type="number" min="7" max="90" value={historyLookbackDays}
+                    onChange={(event) => setHistoryLookbackDays(Number(event.target.value))}
+                    className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                  />
+                </label>
+                <label className="text-sm text-slate-400">
+                  Budget richieste Helius
+                  <input
+                    type="number" min="1" max="20" value={historyRequestBudget}
+                    onChange={(event) => setHistoryRequestBudget(Number(event.target.value))}
+                    className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                  />
+                </label>
+                <label className="text-sm text-slate-400">
+                  Transazioni per pagina
+                  <input
+                    type="number" min="10" max="100" value={historyPageSize}
+                    onChange={(event) => setHistoryPageSize(Number(event.target.value))}
+                    className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => handleExtendedHistoryBackfill()}
+                  disabled={runningBackfill || !candidateWallet}
+                  className="self-end rounded-lg bg-cyan-600 px-5 py-3 font-bold text-white disabled:opacity-50"
                 >
-                  {discoveredWallets
-                    .filter((wallet) => wallet.quality_classification === "COPIABILE")
-                    .map((wallet) => (
-                      <option key={wallet.wallet_address} value={wallet.wallet_address}>
-                        {shortenAddress(wallet.wallet_address, 12, 10)} · Q {formatNumber(wallet.quality_score)} · {wallet.promotion_status}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label className="text-sm text-slate-400">
-                Capitale iniziale (SOL)
-                <input
-                  type="number" min="0.05" step="0.05" value={backtestStartingCapital}
-                  onChange={(event) => setBacktestStartingCapital(Number(event.target.value))}
-                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
-                />
-              </label>
-              <label className="text-sm text-slate-400">
-                Size BUY (SOL)
-                <input
-                  type="number" min="0.001" step="0.01" value={backtestBuySize}
-                  onChange={(event) => setBacktestBuySize(Number(event.target.value))}
-                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
-                />
-              </label>
-              <label className="text-sm text-slate-400">
-                Storico giorni
-                <input
-                  type="number" min="1" max="30" value={backtestLookbackDays}
-                  onChange={(event) => setBacktestLookbackDays(Number(event.target.value))}
-                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
-                />
-              </label>
-              <label className="text-sm text-slate-400">
-                Slippage (bps)
-                <input
-                  type="number" min="0" max="1000" value={backtestSlippageBps}
-                  onChange={(event) => setBacktestSlippageBps(Number(event.target.value))}
-                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
-                />
-              </label>
-              <label className="text-sm text-slate-400">
-                Commissioni (bps)
-                <input
-                  type="number" min="0" max="500" value={backtestFeeBps}
-                  onChange={(event) => setBacktestFeeBps(Number(event.target.value))}
-                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
-                />
-              </label>
-              <label className="text-sm text-slate-400">
-                Ritardo copy (secondi)
-                <input
-                  type="number" min="0" max="3600" value={backtestDelaySeconds}
-                  onChange={(event) => setBacktestDelaySeconds(Number(event.target.value))}
-                  className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
-                />
-              </label>
+                  {runningBackfill ? "Backfill in corso..." : "Estendi storico"}
+                </button>
+              </div>
+
+              {extendedHistoryResult && (
+                <div className="mt-4 grid gap-3 rounded-lg border border-slate-700 bg-slate-900/70 p-4 text-sm sm:grid-cols-2 xl:grid-cols-7">
+                  <span>Stato: <strong className="text-cyan-300">{extendedHistoryResult.status}</strong></span>
+                  <span>Stop: <strong>{extendedHistoryResult.stop_reason}</strong></span>
+                  <span>Helius: <strong>{extendedHistoryResult.helius_requests}/{extendedHistoryResult.request_budget}</strong></span>
+                  <span>Pagine: <strong>{extendedHistoryResult.pages_fetched}</strong></span>
+                  <span>Swap: <strong>{extendedHistoryResult.swaps_found}</strong></span>
+                  <span>Importati: <strong>{extendedHistoryResult.trades_imported}</strong></span>
+                  <span>Aggiornati: <strong>{extendedHistoryResult.trades_updated}</strong></span>
+                </div>
+              )}
             </div>
-            <div className="mt-5 flex flex-wrap items-center gap-4">
-              <label className="flex items-center gap-3 rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 text-sm text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={backtestCheckJupiter}
-                  onChange={(event) => setBacktestCheckJupiter(event.target.checked)}
-                />
-                Verifica quote Jupiter round-trip
-              </label>
+
+            <div className="mt-5 rounded-xl border border-emerald-900 bg-emerald-950/10 p-4">
+              <h3 className="font-bold text-emerald-300">2. Esegui backtest con sufficienza dati</h3>
+              <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <label className="text-sm text-slate-400">
+                  Capitale iniziale (SOL)
+                  <input
+                    type="number" min="0.05" step="0.05" value={backtestStartingCapital}
+                    onChange={(event) => setBacktestStartingCapital(Number(event.target.value))}
+                    className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                  />
+                </label>
+                <label className="text-sm text-slate-400">
+                  Size BUY (SOL)
+                  <input
+                    type="number" min="0.001" step="0.01" value={backtestBuySize}
+                    onChange={(event) => setBacktestBuySize(Number(event.target.value))}
+                    className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                  />
+                </label>
+                <label className="text-sm text-slate-400">
+                  Finestra analisi (giorni)
+                  <input
+                    type="number" min="1" max="90" value={backtestLookbackDays}
+                    onChange={(event) => setBacktestLookbackDays(Number(event.target.value))}
+                    className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                  />
+                </label>
+                <label className="text-sm text-slate-400">
+                  Warmup posizioni (giorni)
+                  <input
+                    type="number" min="0" max="60" value={backtestWarmupDays}
+                    onChange={(event) => setBacktestWarmupDays(Number(event.target.value))}
+                    className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                  />
+                </label>
+                <label className="text-sm text-slate-400">
+                  Slippage (bps)
+                  <input
+                    type="number" min="0" max="1000" value={backtestSlippageBps}
+                    onChange={(event) => setBacktestSlippageBps(Number(event.target.value))}
+                    className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                  />
+                </label>
+                <label className="text-sm text-slate-400">
+                  Commissioni (bps)
+                  <input
+                    type="number" min="0" max="500" value={backtestFeeBps}
+                    onChange={(event) => setBacktestFeeBps(Number(event.target.value))}
+                    className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                  />
+                </label>
+                <label className="text-sm text-slate-400">
+                  Ritardo copy (secondi)
+                  <input
+                    type="number" min="0" max="3600" value={backtestDelaySeconds}
+                    onChange={(event) => setBacktestDelaySeconds(Number(event.target.value))}
+                    className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+                  />
+                </label>
+                <label className="flex items-center gap-3 self-end rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 text-sm text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={backtestCheckJupiter}
+                    onChange={(event) => setBacktestCheckJupiter(event.target.checked)}
+                  />
+                  Verifica Jupiter round-trip
+                </label>
+                <label className="text-sm text-slate-400">
+                  Cache Jupiter (ore)
+                  <input
+                    type="number" min="1" max="24" value={backtestJupiterCacheTtlHours}
+                    onChange={(event) => setBacktestJupiterCacheTtlHours(Number(event.target.value))}
+                    disabled={!backtestCheckJupiter}
+                    className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 disabled:opacity-50"
+                  />
+                </label>
+                <label className="flex items-center gap-3 self-end rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 text-sm text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={backtestForceJupiterRefresh}
+                    onChange={(event) => setBacktestForceJupiterRefresh(event.target.checked)}
+                    disabled={!backtestCheckJupiter}
+                  />
+                  Ignora cache Jupiter
+                </label>
+              </div>
               <button
                 type="button"
                 onClick={() => handlePromotionBacktest()}
                 disabled={runningBacktest || !candidateWallet}
-                className="rounded-lg bg-emerald-600 px-5 py-3 font-bold text-white disabled:opacity-50"
+                className="mt-5 rounded-lg bg-emerald-600 px-5 py-3 font-bold text-white disabled:opacity-50"
               >
                 {runningBacktest ? "Backtest in corso..." : "Esegui backtest e gate"}
               </button>
@@ -709,7 +845,9 @@ function Discovery() {
                     {promotionResult.decision}
                   </span>
                 </div>
-                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-8">
+                  <StatCard label="Sufficienza" value={`${formatNumber(promotionResult.data_sufficiency_score)}%`} tone={promotionResult.data_sufficient ? "text-green-300" : "text-orange-300"} subtitle={promotionResult.data_sufficient ? "SUFFICIENTE" : "INSUFFICIENTE"} />
+                  <StatCard label="Storico" value={`${formatNumber(promotionResult.history_span_days, 1)} g`} tone="text-cyan-300" />
                   <StatCard label="Rendimento" value={`${formatNumber(promotionResult.total_return_percent)}%`} tone="text-cyan-300" />
                   <StatCard label="PnL netto" value={`${formatNumber(promotionResult.net_pnl_sol, 4)} SOL`} tone="text-green-300" />
                   <StatCard label="Win rate" value={`${formatNumber(promotionResult.win_rate_percent)}%`} tone="text-blue-300" />
@@ -718,11 +856,19 @@ function Discovery() {
                   <StatCard label="Jupiter" value={`${formatNumber(promotionResult.jupiter_compatibility_percent)}%`} tone="text-fuchsia-300" subtitle={promotionResult.jupiter_status} />
                 </div>
                 <p className="mt-4 text-sm text-slate-400">
-                  Posizioni chiuse: <strong>{promotionResult.completed_positions}</strong> · aperte: <strong>{promotionResult.open_positions}</strong> · copertura: <strong>{formatNumber(promotionResult.execution_coverage_percent)}%</strong> · richieste Jupiter: <strong>{promotionResult.jupiter_requests}</strong>
+                  Analisi: <strong>{promotionResult.analysis_source_trades}</strong> trade · warmup: <strong>{promotionResult.warmup_source_trades}</strong> · bootstrap: <strong>{promotionResult.bootstrap_positions}</strong> ({promotionResult.bootstrap_positions_closed} chiuse) · posizioni chiuse: <strong>{promotionResult.completed_positions}</strong> · aperte: <strong>{promotionResult.open_positions}</strong>.
                 </p>
+                <p className="mt-2 text-sm text-slate-400">
+                  Copertura: <strong>{formatNumber(promotionResult.execution_coverage_percent)}%</strong> · SELL abbinate: <strong>{formatNumber(promotionResult.matched_sell_ratio_percent)}%</strong> · posizioni aperte: <strong>{formatNumber(promotionResult.open_position_ratio_percent)}%</strong> · richieste Jupiter: <strong>{promotionResult.jupiter_requests}</strong> · cache: <strong>{promotionResult.jupiter_cache_hits ?? 0}</strong> · controlli live: <strong>{promotionResult.jupiter_live_checks ?? 0}</strong>.
+                </p>
+                {(promotionResult.data_sufficiency_reasons ?? []).length > 0 && (
+                  <p className="mt-3 text-xs text-orange-300">
+                    Dati insufficienti: {(promotionResult.data_sufficiency_reasons ?? []).join(", ")}
+                  </p>
+                )}
                 {(promotionResult.reasons ?? []).length > 0 && (
                   <p className="mt-3 text-xs text-amber-300">
-                    Motivi: {(promotionResult.reasons ?? []).join(", ")}
+                    Motivi gate: {(promotionResult.reasons ?? []).join(", ")}
                   </p>
                 )}
               </div>
@@ -1062,6 +1208,7 @@ function Discovery() {
                 <option value="activity_score">Activity Score</option>
                 <option value="quality_score">Quality Score</option>
                 <option value="backtest_score">Backtest Score</option>
+                <option value="backtest_data_sufficiency_score">Sufficienza dati</option>
                 <option value="backtest_total_return_percent">Rendimento backtest</option>
                 <option value="backtest_max_drawdown_percent">Drawdown backtest</option>
                 <option value="median_swap_sol_7d">Mediana swap</option>
@@ -1081,11 +1228,12 @@ function Discovery() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[3150px] text-sm">
+            <table className="w-full min-w-[3450px] text-sm">
               <thead className="bg-slate-900 text-slate-400">
                 <tr>
                   <th className="p-4 text-left">Wallet</th>
                   <th className="p-4">Hydration</th>
+                  <th className="p-4">Storico esteso</th>
                   <th className="p-4">Import</th>
                   <th className="p-4">Ranking</th>
                   <th className="p-4">Smart</th>
@@ -1095,6 +1243,7 @@ function Discovery() {
                   <th className="p-4">Suitability</th>
                   <th className="p-4">Promotion</th>
                   <th className="p-4">Backtest</th>
+                  <th className="p-4">Sufficienza</th>
                   <th className="p-4">Return / PnL</th>
                   <th className="p-4">WR / PF</th>
                   <th className="p-4">DD / Coverage</th>
@@ -1149,6 +1298,22 @@ function Discovery() {
                           );
                         })()}
                       </td>
+                      <td className="p-4 text-center">
+                        {(() => {
+                          const extended = hydrationBadge(wallet.extended_history_status);
+                          return (
+                            <span
+                              title={wallet.extended_history_stop_reason || wallet.extended_history_error_message || formatDate(wallet.extended_history_last_attempt_at)}
+                              className={`rounded-full border px-2.5 py-1 text-xs font-bold ${extended.className}`}
+                            >
+                              {extended.label}
+                            </span>
+                          );
+                        })()}
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          {wallet.extended_history_helius_requests ?? 0} req · {wallet.extended_history_trades_imported ?? 0} nuovi
+                        </p>
+                      </td>
                       <td className="p-4 text-center text-slate-300">
                         {wallet.hydration_trades_imported ?? 0}
                         <p className="text-[10px] text-slate-500">swap {wallet.hydration_swaps_found ?? 0}</p>
@@ -1182,6 +1347,17 @@ function Discovery() {
                         </button>
                       </td>
                       <td className="p-4 text-center font-bold text-emerald-300">{formatNumber(wallet.backtest_score)}</td>
+                      <td className="p-4 text-center">
+                        <span
+                          title={(wallet.backtest_data_sufficiency_reasons ?? []).join(", ")}
+                          className={`rounded-full border px-2.5 py-1 text-xs font-bold ${wallet.backtest_data_sufficient ? "border-green-700 bg-green-950/60 text-green-300" : "border-orange-700 bg-orange-950/60 text-orange-300"}`}
+                        >
+                          {wallet.backtest_data_sufficient ? "SUFFICIENTE" : "INSUFFICIENTE"}
+                        </span>
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          {formatNumber(wallet.backtest_data_sufficiency_score)}% · {formatNumber(wallet.backtest_history_span_days, 1)} g
+                        </p>
+                      </td>
                       <td className="p-4 text-center text-slate-300">
                         {formatNumber(wallet.backtest_total_return_percent)}%
                         <p className="text-[10px] text-slate-500">{formatNumber(wallet.backtest_net_pnl_sol, 4)} SOL</p>
@@ -1225,7 +1401,7 @@ function Discovery() {
                 })}
                 {!filteredWallets.length && (
                   <tr>
-                    <td colSpan="30" className="p-10 text-center text-slate-500">
+                    <td colSpan="32" className="p-10 text-center text-slate-500">
                       Nessun wallet corrisponde ai filtri selezionati.
                     </td>
                   </tr>

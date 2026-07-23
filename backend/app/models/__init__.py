@@ -1,6 +1,12 @@
 from backend.app.models.candidate_backtest import (
     CandidateBacktestRun,
 )
+from backend.app.models.candidate_history_backfill import (
+    CandidateHistoryBackfillRun,
+)
+from backend.app.models.candidate_token_compatibility import (
+    CandidateTokenCompatibility,
+)
 from backend.app.models.live_platform_config import (
     LivePlatformConfig,
 )
@@ -65,6 +71,8 @@ from backend.app.models.wallet_profile import (
 
 __all__ = [
     "CandidateBacktestRun",
+    "CandidateHistoryBackfillRun",
+    "CandidateTokenCompatibility",
     "DiscoveryJob",
     "TokenSafetySnapshot",
     "LiveWalletScore",

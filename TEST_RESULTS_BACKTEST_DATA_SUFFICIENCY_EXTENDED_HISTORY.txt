@@ -1,0 +1,31 @@
+SMARTMONEY AI — RISULTATI VERIFICA
+Backtest Data Sufficiency & Extended Candidate History
+Data: 2026-07-23
+
+BACKEND
+- compileall backend: SUPERATO
+- test specifici: 25 superati
+- suite completa sorgente ricostruito: 210 superati
+- warning bloccanti: 0
+
+DATABASE
+- Alembic head unica: f6a8d3c1e927
+- upgrade PostgreSQL offline: SUPERATO
+- downgrade PostgreSQL offline: SUPERATO
+
+FRONTEND
+- file JS/JSX controllati: 45
+- errori sintattici TypeScript parser: 0
+- npm install/build nell'ambiente isolato: non completabile per timeout/indisponibilità del registro interno
+- build completa inclusa nello script PowerShell per il PC locale e Railway
+
+SICUREZZA
+- LIVE invariato
+- stream invariato
+- worker non avviato
+- wallet non applicati
+- Generazione #3 invariata
+- Generazione #4 non creata
+- backtest Helius requests: 0
+- cache Jupiter per token: verificata con hit, refresh forzato e scadenza
+- firma/invio transazioni: 0

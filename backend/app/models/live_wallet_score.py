@@ -42,6 +42,8 @@ class LiveWalletScore(Base):
     backtest_jupiter_status: Mapped[str] = mapped_column(
         String(24), default="NOT_CHECKED"
     )
+    backtest_data_sufficient: Mapped[bool] = mapped_column(Boolean, default=False)
+    backtest_data_sufficiency_score: Mapped[float] = mapped_column(Float, default=0.0)
     last_swap_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,

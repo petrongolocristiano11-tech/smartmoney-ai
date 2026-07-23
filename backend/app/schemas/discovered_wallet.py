@@ -68,6 +68,25 @@ class DiscoveredWalletResponse(BaseModel):
     hydration_error_code: str | None
     hydration_error_message: str | None
 
+    extended_history_status: str
+    extended_history_run_id: str | None
+    extended_history_last_attempt_at: datetime | None
+    extended_history_last_success_at: datetime | None
+    extended_history_lookback_days: int
+    extended_history_request_budget: int
+    extended_history_helius_requests: int
+    extended_history_pages_fetched: int
+    extended_history_transactions_found: int
+    extended_history_swaps_found: int
+    extended_history_trades_imported: int
+    extended_history_trades_updated: int
+    extended_history_parse_failures: int
+    extended_history_oldest_at: datetime | None
+    extended_history_newest_at: datetime | None
+    extended_history_stop_reason: str | None
+    extended_history_error_code: str | None
+    extended_history_error_message: str | None
+
     promotion_status: str
     promotion_eligible: bool
     promotion_reasons: list[str]
@@ -84,6 +103,12 @@ class DiscoveredWalletResponse(BaseModel):
     backtest_execution_coverage_percent: float
     backtest_jupiter_status: str
     backtest_jupiter_compatibility_percent: float
+    backtest_data_sufficient: bool
+    backtest_data_sufficiency_score: float
+    backtest_data_sufficiency_reasons: list[str]
+    backtest_history_span_days: float
+    backtest_bootstrap_positions: int
+    backtest_matched_sell_ratio_percent: float
 
     eligible: bool
     eligibility_reasons: list[str]

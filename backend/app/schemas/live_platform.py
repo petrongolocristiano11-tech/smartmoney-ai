@@ -197,6 +197,8 @@ class LiveWalletScoreResponse(PlatformResponseModel):
     backtest_profit_factor: float | None
     backtest_max_drawdown_percent: float
     backtest_jupiter_status: str
+    backtest_data_sufficient: bool
+    backtest_data_sufficiency_score: float
     last_swap_at: datetime | None
     swaps_24h: int
     swaps_7d: int

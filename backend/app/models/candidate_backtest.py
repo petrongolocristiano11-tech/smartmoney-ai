@@ -24,6 +24,10 @@ class CandidateBacktestRun(Base):
     safety: Mapped[dict] = mapped_column(JSON, default=dict)
 
     source_trades: Mapped[int] = mapped_column(Integer, default=0)
+    warmup_source_trades: Mapped[int] = mapped_column(Integer, default=0)
+    analysis_source_trades: Mapped[int] = mapped_column(Integer, default=0)
+    bootstrap_positions: Mapped[int] = mapped_column(Integer, default=0)
+    bootstrap_positions_closed: Mapped[int] = mapped_column(Integer, default=0)
     valid_priced_trades: Mapped[int] = mapped_column(Integer, default=0)
     buy_signals: Mapped[int] = mapped_column(Integer, default=0)
     sell_signals: Mapped[int] = mapped_column(Integer, default=0)
@@ -50,12 +54,27 @@ class CandidateBacktestRun(Base):
     profit_factor: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_drawdown_percent: Mapped[float] = mapped_column(Float, default=0.0)
     execution_coverage_percent: Mapped[float] = mapped_column(Float, default=0.0)
+    matched_sell_ratio_percent: Mapped[float] = mapped_column(Float, default=0.0)
+    open_position_ratio_percent: Mapped[float] = mapped_column(Float, default=0.0)
+    history_span_days: Mapped[float] = mapped_column(Float, default=0.0)
+    effective_starting_equity_sol: Mapped[float] = mapped_column(Float, default=0.0)
+    data_sufficient: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    data_sufficiency_score: Mapped[float] = mapped_column(Float, default=0.0)
+    data_sufficiency_reasons: Mapped[list] = mapped_column(JSON, default=list)
+    history_oldest_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    history_newest_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     jupiter_checked: Mapped[bool] = mapped_column(Boolean, default=False)
     jupiter_status: Mapped[str] = mapped_column(String(24), default="NOT_CHECKED")
     jupiter_tokens_checked: Mapped[int] = mapped_column(Integer, default=0)
     jupiter_tokens_compatible: Mapped[int] = mapped_column(Integer, default=0)
     jupiter_requests: Mapped[int] = mapped_column(Integer, default=0)
+    jupiter_cache_hits: Mapped[int] = mapped_column(Integer, default=0)
+    jupiter_live_checks: Mapped[int] = mapped_column(Integer, default=0)
     jupiter_compatibility_percent: Mapped[float] = mapped_column(Float, default=0.0)
     jupiter_results: Mapped[list] = mapped_column(JSON, default=list)
     position_results: Mapped[list] = mapped_column(JSON, default=list)
