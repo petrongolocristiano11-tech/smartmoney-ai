@@ -9,6 +9,7 @@ import {
   runExtendedCandidateHistoryBackfill,
   runCandidatePromotionBacktest,
   runCandidateReconstructionAudit,
+  runCandidatePositionLifecycleAudit,
   runDiscovery,
   runSmartDiscovery,
 } from "../services/api";
@@ -187,6 +188,302 @@ function StatCard({ label, value, tone = "text-white", subtitle }) {
 }
 
 
+
+
+function LifecycleAuditPanel({ result }) {
+  if (!result) return null;
+
+  const baseline =
+    result.baseline_metrics ?? {};
+  const scenarios =
+    result.scenario_results ?? [];
+  const details =
+    result.position_details ?? [];
+
+  return (
+    <section className="mb-8 overflow-hidden rounded-xl border border-teal-800 bg-slate-800">
+      <div className="border-b border-slate-700 p-5">
+        <p className="font-mono text-xs text-slate-400">
+          {result.wallet_address}
+        </p>
+        <h2 className="mt-1 text-xl font-bold text-teal-300">
+          Position Lifecycle &amp; Stale Position Audit
+        </h2>
+        <p className="mt-2 text-xs text-amber-300">
+          Diagnosi: {(result.diagnoses ?? []).join(", ")}
+        </p>
+        <p className="mt-2 text-xs text-slate-400">
+          Solo dati cached. Nessuna richiesta Helius/Jupiter,
+          nessuna modifica a LIVE, stream, worker o generazioni.
+        </p>
+      </div>
+
+      <div className="p-5">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+          <StatCard
+            label="Posizioni aperte"
+            value={baseline.open_positions ?? 0}
+            tone="text-orange-300"
+          />
+          <StatCard
+            label="BUY saltati per slot"
+            value={baseline.skipped_max_positions ?? 0}
+            tone="text-red-300"
+          />
+          <StatCard
+            label="Chiuse"
+            value={baseline.completed_positions ?? 0}
+            tone="text-green-300"
+          />
+          <StatCard
+            label="Copertura"
+            value={`${formatNumber(
+              baseline.execution_coverage_percent
+            )}%`}
+            tone="text-cyan-300"
+          />
+          <StatCard
+            label="SELL abbinate"
+            value={`${formatNumber(
+              baseline.matched_sell_ratio_percent
+            )}%`}
+            tone="text-blue-300"
+          />
+          <StatCard
+            label="Return"
+            value={`${formatNumber(
+              baseline.total_return_percent
+            )}%`}
+            tone="text-green-300"
+          />
+          <StatCard
+            label="Max drawdown"
+            value={`${formatNumber(
+              baseline.max_drawdown_percent
+            )}%`}
+            tone="text-amber-300"
+          />
+        </div>
+
+        <div className="mt-5 rounded-lg border border-slate-700 bg-slate-950/60 p-4">
+          <h3 className="font-bold text-teal-300">
+            Motivi posizioni ancora aperte
+          </h3>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {Object.entries(
+              result.lifecycle_summary ?? {}
+            ).map(([reason, count]) => (
+              <span
+                key={reason}
+                className="rounded-full border border-slate-700 px-2.5 py-1 text-xs text-slate-300"
+              >
+                {reason}: {count}
+              </span>
+            ))}
+            {Object.keys(
+              result.lifecycle_summary ?? {}
+            ).length === 0 && (
+              <span className="text-xs text-slate-500">
+                Nessuna posizione aperta da classificare.
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-5 overflow-x-auto">
+          <table className="w-full min-w-[1300px] text-xs">
+            <thead className="bg-slate-950 text-slate-400">
+              <tr>
+                <th className="p-3">Max holding</th>
+                <th className="p-3">Return</th>
+                <th className="p-3">Senza best</th>
+                <th className="p-3">PnL</th>
+                <th className="p-3">Chiuse</th>
+                <th className="p-3">Forzate</th>
+                <th className="p-3">Forzate bloccate</th>
+                <th className="p-3">Slot liberati</th>
+                <th className="p-3">Aperte</th>
+                <th className="p-3">BUY eseguiti</th>
+                <th className="p-3">BUY saltati slot</th>
+                <th className="p-3">Copertura</th>
+                <th className="p-3">DD</th>
+                <th className="p-3">Delta bootstrap</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {scenarios.map((scenario) => {
+                const row =
+                  scenario.with_bootstrap ?? {};
+
+                return (
+                  <tr key={scenario.scenario_key}>
+                    <td className="p-3 text-center">
+                      {scenario.holding_period_hours == null
+                        ? "Nessuna scadenza"
+                        : `${scenario.holding_period_hours} h`}
+                    </td>
+                    <td className="p-3 text-center text-green-300">
+                      {formatNumber(
+                        row.total_return_percent
+                      )}%
+                    </td>
+                    <td className="p-3 text-center text-amber-300">
+                      {formatNumber(
+                        row.return_without_best_trade_percent
+                      )}%
+                    </td>
+                    <td className="p-3 text-center">
+                      {formatNumber(
+                        row.net_pnl_sol,
+                        4
+                      )} SOL
+                    </td>
+                    <td className="p-3 text-center">
+                      {row.completed_positions ?? 0}
+                    </td>
+                    <td className="p-3 text-center">
+                      {row.forced_closes ?? 0}
+                    </td>
+                    <td className="p-3 text-center text-orange-300">
+                      {row.forced_close_skipped_unquotable ?? 0}
+                    </td>
+                    <td className="p-3 text-center text-teal-300">
+                      {row.positions_freed_by_expiry ?? 0}
+                    </td>
+                    <td className="p-3 text-center">
+                      {row.open_positions ?? 0}
+                    </td>
+                    <td className="p-3 text-center">
+                      {row.executed_buys ?? 0}
+                    </td>
+                    <td className="p-3 text-center text-red-300">
+                      {row.skipped_max_positions ?? 0}
+                    </td>
+                    <td className="p-3 text-center">
+                      {formatNumber(
+                        row.execution_coverage_percent
+                      )}%
+                    </td>
+                    <td className="p-3 text-center">
+                      {formatNumber(
+                        row.max_drawdown_percent
+                      )}%
+                    </td>
+                    <td className="p-3 text-center">
+                      {formatNumber(
+                        scenario.bootstrap_delta
+                          ?.return_percent
+                      )}%
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="mt-5 overflow-x-auto">
+          <h3 className="mb-3 font-bold text-teal-300">
+            Dettaglio lifecycle delle posizioni aperte
+          </h3>
+          <table className="w-full min-w-[1500px] text-xs">
+            <thead className="bg-slate-950 text-slate-400">
+              <tr>
+                <th className="p-3">Token</th>
+                <th className="p-3">Bootstrap</th>
+                <th className="p-3">Motivo</th>
+                <th className="p-3">Eta fine</th>
+                <th className="p-3">BUY sorgente</th>
+                <th className="p-3">SELL sorgente</th>
+                <th className="p-3">Uscita abbinata</th>
+                <th className="p-3">Residuo</th>
+                <th className="p-3">Costo residuo</th>
+                <th className="p-3">Ultima attivita</th>
+                <th className="p-3">Cache Jupiter</th>
+                <th className="p-3">Ultimo prezzo cached</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {details.map((item) => (
+                <tr key={`${item.token_mint}-${item.entry_at}`}>
+                  <td className="p-3 font-mono">
+                    {shortenAddress(
+                      item.token_mint,
+                      7,
+                      5
+                    )}
+                  </td>
+                  <td className="p-3 text-center">
+                    {item.bootstrap ? "SI" : "NO"}
+                  </td>
+                  <td className="p-3 text-center text-orange-300">
+                    {item.reason_still_open}
+                  </td>
+                  <td className="p-3 text-center">
+                    {formatNumber(
+                      item.age_at_analysis_end_hours,
+                      1
+                    )} h
+                  </td>
+                  <td className="p-3 text-center">
+                    {item.source_buys_total ?? 0}
+                  </td>
+                  <td className="p-3 text-center">
+                    {item.source_sells_total ?? 0}
+                  </td>
+                  <td className="p-3 text-center">
+                    {formatNumber(
+                      item.matched_exit_fraction_percent
+                    )}%
+                  </td>
+                  <td className="p-3 text-center">
+                    {formatNumber(
+                      item.remaining_fraction_percent
+                    )}%
+                  </td>
+                  <td className="p-3 text-center">
+                    {formatNumber(
+                      item.remaining_cost_basis_sol,
+                      4
+                    )} SOL
+                  </td>
+                  <td className="p-3 text-center">
+                    {formatDate(
+                      item.last_source_activity_at
+                    )}
+                  </td>
+                  <td className="p-3 text-center">
+                    {item.cached_jupiter_compatible
+                      ? "COMPATIBILE"
+                      : item.cached_jupiter_status}
+                  </td>
+                  <td className="p-3 text-center">
+                    {formatNumber(
+                      item.last_executable_price_sol,
+                      8
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {details.length === 0 && (
+                <tr>
+                  <td
+                    colSpan="12"
+                    className="p-6 text-center text-slate-500"
+                  >
+                    Nessuna posizione aperta nel baseline.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+
 function Discovery() {
   const [mode, setMode] = useState("FULL");
   const [seedWallet, setSeedWallet] = useState("");
@@ -222,6 +519,7 @@ function Discovery() {
   const [backtestForceJupiterRefresh, setBacktestForceJupiterRefresh] = useState(false);
   const [promotionResult, setPromotionResult] = useState(null);
   const [reconstructionAuditResult, setReconstructionAuditResult] = useState(null);
+  const [lifecycleAuditResult, setLifecycleAuditResult] = useState(null);
 
   const [discoveredWallets, setDiscoveredWallets] = useState([]);
   const [result, setResult] = useState(null);
@@ -243,6 +541,7 @@ function Discovery() {
   const [runningBackfill, setRunningBackfill] = useState(false);
   const [runningBacktest, setRunningBacktest] = useState(false);
   const [runningReconstructionAudit, setRunningReconstructionAudit] = useState(false);
+  const [runningLifecycleAudit, setRunningLifecycleAudit] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -643,6 +942,77 @@ async function handleReconstructionAudit(
 }
 
 
+async function handleLifecycleAudit(
+  walletAddress = candidateWallet
+) {
+  const wallet = String(
+    walletAddress || ""
+  ).trim();
+
+  if (!wallet) {
+    setError(
+      "Seleziona un wallet per il lifecycle audit."
+    );
+    return;
+  }
+
+  setRunningLifecycleAudit(true);
+  setError("");
+  setMessage("");
+  setLifecycleAuditResult(null);
+
+  try {
+    const response =
+      await runCandidatePositionLifecycleAudit({
+        walletAddress: wallet,
+        lookbackDays: backtestLookbackDays,
+        warmupDays: backtestWarmupDays,
+        startingCapitalSol:
+          backtestStartingCapital,
+        fixedBuySizeSol: backtestBuySize,
+        slippageBps: backtestSlippageBps,
+        feeBps: backtestFeeBps,
+        copyDelaySeconds:
+          backtestDelaySeconds,
+        maxOpenPositions:
+          backtestMaxOpenPositions,
+        maxPositionDetails: 200,
+      });
+
+    setLifecycleAuditResult(
+      response.data
+    );
+    setCandidateWallet(wallet);
+
+    setMessage(
+      `Lifecycle audit completato: ${
+        response.data.position_details
+          ?.length ?? 0
+      } posizioni aperte e ${
+        response.data.scenario_results
+          ?.length ?? 0
+      } scenari cached-only.`
+    );
+  } catch (requestError) {
+    console.error(
+      "Errore Position Lifecycle Audit:",
+      requestError
+    );
+
+    const backendMessage =
+      requestError.response?.data?.detail;
+
+    setError(
+      typeof backendMessage === "string"
+        ? backendMessage
+        : "Lifecycle audit non completato. Generation #4 e funzioni LIVE non sono state modificate."
+    );
+  } finally {
+    setRunningLifecycleAudit(false);
+  }
+}
+
+
   function clearHistory() {
     if (!historyItems.length) return;
     if (window.confirm("Vuoi cancellare la cronologia locale delle discovery?")) {
@@ -940,6 +1310,20 @@ async function handleReconstructionAudit(
       ? "Audit in corso..."
       : "Audit ricostruzione + sensibilita"}
   </button>
+
+  <button
+    type="button"
+    onClick={() => handleLifecycleAudit()}
+    disabled={
+      runningLifecycleAudit
+      || !candidateWallet
+    }
+    className="rounded-lg bg-teal-600 px-5 py-3 font-bold text-white disabled:opacity-50"
+  >
+    {runningLifecycleAudit
+      ? "Lifecycle audit in corso..."
+      : "Position lifecycle + stale audit"}
+  </button>
 </div>
             </div>
 
@@ -1229,6 +1613,8 @@ async function handleReconstructionAudit(
     </div>
   </section>
 )}
+
+        <LifecycleAuditPanel result={lifecycleAuditResult} />
 
         <section className="mb-8 overflow-hidden rounded-xl border border-cyan-900 bg-slate-800">
           <div className="border-b border-slate-700 p-5">

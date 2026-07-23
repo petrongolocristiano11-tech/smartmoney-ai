@@ -4,6 +4,9 @@ from backend.app.models.candidate_backtest import (
 from backend.app.models.candidate_reconstruction_audit import (
     CandidateReconstructionAuditRun,
 )
+from backend.app.models.candidate_position_lifecycle_audit import (
+    CandidatePositionLifecycleAuditRun,
+)
 from backend.app.models.candidate_history_backfill import (
     CandidateHistoryBackfillRun,
 )
@@ -75,6 +78,7 @@ from backend.app.models.wallet_profile import (
 __all__ = [
     "CandidateBacktestRun",
     "CandidateReconstructionAuditRun",
+    "CandidatePositionLifecycleAuditRun",
     "CandidateHistoryBackfillRun",
     "CandidateTokenCompatibility",
     "DiscoveryJob",

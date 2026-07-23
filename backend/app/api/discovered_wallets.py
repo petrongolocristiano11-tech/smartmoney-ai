@@ -10,6 +10,8 @@ from backend.app.schemas.candidate_backtest import (
     CandidateBacktestResponse,
     CandidateReconstructionAuditRequest,
     CandidateReconstructionAuditResponse,
+    CandidatePositionLifecycleAuditRequest,
+    CandidatePositionLifecycleAuditResponse,
     CandidateHistoryBackfillRequest,
     CandidateHistoryBackfillResponse,
 )
@@ -28,6 +30,10 @@ from backend.app.services.candidate_backtest_service import (
 from backend.app.services.candidate_reconstruction_audit_service import (
     get_latest_candidate_reconstruction_audit,
     run_candidate_reconstruction_audit,
+)
+from backend.app.services.candidate_position_lifecycle_audit_service import (
+    get_latest_candidate_position_lifecycle_audit,
+    run_candidate_position_lifecycle_audit,
 )
 from backend.app.services.candidate_history_service import (
     CandidateHistoryAlreadyRunningError,
@@ -269,6 +275,64 @@ def read_latest_reconstruction_audit(
         raise HTTPException(
             status_code=404,
             detail="Audit ricostruzione non trovato",
+        )
+
+    return run
+
+
+@router.post(
+    "/promotion/lifecycle-audit",
+    response_model=(
+        CandidatePositionLifecycleAuditResponse
+    ),
+)
+def run_position_lifecycle_audit(
+    request: (
+        CandidatePositionLifecycleAuditRequest
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return (
+            run_candidate_position_lifecycle_audit(
+                db,
+                **request.model_dump(),
+            )
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=404,
+            detail=str(error),
+        ) from error
+
+
+@router.get(
+    (
+        "/promotion/lifecycle-audit/"
+        "{wallet_address}/latest"
+    ),
+    response_model=(
+        CandidatePositionLifecycleAuditResponse
+    ),
+)
+def read_latest_position_lifecycle_audit(
+    wallet_address: str,
+    db: Session = Depends(get_db),
+):
+    run = (
+        get_latest_candidate_position_lifecycle_audit(
+            db,
+            wallet_address,
+        )
+    )
+
+    if run is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Audit lifecycle posizioni "
+                "non trovato"
+            ),
         )
 
     return run
