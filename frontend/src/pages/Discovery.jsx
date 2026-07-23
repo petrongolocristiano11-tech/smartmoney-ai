@@ -8,6 +8,7 @@ import {
   runControlledDiscoveryHydration,
   runExtendedCandidateHistoryBackfill,
   runCandidatePromotionBacktest,
+  runCandidateReconstructionAudit,
   runDiscovery,
   runSmartDiscovery,
 } from "../services/api";
@@ -215,10 +216,12 @@ function Discovery() {
   const [backtestSlippageBps, setBacktestSlippageBps] = useState(100);
   const [backtestFeeBps, setBacktestFeeBps] = useState(10);
   const [backtestDelaySeconds, setBacktestDelaySeconds] = useState(8);
+  const [backtestMaxOpenPositions, setBacktestMaxOpenPositions] = useState(5);
   const [backtestCheckJupiter, setBacktestCheckJupiter] = useState(true);
   const [backtestJupiterCacheTtlHours, setBacktestJupiterCacheTtlHours] = useState(6);
   const [backtestForceJupiterRefresh, setBacktestForceJupiterRefresh] = useState(false);
   const [promotionResult, setPromotionResult] = useState(null);
+  const [reconstructionAuditResult, setReconstructionAuditResult] = useState(null);
 
   const [discoveredWallets, setDiscoveredWallets] = useState([]);
   const [result, setResult] = useState(null);
@@ -239,6 +242,7 @@ function Discovery() {
   const [refreshingQuality, setRefreshingQuality] = useState(false);
   const [runningBackfill, setRunningBackfill] = useState(false);
   const [runningBacktest, setRunningBacktest] = useState(false);
+  const [runningReconstructionAudit, setRunningReconstructionAudit] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -545,6 +549,7 @@ function Discovery() {
         slippageBps: backtestSlippageBps,
         feeBps: backtestFeeBps,
         copyDelaySeconds: backtestDelaySeconds,
+        maxOpenPositions: backtestMaxOpenPositions,
         checkJupiter: backtestCheckJupiter,
         jupiterTokenLimit: 10,
         jupiterCacheTtlHours: backtestJupiterCacheTtlHours,
@@ -568,6 +573,74 @@ function Discovery() {
       setRunningBacktest(false);
     }
   }
+
+
+async function handleReconstructionAudit(
+  walletAddress = candidateWallet
+) {
+  const wallet = String(
+    walletAddress || ""
+  ).trim();
+
+  if (!wallet) {
+    setError(
+      "Seleziona un wallet candidato per l'audit."
+    );
+    return;
+  }
+
+  setRunningReconstructionAudit(true);
+  setError("");
+  setMessage("");
+  setReconstructionAuditResult(null);
+
+  try {
+    const response =
+      await runCandidateReconstructionAudit({
+        walletAddress: wallet,
+        lookbackDays: backtestLookbackDays,
+        warmupDays: backtestWarmupDays,
+        fixedBuySizeSol: backtestBuySize,
+        slippageBps: backtestSlippageBps,
+        feeBps: backtestFeeBps,
+        copyDelaySeconds: backtestDelaySeconds,
+        baselineStartingCapitalSol:
+          backtestStartingCapital,
+        baselineMaxOpenPositions:
+          backtestMaxOpenPositions,
+        maxExcludedTrades: 500,
+      });
+
+    setReconstructionAuditResult(
+      response.data
+    );
+    setCandidateWallet(wallet);
+
+    setMessage(
+      `Audit completato: ${
+        response.data.scenario_results?.length ?? 0
+      } scenari e ${
+        response.data.excluded_trades?.length ?? 0
+      } eventi dettagliati.`
+    );
+  } catch (requestError) {
+    console.error(
+      "Errore Trade Reconstruction Audit:",
+      requestError
+    );
+
+    const backendMessage =
+      requestError.response?.data?.detail;
+
+    setError(
+      typeof backendMessage === "string"
+        ? backendMessage
+        : "Audit non completato. Nessuna funzione LIVE ? stata modificata."
+    );
+  } finally {
+    setRunningReconstructionAudit(false);
+  }
+}
 
 
   function clearHistory() {
@@ -795,6 +868,22 @@ function Discovery() {
                     className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
                   />
                 </label>
+
+<label className="text-sm text-slate-400">
+  Massimo posizioni aperte
+  <input
+    type="number"
+    min="1"
+    max="50"
+    value={backtestMaxOpenPositions}
+    onChange={(event) =>
+      setBacktestMaxOpenPositions(
+        Number(event.target.value)
+      )
+    }
+    className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
+  />
+</label>
                 <label className="flex items-center gap-3 self-end rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 text-sm text-slate-300">
                   <input
                     type="checkbox"
@@ -822,14 +911,33 @@ function Discovery() {
                   Ignora cache Jupiter
                 </label>
               </div>
-              <button
-                type="button"
-                onClick={() => handlePromotionBacktest()}
-                disabled={runningBacktest || !candidateWallet}
-                className="mt-5 rounded-lg bg-emerald-600 px-5 py-3 font-bold text-white disabled:opacity-50"
-              >
-                {runningBacktest ? "Backtest in corso..." : "Esegui backtest e gate"}
-              </button>
+
+<div className="mt-5 flex flex-wrap gap-3">
+  <button
+    type="button"
+    onClick={() => handlePromotionBacktest()}
+    disabled={runningBacktest || !candidateWallet}
+    className="rounded-lg bg-emerald-600 px-5 py-3 font-bold text-white disabled:opacity-50"
+  >
+    {runningBacktest
+      ? "Backtest in corso..."
+      : "Esegui backtest e gate"}
+  </button>
+
+  <button
+    type="button"
+    onClick={() => handleReconstructionAudit()}
+    disabled={
+      runningReconstructionAudit
+      || !candidateWallet
+    }
+    className="rounded-lg bg-indigo-600 px-5 py-3 font-bold text-white disabled:opacity-50"
+  >
+    {runningReconstructionAudit
+      ? "Audit in corso..."
+      : "Audit ricostruzione + sensibilit?"}
+  </button>
+</div>
             </div>
 
             {promotionResult && (
@@ -875,6 +983,249 @@ function Discovery() {
             )}
           </div>
         </section>
+
+
+{reconstructionAuditResult && (
+  <section className="mb-8 overflow-hidden rounded-xl border border-indigo-800 bg-slate-800">
+    <div className="border-b border-slate-700 p-5">
+      <p className="font-mono text-xs text-slate-400">
+        {reconstructionAuditResult.wallet_address}
+      </p>
+      <h2 className="mt-1 text-xl font-bold text-indigo-300">
+        Trade Reconstruction Audit
+      </h2>
+      <p className="mt-2 text-xs text-amber-300">
+        Diagnosi: {(
+          reconstructionAuditResult.diagnoses ?? []
+        ).join(", ")}
+      </p>
+    </div>
+
+    <div className="p-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <StatCard
+          label="Return proporzionale"
+          value={`${formatNumber(
+            reconstructionAuditResult
+              .baseline_metrics
+              ?.total_return_percent
+          )}%`}
+          tone="text-green-300"
+        />
+
+        <StatCard
+          label="Return senza best"
+          value={`${formatNumber(
+            reconstructionAuditResult
+              .baseline_metrics
+              ?.return_without_best_trade_percent
+          )}%`}
+          tone="text-amber-300"
+        />
+
+        <StatCard
+          label="Copertura grezza"
+          value={`${formatNumber(
+            reconstructionAuditResult
+              .baseline_metrics
+              ?.raw_execution_coverage_percent
+          )}%`}
+          tone="text-cyan-300"
+        />
+
+        <StatCard
+          label="Copertura risorse"
+          value={`${formatNumber(
+            reconstructionAuditResult
+              .baseline_metrics
+              ?.resource_constrained_coverage_percent
+          )}%`}
+          tone="text-blue-300"
+        />
+
+        <StatCard
+          label="SELL parziali"
+          value={
+            reconstructionAuditResult
+              .baseline_metrics
+              ?.partial_sell_events ?? 0
+          }
+          tone="text-purple-300"
+        />
+
+        <StatCard
+          label="Concentrazione best"
+          value={`${formatNumber(
+            reconstructionAuditResult
+              .baseline_metrics
+              ?.top_1_profit_concentration_percent
+          )}%`}
+          tone="text-fuchsia-300"
+        />
+      </div>
+
+      <div className="mt-5 overflow-x-auto">
+        <table className="w-full min-w-[1200px] text-xs">
+          <thead className="bg-slate-950 text-slate-400">
+            <tr>
+              <th className="p-3">Capitale</th>
+              <th className="p-3">Max pos.</th>
+              <th className="p-3">Return</th>
+              <th className="p-3">Senza best</th>
+              <th className="p-3">PnL</th>
+              <th className="p-3">Chiuse</th>
+              <th className="p-3">Aperte</th>
+              <th className="p-3">Cov. grezza</th>
+              <th className="p-3">Cov. risorse</th>
+              <th className="p-3">SELL abbinate</th>
+              <th className="p-3">PF</th>
+              <th className="p-3">DD</th>
+              <th className="p-3">? bootstrap</th>
+            </tr>
+          </thead>
+
+          <tbody className="divide-y divide-slate-800">
+            {(
+              reconstructionAuditResult
+                .scenario_results ?? []
+            ).map((scenario) => {
+              const row =
+                scenario.with_bootstrap ?? {};
+
+              return (
+                <tr key={scenario.scenario_key}>
+                  <td className="p-3 text-center">
+                    {scenario.starting_capital_sol} SOL
+                  </td>
+                  <td className="p-3 text-center">
+                    {scenario.max_open_positions}
+                  </td>
+                  <td className="p-3 text-center text-green-300">
+                    {formatNumber(
+                      row.total_return_percent
+                    )}%
+                  </td>
+                  <td className="p-3 text-center text-amber-300">
+                    {formatNumber(
+                      row.return_without_best_trade_percent
+                    )}%
+                  </td>
+                  <td className="p-3 text-center">
+                    {formatNumber(
+                      row.net_pnl_sol,
+                      4
+                    )} SOL
+                  </td>
+                  <td className="p-3 text-center">
+                    {row.completed_positions}
+                  </td>
+                  <td className="p-3 text-center">
+                    {row.open_positions}
+                  </td>
+                  <td className="p-3 text-center">
+                    {formatNumber(
+                      row.raw_execution_coverage_percent
+                    )}%
+                  </td>
+                  <td className="p-3 text-center text-blue-300">
+                    {formatNumber(
+                      row.resource_constrained_coverage_percent
+                    )}%
+                  </td>
+                  <td className="p-3 text-center">
+                    {formatNumber(
+                      row.matched_sell_ratio_percent
+                    )}%
+                  </td>
+                  <td className="p-3 text-center">
+                    {row.profit_factor == null
+                      ? "-"
+                      : formatNumber(
+                          row.profit_factor
+                        )}
+                  </td>
+                  <td className="p-3 text-center">
+                    {formatNumber(
+                      row.max_drawdown_percent
+                    )}%
+                  </td>
+                  <td className="p-3 text-center">
+                    {formatNumber(
+                      scenario.bootstrap_delta
+                        ?.return_percent
+                    )}%
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-5 grid gap-4 xl:grid-cols-2">
+        <div className="rounded-lg border border-slate-700 bg-slate-950/60 p-4">
+          <h3 className="font-bold text-orange-300">
+            Motivi esclusione
+          </h3>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            {Object.entries(
+              reconstructionAuditResult
+                .exclusion_summary ?? {}
+            ).map(([reason, count]) => (
+              <span
+                key={reason}
+                className="rounded-full border border-slate-700 px-2.5 py-1 text-xs text-slate-300"
+              >
+                {reason}: {count}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-slate-700 bg-slate-950/60 p-4">
+          <h3 className="font-bold text-indigo-300">
+            Prime esclusioni
+          </h3>
+
+          <div className="mt-3 max-h-72 space-y-2 overflow-y-auto">
+            {(
+              reconstructionAuditResult
+                .excluded_trades ?? []
+            )
+              .slice(0, 50)
+              .map((item, index) => (
+                <div
+                  key={`${item.signature}-${index}`}
+                  className="rounded border border-slate-800 p-2 text-[11px] text-slate-400"
+                >
+                  <strong className="text-orange-300">
+                    {item.reason}
+                  </strong>
+                  {" ? "}
+                  {shortenAddress(
+                    item.token_mint,
+                    6,
+                    5
+                  )}
+                  {" ? "}
+                  {item.side}
+                  {" ? "}
+                  {item.signature
+                    ? shortenAddress(
+                        item.signature,
+                        8,
+                        6
+                      )
+                    : "-"}
+                </div>
+              ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+)}
 
         <section className="mb-8 overflow-hidden rounded-xl border border-cyan-900 bg-slate-800">
           <div className="border-b border-slate-700 p-5">

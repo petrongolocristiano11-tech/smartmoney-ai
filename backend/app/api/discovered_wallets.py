@@ -8,6 +8,8 @@ from backend.app.database.session import get_db
 from backend.app.schemas.candidate_backtest import (
     CandidateBacktestRequest,
     CandidateBacktestResponse,
+    CandidateReconstructionAuditRequest,
+    CandidateReconstructionAuditResponse,
     CandidateHistoryBackfillRequest,
     CandidateHistoryBackfillResponse,
 )
@@ -21,6 +23,11 @@ from backend.app.schemas.discovered_wallet import (
 from backend.app.services.candidate_backtest_service import (
     get_latest_candidate_backtest,
     run_candidate_backtest,
+)
+
+from backend.app.services.candidate_reconstruction_audit_service import (
+    get_latest_candidate_reconstruction_audit,
+    run_candidate_reconstruction_audit,
 )
 from backend.app.services.candidate_history_service import (
     CandidateHistoryAlreadyRunningError,
@@ -222,6 +229,48 @@ def read_latest_promotion_backtest(
     run = get_latest_candidate_backtest(db, wallet_address)
     if run is None:
         raise HTTPException(status_code=404, detail="Backtest non trovato")
+    return run
+
+
+@router.post(
+    "/promotion/audit",
+    response_model=CandidateReconstructionAuditResponse,
+)
+def run_reconstruction_audit(
+    request: CandidateReconstructionAuditRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return run_candidate_reconstruction_audit(
+            db,
+            **request.model_dump(),
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=404,
+            detail=str(error),
+        ) from error
+
+
+@router.get(
+    "/promotion/audit/{wallet_address}/latest",
+    response_model=CandidateReconstructionAuditResponse,
+)
+def read_latest_reconstruction_audit(
+    wallet_address: str,
+    db: Session = Depends(get_db),
+):
+    run = get_latest_candidate_reconstruction_audit(
+        db,
+        wallet_address,
+    )
+
+    if run is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Audit ricostruzione non trovato",
+        )
+
     return run
 
 

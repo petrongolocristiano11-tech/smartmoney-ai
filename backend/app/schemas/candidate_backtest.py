@@ -98,6 +98,96 @@ class CandidateBacktestResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class CandidateReconstructionAuditRequest(BaseModel):
+    wallet_address: str = Field(
+        min_length=32,
+        max_length=64,
+    )
+    lookback_days: int = Field(
+        default=14,
+        ge=1,
+        le=90,
+    )
+    warmup_days: int = Field(
+        default=14,
+        ge=0,
+        le=60,
+    )
+    fixed_buy_size_sol: float = Field(
+        default=0.05,
+        gt=0,
+        le=100,
+    )
+    slippage_bps: int = Field(
+        default=100,
+        ge=0,
+        le=1000,
+    )
+    fee_bps: int = Field(
+        default=10,
+        ge=0,
+        le=500,
+    )
+    copy_delay_seconds: int = Field(
+        default=8,
+        ge=0,
+        le=3600,
+    )
+    delay_penalty_bps_per_minute: float = Field(
+        default=25.0,
+        ge=0,
+        le=500,
+    )
+    baseline_starting_capital_sol: float = Field(
+        default=1.0,
+        gt=0,
+        le=1000,
+    )
+    baseline_max_open_positions: int = Field(
+        default=5,
+        ge=1,
+        le=50,
+    )
+    max_excluded_trades: int = Field(
+        default=500,
+        ge=0,
+        le=2000,
+    )
+
+    @field_validator("wallet_address")
+    @classmethod
+    def normalize_wallet(cls, value: str) -> str:
+        wallet = str(value or "").strip()
+
+        if not 32 <= len(wallet) <= 64:
+            raise ValueError(
+                "Wallet address non valido"
+            )
+
+        return wallet
+
+
+class CandidateReconstructionAuditResponse(BaseModel):
+    id: int
+    run_id: str
+    wallet_address: str
+    status: str
+    parameters: dict
+    safety: dict
+    baseline_metrics: dict
+    exclusion_summary: dict
+    excluded_trades: list[dict]
+    scenario_results: list[dict]
+    diagnoses: list[str]
+    started_at: datetime
+    completed_at: datetime | None
+    created_at: datetime
+
+    model_config = ConfigDict(
+        from_attributes=True
+    )
+
+
 class CandidateHistoryBackfillRequest(BaseModel):
     wallet_address: str = Field(min_length=32, max_length=64)
     lookback_days: int = Field(default=30, ge=7, le=90)
