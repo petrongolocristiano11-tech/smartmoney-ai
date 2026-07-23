@@ -37,13 +37,12 @@ def test_backend_allows_observation_candidates():
     )
 
 
-def test_frontend_selector_lists_all_discovered_wallets():
+def test_frontend_selector_lists_all_wallets():
     source = read_discovery_source()
 
     label_index = source.find(
         "Wallet scoperto da analizzare"
     )
-
     assert label_index >= 0
 
     select_start = source.find(
@@ -68,7 +67,7 @@ def test_frontend_selector_lists_all_discovered_wallets():
     assert ".filter((wallet)" not in selector
 
 
-def test_history_and_gate_keep_quality_protection():
+def test_history_and_gate_remain_quality_protected():
     source = read_discovery_source()
 
     assert (
