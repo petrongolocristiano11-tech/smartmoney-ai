@@ -752,20 +752,31 @@ function Discovery() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  const loadDiscoveredWallets = useCallback(async () => {
+  const loadDiscoveredWallets = useCallback(async (preferredWallet = "") => {
     setLoadingWallets(true);
     try {
       const response = await getDiscoveredWallets(0, 500);
       const rows = Array.isArray(response.data) ? response.data : [];
+      const requestedWallet =
+        typeof preferredWallet === "string"
+          ? preferredWallet.trim()
+          : "";
+
       setDiscoveredWallets(rows);
       setCandidateWallet((current) => {
-        if (current && rows.some((wallet) => wallet.wallet_address === current)) {
-          return current;
+        const candidate = requestedWallet || current;
+
+        if (
+          candidate &&
+          rows.some(
+            (wallet) =>
+              wallet.wallet_address === candidate
+          )
+        ) {
+          return candidate;
         }
-        return (
-          rows.find((wallet) => ["COPIABILE", "OSSERVAZIONE"].includes(wallet.quality_classification))
-            ?.wallet_address ?? rows[0]?.wallet_address ?? ""
-        );
+
+        return "";
       });
     } catch (requestError) {
       console.error("Errore caricamento wallet scoperti:", requestError);
@@ -774,6 +785,7 @@ function Discovery() {
       setLoadingWallets(false);
     }
   }, []);
+
 
   useEffect(() => {
     loadDiscoveredWallets();
@@ -858,6 +870,16 @@ function Discovery() {
     [result]
   );
 
+
+  const selectedCandidate = useMemo(
+    () =>
+      discoveredWallets.find(
+        (wallet) =>
+          wallet.wallet_address === candidateWallet
+      ) ?? null,
+    [discoveredWallets, candidateWallet]
+  );
+
   const summary = useMemo(() => {
     const activityCount = (classification) =>
       discoveredWallets.filter(
@@ -903,6 +925,66 @@ function Discovery() {
     };
     setHistoryItems((items) => [newItem, ...items].slice(0, 20));
   }
+
+  function handleCandidateWalletSelection(
+    walletAddress,
+    scrollToAnalysis = false
+  ) {
+    const wallet = String(
+      walletAddress || ""
+    ).trim();
+
+    setCandidateWallet(wallet);
+    setExtendedHistoryResult(null);
+    setPromotionResult(null);
+    setError("");
+    setMessage(
+      wallet
+        ? `Wallet selezionato: ${wallet}`
+        : ""
+    );
+
+    if (
+      scrollToAnalysis &&
+      typeof document !== "undefined"
+    ) {
+      globalThis.requestAnimationFrame?.(() => {
+        document
+          .getElementById("candidate-analysis")
+          ?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+      });
+    }
+  }
+
+
+  function handleSelectFunnelWallet(row) {
+    handleCandidateWalletSelection(
+      row?.wallet_address,
+      true
+    );
+
+    const suggestedBudget = Number(
+      row?.allocated_requests ??
+        row?.recommended_requests ??
+        0
+    );
+
+    if (
+      Number.isFinite(suggestedBudget) &&
+      suggestedBudget > 0
+    ) {
+      setHistoryRequestBudget(
+        Math.min(
+          20,
+          Math.max(1, suggestedBudget)
+        )
+      );
+    }
+  }
+
 
   async function handleRunDiscovery() {
     const normalizedWallet = seedWallet.trim();
@@ -1105,7 +1187,7 @@ function Discovery() {
       setMessage(
         `Storico ${resumed ? "ripreso dal cursore salvato" : "esteso"} ${response.data.status}: ${response.data.trades_imported} nuovi swap, ${response.data.trades_updated} aggiornati, ${response.data.helius_requests}/${response.data.request_budget} richieste Helius.`
       );
-      await loadDiscoveredWallets();
+      await loadDiscoveredWallets(wallet);
     } catch (requestError) {
       console.error("Errore Extended Candidate History:", requestError);
       const backendMessage = requestError.response?.data?.detail;
@@ -1151,7 +1233,7 @@ function Discovery() {
       setMessage(
         `Backtest ${response.data.decision}: score ${formatNumber(response.data.score)}, rendimento ${formatNumber(response.data.total_return_percent)}%, drawdown ${formatNumber(response.data.max_drawdown_percent)}%.`
       );
-      await loadDiscoveredWallets();
+      await loadDiscoveredWallets(wallet);
     } catch (requestError) {
       console.error("Errore Candidate Backtest:", requestError);
       const backendMessage = requestError.response?.data?.detail;
@@ -1528,7 +1610,20 @@ async function handleExitPriceAudit(
                         <td className="p-3 text-center">{formatNumber(row.current_history_span_days, 1)} g</td>
                         <td className="p-3 text-center">{row.recommended_requests}</td>
                         <td className="p-3 text-center font-bold text-green-300">{row.allocated_requests}</td>
-                        <td className="p-3 text-left text-slate-300">Backfill manuale consigliato</td>
+                        <td className="p-3 text-left">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleSelectFunnelWallet(row)
+                            }
+                            className="rounded-lg border border-cyan-700 bg-cyan-950/50 px-3 py-2 text-xs font-bold text-cyan-300"
+                          >
+                            {candidateWallet ===
+                            row.wallet_address
+                              ? "Selezionato"
+                              : "Seleziona"}
+                          </button>
+                        </td>
                       </tr>
                     ))}
                     {!(candidateFunnelResult.history_queue ?? []).length && (
@@ -1568,7 +1663,10 @@ async function handleExitPriceAudit(
         </section>
 
 
-        <section className="mb-8 overflow-hidden rounded-xl border border-emerald-900 bg-slate-800">
+        <section
+          id="candidate-analysis"
+          className="mb-8 scroll-mt-6 overflow-hidden rounded-xl border border-emerald-900 bg-slate-800"
+        >
           <div className="border-b border-slate-700 p-5">
             <h2 className="text-xl font-bold text-emerald-300">
               Backtest Data Sufficiency & Extended Candidate History
@@ -1583,9 +1681,16 @@ async function handleExitPriceAudit(
               Wallet scoperto da analizzare
               <select
                 value={candidateWallet}
-                onChange={(event) => setCandidateWallet(event.target.value)}
+                onChange={(event) =>
+                  handleCandidateWalletSelection(
+                    event.target.value
+                  )
+                }
                 className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 font-mono text-xs"
               >
+                <option value="">
+                  Seleziona esplicitamente un wallet
+                </option>
                 {discoveredWallets
                   .map((wallet) => (
                     <option key={wallet.wallet_address} value={wallet.wallet_address}>
@@ -1593,6 +1698,30 @@ async function handleExitPriceAudit(
                     </option>
                   ))}
               </select>
+
+              {candidateWallet ? (
+                <div className="mt-3 rounded-lg border border-blue-800 bg-blue-950/30 p-3">
+                  <p className="text-xs text-blue-300">
+                    Wallet selezionato:
+                  </p>
+                  <p className="mt-1 break-all font-mono text-sm text-white">
+                    {candidateWallet}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-400">
+                    Qualit? attuale:{" "}
+                    <strong>
+                      {selectedCandidate
+                        ?.quality_classification ??
+                        "NON DISPONIBILE"}
+                    </strong>
+                  </p>
+                </div>
+              ) : (
+                <p className="mt-3 text-xs font-semibold text-amber-300">
+                  Nessun wallet selezionato. Le azioni restano disabilitate.
+                </p>
+              )}
+
               <span className="mt-2 block text-xs text-slate-500">
                 L'audit e disponibile per ogni wallet scoperto. Storico esteso e
                 Promotion Gate richiedono qualita COPIABILE o OSSERVAZIONE.
