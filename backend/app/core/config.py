@@ -286,6 +286,20 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # CERTIFIED SHADOW RUNTIME LEASE
+    # Manual metadata-only consumer interlock; disabled by default.
+    # =========================
+
+    CANONICAL_PARSER_SHADOW_LEASE_ENABLED: bool = False
+
+    CANONICAL_PARSER_SHADOW_LEASE_MAX_VALIDITY_MINUTES: int = Field(
+        default=60, ge=5, le=1440
+    )
+    CANONICAL_PARSER_SHADOW_LEASE_MIN_CERTIFICATION_REMAINING_MINUTES: int = Field(
+        default=15, ge=0, le=1440
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

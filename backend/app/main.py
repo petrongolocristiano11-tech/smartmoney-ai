@@ -79,6 +79,8 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserRuntimeAdmissionRequest,
     CanonicalParserRuntimeCertificationRequest,
     CanonicalParserRuntimeCertificationRevokeRequest,
+    CanonicalParserShadowRuntimeLeaseIssueRequest,
+    CanonicalParserShadowRuntimeLeaseRevokeRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -123,6 +125,15 @@ from backend.app.services.blockchain_parser_runtime_certification_service import
     preview_parser_runtime_certification,
     resolve_parser_runtime_certification,
     revoke_parser_runtime_certification,
+)
+from backend.app.services.blockchain_parser_shadow_runtime_lease_service import (
+    CanonicalParserShadowRuntimeLeaseError,
+    get_shadow_runtime_lease,
+    get_shadow_runtime_lease_status,
+    issue_shadow_runtime_lease,
+    preview_shadow_runtime_lease,
+    resolve_shadow_runtime_lease,
+    revoke_shadow_runtime_lease,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -1327,3 +1338,112 @@ def read_parser_runtime_certification_endpoint(
 def resolve_parser_runtime_certification_endpoint(db: Session = Depends(get_db)):
     return resolve_parser_runtime_certification(db)
 # END M10 PARSER RUNTIME ADMISSION CERTIFICATION
+
+# BEGIN M11 CERTIFIED SHADOW RUNTIME LEASE
+@app.get(
+    "/integrity/parser-shadow-lease/status",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_runtime_lease_status(db: Session = Depends(get_db)):
+    return get_shadow_runtime_lease_status(db)
+
+
+@app.get(
+    "/integrity/parser-shadow-lease/preview",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_runtime_lease_preview(
+    certification_id: str | None = Query(default=None, min_length=36, max_length=36),
+    validity_minutes: int = Query(default=30, ge=5, le=1440),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_shadow_runtime_lease(
+            db,
+            certification_id=certification_id,
+            validity_minutes=validity_minutes,
+        )
+    except CanonicalParserShadowRuntimeLeaseError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-shadow-lease/issue",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def issue_shadow_runtime_lease_endpoint(
+    request: CanonicalParserShadowRuntimeLeaseIssueRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return issue_shadow_runtime_lease(
+            db,
+            confirmation=request.confirmation,
+            certification_id=request.certification_id,
+            validity_minutes=request.validity_minutes,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserShadowRuntimeLeaseError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-shadow-lease/revoke",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def revoke_shadow_runtime_lease_endpoint(
+    request: CanonicalParserShadowRuntimeLeaseRevokeRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return revoke_shadow_runtime_lease(
+            db,
+            lease_id=request.lease_id,
+            confirmation=request.confirmation,
+            reason=request.reason,
+            actor_label=request.actor_label,
+        )
+    except CanonicalParserShadowRuntimeLeaseError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/parser-shadow-lease/leases/{lease_id}",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_runtime_lease_endpoint(
+    lease_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_shadow_runtime_lease(db, lease_id)
+    except CanonicalParserShadowRuntimeLeaseError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/parser-shadow-lease/resolve",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def resolve_shadow_runtime_lease_endpoint(db: Session = Depends(get_db)):
+    return resolve_shadow_runtime_lease(db)
+# END M11 CERTIFIED SHADOW RUNTIME LEASE

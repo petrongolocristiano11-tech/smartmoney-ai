@@ -141,3 +141,19 @@ class CanonicalParserRuntimeCertificationRevokeRequest(BaseModel):
     confirmation: str = Field(default="", max_length=180)
     reason: str = Field(min_length=3, max_length=500)
     actor_label: str | None = Field(default=None, max_length=80)
+
+class CanonicalParserShadowRuntimeLeaseIssueRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=180)
+    certification_id: str | None = Field(
+        default=None, min_length=36, max_length=36
+    )
+    validity_minutes: int = Field(default=30, ge=5, le=1440)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserShadowRuntimeLeaseRevokeRequest(BaseModel):
+    lease_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=180)
+    reason: str = Field(min_length=3, max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)

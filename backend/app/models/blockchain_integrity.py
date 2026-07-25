@@ -1613,3 +1613,245 @@ class CanonicalParserRuntimeCertificationEvent(Base):
     event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserShadowRuntimeLease(Base):
+    __tablename__ = "canonical_parser_shadow_runtime_leases"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('ACTIVE', 'REVOKED', 'EXPIRED')",
+            name="ck_canonical_parser_shadow_runtime_leases_status",
+        ),
+        CheckConstraint(
+            "scope IN ('SHADOW_ONLY')",
+            name="ck_canonical_parser_shadow_runtime_leases_scope",
+        ),
+        CheckConstraint(
+            "channel IN ('CANONICAL_SHADOW')",
+            name="ck_canonical_parser_shadow_runtime_leases_channel",
+        ),
+        CheckConstraint(
+            "consumer IN ('CERTIFIED_SHADOW_RUNTIME')",
+            name="ck_canonical_parser_shadow_runtime_leases_consumer",
+        ),
+        CheckConstraint(
+            "lease_generation >= 1",
+            name="ck_canonical_parser_shadow_runtime_leases_generation",
+        ),
+        CheckConstraint(
+            "requested_validity_minutes >= 5",
+            name="ck_canonical_parser_shadow_runtime_leases_validity",
+        ),
+        CheckConstraint(
+            "latest_event_sequence >= 1",
+            name="ck_canonical_parser_shadow_runtime_leases_sequence",
+        ),
+        CheckConstraint(
+            "length(lease_key) = 64",
+            name="ck_canonical_parser_shadow_runtime_leases_key_length",
+        ),
+        CheckConstraint(
+            "length(parser_implementation_hash) = 64",
+            name="ck_canonical_parser_shadow_runtime_leases_parser_hash_length",
+        ),
+        CheckConstraint(
+            "length(release_manifest_hash) = 64",
+            name="ck_canonical_parser_shadow_runtime_leases_release_hash_length",
+        ),
+        CheckConstraint(
+            "length(certification_event_hash) = 64",
+            name="ck_canonical_parser_shadow_runtime_leases_cert_hash_length",
+        ),
+        CheckConstraint(
+            "length(lease_policy_hash) = 64",
+            name="ck_canonical_parser_shadow_runtime_leases_policy_hash_length",
+        ),
+        CheckConstraint(
+            "length(latest_event_hash) = 64",
+            name="ck_canonical_parser_shadow_runtime_leases_latest_hash_length",
+        ),
+        UniqueConstraint(
+            "lease_id",
+            name="uq_canonical_parser_shadow_runtime_leases_id",
+        ),
+        UniqueConstraint(
+            "lease_key",
+            name="uq_canonical_parser_shadow_runtime_leases_key",
+        ),
+        UniqueConstraint(
+            "consumer",
+            "lease_generation",
+            name="uq_canonical_parser_shadow_runtime_leases_generation",
+        ),
+        Index(
+            "ix_canonical_parser_shadow_runtime_leases_cert_status",
+            "certification_db_id",
+            "status",
+        ),
+        Index(
+            "ix_canonical_parser_shadow_runtime_leases_expires",
+            "status",
+            "expires_at",
+        ),
+        Index(
+            "ix_canonical_parser_shadow_runtime_leases_parser_version",
+            "parser_name",
+            "parser_version",
+        ),
+        Index(
+            "uq_canonical_parser_shadow_runtime_leases_active_consumer",
+            "consumer",
+            unique=True,
+            postgresql_where=text("status = 'ACTIVE'"),
+            sqlite_where=text("status = 'ACTIVE'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    lease_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    lease_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    lease_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    certification_db_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "canonical_parser_runtime_certifications.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    certification_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    binding_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    promotion_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    consumer: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    parser_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    parser_implementation_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    output_schema_version: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    release_manifest_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    certification_event_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    lease_policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    lease_policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    lease_policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    requested_validity_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False
+    )
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    issued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    revocation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latest_event_sequence: Mapped[int] = mapped_column(
+        Integer, default=1, nullable=False
+    )
+    latest_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    technical_metadata: Mapped[dict] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class CanonicalParserShadowRuntimeLeaseEvent(Base):
+    __tablename__ = "canonical_parser_shadow_runtime_lease_events"
+
+    __table_args__ = (
+        CheckConstraint(
+            "sequence >= 1",
+            name="ck_canonical_parser_shadow_runtime_lease_events_sequence",
+        ),
+        CheckConstraint(
+            "event_type IN ('ISSUED', 'REVOKED', 'EXPIRED')",
+            name="ck_canonical_parser_shadow_runtime_lease_events_type",
+        ),
+        CheckConstraint(
+            "previous_status IS NULL OR previous_status IN ('ACTIVE', 'REVOKED', 'EXPIRED')",
+            name="ck_canonical_parser_shadow_runtime_lease_events_previous_status",
+        ),
+        CheckConstraint(
+            "new_status IN ('ACTIVE', 'REVOKED', 'EXPIRED')",
+            name="ck_canonical_parser_shadow_runtime_lease_events_new_status",
+        ),
+        CheckConstraint(
+            "previous_event_hash IS NULL OR length(previous_event_hash) = 64",
+            name="ck_canonical_shadow_lease_events_prev_hash_len",
+        ),
+        CheckConstraint(
+            "length(event_hash) = 64",
+            name="ck_canonical_parser_shadow_runtime_lease_events_hash_length",
+        ),
+        UniqueConstraint(
+            "event_id",
+            name="uq_canonical_parser_shadow_runtime_lease_events_id",
+        ),
+        UniqueConstraint(
+            "lease_db_id",
+            "sequence",
+            name="uq_canonical_parser_shadow_runtime_lease_events_sequence",
+        ),
+        UniqueConstraint(
+            "event_hash",
+            name="uq_canonical_parser_shadow_runtime_lease_events_hash",
+        ),
+        Index(
+            "ix_canonical_parser_shadow_runtime_lease_events_lease_sequence",
+            "lease_db_id",
+            "sequence",
+        ),
+        Index(
+            "ix_canonical_parser_shadow_runtime_lease_events_type_time",
+            "event_type",
+            "occurred_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    lease_db_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "canonical_parser_shadow_runtime_leases.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    previous_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    new_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
