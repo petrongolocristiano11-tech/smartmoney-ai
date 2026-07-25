@@ -1,3 +1,7 @@
+from backend.app.models.blockchain_integrity import (
+    NormalizationRun,
+    RawBlockchainEvent,
+)
 from backend.app.models.candidate_backtest import (
     CandidateBacktestRun,
 )
@@ -85,6 +89,8 @@ from backend.app.models.wallet_profile import (
 
 
 __all__ = [
+    "NormalizationRun",
+    "RawBlockchainEvent",
     "CandidateBacktestRun",
     "CandidateReconstructionAuditRun",
     "CandidatePositionLifecycleAuditRun",
