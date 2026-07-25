@@ -260,6 +260,32 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # CANONICAL PARSER RUNTIME CERTIFICATION
+    # Metadata-only admission evidence governance; disabled by default.
+    # =========================
+
+    CANONICAL_PARSER_RUNTIME_CERTIFICATION_ENABLED: bool = False
+
+    CANONICAL_PARSER_RUNTIME_CERTIFICATION_MIN_RUNS: int = Field(
+        default=2, ge=1, le=20
+    )
+    CANONICAL_PARSER_RUNTIME_CERTIFICATION_MIN_TOTAL_EVENTS: int = Field(
+        default=10, ge=1, le=10000
+    )
+    CANONICAL_PARSER_RUNTIME_CERTIFICATION_MIN_PASS_RATE: float = Field(
+        default=100.0, ge=0.0, le=100.0
+    )
+    CANONICAL_PARSER_RUNTIME_CERTIFICATION_MAX_FAILED_EVENTS: int = Field(
+        default=0, ge=0, le=1000
+    )
+    CANONICAL_PARSER_RUNTIME_CERTIFICATION_MAX_EVIDENCE_AGE_HOURS: int = Field(
+        default=24, ge=1, le=8760
+    )
+    CANONICAL_PARSER_RUNTIME_CERTIFICATION_VALIDITY_HOURS: int = Field(
+        default=24, ge=1, le=8760
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

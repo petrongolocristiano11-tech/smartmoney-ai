@@ -77,6 +77,8 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserRuntimeBindRequest,
     CanonicalParserRuntimeUnbindRequest,
     CanonicalParserRuntimeAdmissionRequest,
+    CanonicalParserRuntimeCertificationRequest,
+    CanonicalParserRuntimeCertificationRevokeRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -112,6 +114,15 @@ from backend.app.services.blockchain_parser_runtime_admission_service import (
     get_parser_runtime_admission_status,
     preview_parser_runtime_admission,
     run_parser_runtime_admission,
+)
+from backend.app.services.blockchain_parser_runtime_certification_service import (
+    CanonicalParserRuntimeCertificationError,
+    certify_parser_runtime,
+    get_parser_runtime_certification,
+    get_parser_runtime_certification_status,
+    preview_parser_runtime_certification,
+    resolve_parser_runtime_certification,
+    revoke_parser_runtime_certification,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -1213,3 +1224,106 @@ def read_parser_runtime_admission_run_endpoint(
             detail={"code": exception.code, "message": str(exception)},
         ) from exception
 # END M9 PARSER RUNTIME ADMISSION CANARY
+
+# BEGIN M10 PARSER RUNTIME ADMISSION CERTIFICATION
+@app.get(
+    "/integrity/parser-certification/status",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_parser_runtime_certification_status(db: Session = Depends(get_db)):
+    return get_parser_runtime_certification_status(db)
+
+
+@app.get(
+    "/integrity/parser-certification/preview",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_parser_runtime_certification_preview(
+    binding_id: str | None = Query(default=None, min_length=36, max_length=36),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_parser_runtime_certification(db, binding_id=binding_id)
+    except CanonicalParserRuntimeCertificationError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-certification/certify",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def certify_parser_runtime_endpoint(
+    request: CanonicalParserRuntimeCertificationRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return certify_parser_runtime(
+            db,
+            confirmation=request.confirmation,
+            binding_id=request.binding_id,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserRuntimeCertificationError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-certification/revoke",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def revoke_parser_runtime_certification_endpoint(
+    request: CanonicalParserRuntimeCertificationRevokeRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return revoke_parser_runtime_certification(
+            db,
+            certification_id=request.certification_id,
+            confirmation=request.confirmation,
+            reason=request.reason,
+            actor_label=request.actor_label,
+        )
+    except CanonicalParserRuntimeCertificationError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/parser-certification/certifications/{certification_id}",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_parser_runtime_certification_endpoint(
+    certification_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_parser_runtime_certification(db, certification_id)
+    except CanonicalParserRuntimeCertificationError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/parser-certification/resolve",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def resolve_parser_runtime_certification_endpoint(db: Session = Depends(get_db)):
+    return resolve_parser_runtime_certification(db)
+# END M10 PARSER RUNTIME ADMISSION CERTIFICATION

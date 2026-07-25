@@ -1491,3 +1491,125 @@ class CanonicalParserAdmissionResult(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class CanonicalParserRuntimeCertification(Base):
+    __tablename__ = "canonical_parser_runtime_certifications"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('CERTIFIED', 'REVOKED')",
+            name="ck_canonical_parser_runtime_certifications_status",
+        ),
+        CheckConstraint(
+            "scope IN ('SHADOW_ONLY')",
+            name="ck_canonical_parser_runtime_certifications_scope",
+        ),
+        CheckConstraint(
+            "channel IN ('CANONICAL_SHADOW')",
+            name="ck_canonical_parser_runtime_certifications_channel",
+        ),
+        CheckConstraint(
+            "admission_run_count >= 1",
+            name="ck_canonical_parser_runtime_certifications_run_count",
+        ),
+        CheckConstraint(
+            "total_processed_count >= 0 AND total_passed_count >= 0 AND total_failed_count >= 0 AND total_skipped_count >= 0",
+            name="ck_canonical_parser_runtime_certifications_counts_nonnegative",
+        ),
+        CheckConstraint(
+            "pass_rate >= 0 AND pass_rate <= 100",
+            name="ck_canonical_parser_runtime_certifications_pass_rate",
+        ),
+        CheckConstraint(
+            "latest_event_sequence >= 1",
+            name="ck_canonical_parser_runtime_certifications_sequence_positive",
+        ),
+        CheckConstraint("length(certification_key) = 64", name="ck_canonical_parser_runtime_certifications_key_length"),
+        CheckConstraint("length(parser_implementation_hash) = 64", name="ck_canonical_parser_runtime_certifications_parser_hash_length"),
+        CheckConstraint("length(release_manifest_hash) = 64", name="ck_canonical_parser_runtime_certifications_release_hash_length"),
+        CheckConstraint("length(certification_policy_hash) = 64", name="ck_canonical_parser_runtime_certifications_policy_hash_length"),
+        CheckConstraint("length(evidence_hash) = 64", name="ck_canonical_parser_runtime_certifications_evidence_hash_length"),
+        CheckConstraint("length(latest_event_hash) = 64", name="ck_canonical_parser_runtime_certifications_latest_hash_length"),
+        UniqueConstraint("certification_id", name="uq_canonical_parser_runtime_certifications_id"),
+        UniqueConstraint("certification_key", name="uq_canonical_parser_runtime_certifications_key"),
+        Index("ix_canonical_parser_runtime_certifications_binding_status", "binding_db_id", "status"),
+        Index("ix_canonical_parser_runtime_certifications_parser_version", "parser_name", "parser_version"),
+        Index("ix_canonical_parser_runtime_certifications_expires", "status", "expires_at"),
+        Index(
+            "uq_canonical_parser_runtime_certifications_active_binding",
+            "binding_db_id",
+            unique=True,
+            postgresql_where=text("status = 'CERTIFIED'"),
+            sqlite_where=text("status = 'CERTIFIED'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    certification_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    certification_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    binding_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_runtime_bindings.id", ondelete="RESTRICT"), nullable=False)
+    binding_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    promotion_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    parser_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    parser_implementation_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    release_manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    certification_policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    certification_policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    admission_run_ids: Mapped[list] = mapped_column(JSON, nullable=False)
+    admission_run_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_processed_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_passed_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_failed_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_skipped_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    pass_rate: Mapped[Decimal] = mapped_column(Numeric(7, 4), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    certified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revocation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latest_event_sequence: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    latest_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    technical_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class CanonicalParserRuntimeCertificationEvent(Base):
+    __tablename__ = "canonical_parser_runtime_certification_events"
+
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_canonical_parser_runtime_certification_events_sequence"),
+        CheckConstraint("event_type IN ('CERTIFIED', 'REVOKED')", name="ck_canonical_parser_runtime_certification_events_type"),
+        CheckConstraint("previous_status IS NULL OR previous_status IN ('CERTIFIED', 'REVOKED')", name="ck_canonical_parser_cert_events_prev_status"),
+        CheckConstraint("new_status IN ('CERTIFIED', 'REVOKED')", name="ck_canonical_parser_runtime_certification_events_new_status"),
+        CheckConstraint("previous_event_hash IS NULL OR length(previous_event_hash) = 64", name="ck_canonical_parser_cert_events_prev_hash_len"),
+        CheckConstraint("length(event_hash) = 64", name="ck_canonical_parser_runtime_certification_events_hash_length"),
+        UniqueConstraint("event_id", name="uq_canonical_parser_runtime_certification_events_id"),
+        UniqueConstraint("certification_db_id", "sequence", name="uq_canonical_parser_runtime_certification_events_sequence"),
+        Index("ix_canonical_parser_runtime_certification_events_cert_sequence", "certification_db_id", "sequence"),
+        Index("ix_canonical_parser_runtime_certification_events_type_time", "event_type", "occurred_at"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    certification_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_runtime_certifications.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    previous_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    new_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

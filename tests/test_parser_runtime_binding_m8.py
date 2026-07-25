@@ -620,6 +620,7 @@ def test_runtime_binding_service_not_imported_by_operational_pipelines():
             "main.py",
             "blockchain_parser_runtime_binding_service.py",
             "blockchain_parser_runtime_admission_service.py",
+            "blockchain_parser_runtime_certification_service.py",
         }:
             continue
         source = path.read_text(encoding="utf-8")
