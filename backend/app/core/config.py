@@ -172,6 +172,61 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # CANONICAL QUALITY GATE
+    # Assessment-only; disabled by default.
+    # =========================
+
+    CANONICAL_QUALITY_GATE_ENABLED: bool = False
+
+    CANONICAL_QUALITY_GATE_MIN_COMPARABLE_EVENTS: int = Field(
+        default=50,
+        ge=10,
+        le=100_000,
+    )
+
+    CANONICAL_QUALITY_GATE_MIN_MATCH_RATE: float = Field(
+        default=98.0,
+        ge=0.0,
+        le=100.0,
+    )
+
+    CANONICAL_QUALITY_GATE_MAX_MISMATCH_RATE: float = Field(
+        default=2.0,
+        ge=0.0,
+        le=100.0,
+    )
+
+    CANONICAL_QUALITY_GATE_MAX_MISSING_TRADE_RATE: float = Field(
+        default=10.0,
+        ge=0.0,
+        le=100.0,
+    )
+
+    CANONICAL_QUALITY_GATE_MAX_NOT_COMPARABLE_RATE: float = Field(
+        default=5.0,
+        ge=0.0,
+        le=100.0,
+    )
+
+    CANONICAL_QUALITY_GATE_MAX_FAILED_RATE: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=100.0,
+    )
+
+    CANONICAL_QUALITY_GATE_MIN_PASS_QUALITY_RATE: float = Field(
+        default=95.0,
+        ge=0.0,
+        le=100.0,
+    )
+
+    CANONICAL_QUALITY_GATE_MAX_EVIDENCE_AGE_HOURS: int = Field(
+        default=168,
+        ge=1,
+        le=8760,
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

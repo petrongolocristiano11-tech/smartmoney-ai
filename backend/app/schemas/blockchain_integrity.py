@@ -75,3 +75,12 @@ class CanonicalShadowValidationExecuteRequest(BaseModel):
         max_length=8,
     )
     limit: int = Field(default=200, ge=1, le=5000)
+
+
+class CanonicalQualityAssessmentRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=80)
+    validation_id: str | None = Field(
+        default=None,
+        min_length=36,
+        max_length=36,
+    )

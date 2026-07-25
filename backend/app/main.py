@@ -72,9 +72,17 @@ from backend.app.core.discovery_security import require_automation_key
 from backend.app.database.session import get_db
 from backend.app.schemas.blockchain_integrity import (
     CanonicalMaterializationExecuteRequest,
+    CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
     RawCaptureRetentionPruneRequest,
+)
+from backend.app.services.blockchain_canonical_quality_gate_service import (
+    CanonicalQualityGateError,
+    execute_canonical_quality_assessment,
+    get_canonical_quality_assessment,
+    get_canonical_quality_gate_status,
+    preview_canonical_quality_gate,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -799,3 +807,78 @@ def read_shadow_validation_batch_endpoint(
             detail={"code": exception.code, "message": str(exception)},
         ) from exception
 # END M5 CANONICAL NORMALIZATION AND SHADOW VALIDATION
+
+# BEGIN M6 CANONICAL QUALITY GATE
+@app.get(
+    "/integrity/quality-gate/status",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_canonical_quality_gate_status(
+    db: Session = Depends(get_db),
+):
+    return get_canonical_quality_gate_status(db)
+
+
+@app.get(
+    "/integrity/quality-gate/preview",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_canonical_quality_gate_preview(
+    validation_id: str | None = Query(
+        default=None, min_length=36, max_length=36
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_canonical_quality_gate(
+            db,
+            validation_id=validation_id,
+        )
+    except CanonicalQualityGateError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/quality-gate/assess",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def execute_canonical_quality_assessment_endpoint(
+    request: CanonicalQualityAssessmentRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return execute_canonical_quality_assessment(
+            db,
+            confirmation=request.confirmation,
+            validation_id=request.validation_id,
+        )
+    except CanonicalQualityGateError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/quality-gate/assessments/{assessment_id}",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_canonical_quality_assessment_endpoint(
+    assessment_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_canonical_quality_assessment(db, assessment_id)
+    except CanonicalQualityGateError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+# END M6 CANONICAL QUALITY GATE

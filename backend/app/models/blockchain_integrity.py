@@ -676,3 +676,200 @@ class CanonicalShadowValidationResult(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class CanonicalQualityAssessment(Base):
+    __tablename__ = "canonical_quality_assessments"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('READY', 'REVIEW', 'BLOCKED', 'INSUFFICIENT_DATA')",
+            name="ck_canonical_quality_assessments_status",
+        ),
+        CheckConstraint(
+            "sample_size >= 0 AND comparable_count >= 0 "
+            "AND match_count >= 0 AND mismatch_count >= 0 "
+            "AND missing_trade_count >= 0 AND not_comparable_count >= 0 "
+            "AND failed_count >= 0 AND quality_pass_count >= 0 "
+            "AND quality_warn_count >= 0 AND quality_fail_count >= 0",
+            name="ck_canonical_quality_assessments_counts_nonnegative",
+        ),
+        CheckConstraint(
+            "match_rate >= 0 AND match_rate <= 100 "
+            "AND mismatch_rate >= 0 AND mismatch_rate <= 100 "
+            "AND missing_trade_rate >= 0 AND missing_trade_rate <= 100 "
+            "AND not_comparable_rate >= 0 AND not_comparable_rate <= 100 "
+            "AND failed_rate >= 0 AND failed_rate <= 100 "
+            "AND quality_pass_rate >= 0 AND quality_pass_rate <= 100",
+            name="ck_canonical_quality_assessments_rates_range",
+        ),
+        CheckConstraint(
+            "length(assessment_key) = 64",
+            name="ck_canonical_quality_assessments_key_length",
+        ),
+        CheckConstraint(
+            "length(policy_hash) = 64",
+            name="ck_canonical_quality_assessments_policy_hash_length",
+        ),
+        CheckConstraint(
+            "length(evidence_hash) = 64",
+            name="ck_canonical_quality_assessments_evidence_hash_length",
+        ),
+        CheckConstraint(
+            "length(parser_implementation_hash) = 64",
+            name="ck_canonical_quality_assessments_parser_hash_length",
+        ),
+        UniqueConstraint(
+            "assessment_id",
+            name="uq_canonical_quality_assessments_assessment_id",
+        ),
+        UniqueConstraint(
+            "assessment_key",
+            name="uq_canonical_quality_assessments_assessment_key",
+        ),
+        Index(
+            "ix_canonical_quality_assessments_status_evaluated",
+            "status",
+            "evaluated_at",
+        ),
+        Index(
+            "ix_canonical_quality_assessments_validation_batch",
+            "validation_batch_id",
+        ),
+        Index(
+            "ix_canonical_quality_assessments_parser_version",
+            "parser_name",
+            "parser_version",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    assessment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    assessment_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    validation_batch_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "canonical_shadow_validation_batches.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    validation_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    parser_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    parser_implementation_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+    comparator_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    sample_size: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    comparable_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    match_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    mismatch_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    missing_trade_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    not_comparable_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    failed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    quality_pass_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    quality_warn_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    quality_fail_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    match_rate: Mapped[Decimal] = mapped_column(
+        Numeric(7, 4),
+        default=Decimal("0"),
+        nullable=False,
+    )
+    mismatch_rate: Mapped[Decimal] = mapped_column(
+        Numeric(7, 4),
+        default=Decimal("0"),
+        nullable=False,
+    )
+    missing_trade_rate: Mapped[Decimal] = mapped_column(
+        Numeric(7, 4),
+        default=Decimal("0"),
+        nullable=False,
+    )
+    not_comparable_rate: Mapped[Decimal] = mapped_column(
+        Numeric(7, 4),
+        default=Decimal("0"),
+        nullable=False,
+    )
+    failed_rate: Mapped[Decimal] = mapped_column(
+        Numeric(7, 4),
+        default=Decimal("0"),
+        nullable=False,
+    )
+    quality_pass_rate: Mapped[Decimal] = mapped_column(
+        Numeric(7, 4),
+        default=Decimal("0"),
+        nullable=False,
+    )
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    mismatch_field_counts: Mapped[dict] = mapped_column(
+        JSON,
+        default=dict,
+        nullable=False,
+    )
+    threshold_snapshot: Mapped[dict] = mapped_column(
+        JSON,
+        default=dict,
+        nullable=False,
+    )
+    metrics_snapshot: Mapped[dict] = mapped_column(
+        JSON,
+        default=dict,
+        nullable=False,
+    )
+    technical_metadata: Mapped[dict] = mapped_column(
+        JSON,
+        default=dict,
+        nullable=False,
+    )
+    evidence_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    evaluated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
