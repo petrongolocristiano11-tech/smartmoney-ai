@@ -15,7 +15,13 @@ from datetime import (
 from time import perf_counter
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import (
+    Depends,
+    FastAPI,
+    HTTPException,
+    Query,
+    Request,
+)
 from fastapi.middleware.cors import (
     CORSMiddleware,
 )
@@ -64,6 +70,16 @@ from backend.app.api.wallets import (
 )
 from backend.app.core.discovery_security import require_automation_key
 from backend.app.database.session import get_db
+from backend.app.schemas.blockchain_integrity import (
+    RawCaptureRetentionPruneRequest,
+)
+from backend.app.services.raw_blockchain_capture_governance_service import (
+    RawCaptureGovernanceError,
+    get_raw_capture_readiness,
+    preview_raw_capture_retention,
+    prune_raw_capture_retention,
+    run_raw_capture_canary,
+)
 from backend.app.services.raw_blockchain_capture_service import (
     get_raw_capture_status,
 )
@@ -406,3 +422,88 @@ def read_raw_capture_status(
 ):
     return get_raw_capture_status(db)
 # END M2 DIRECT RAW CAPTURE STATUS ENDPOINT
+
+
+# BEGIN M3 RAW CAPTURE GOVERNANCE ENDPOINTS
+@app.get(
+    "/integrity/raw-capture/readiness",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_raw_capture_readiness(
+    db: Session = Depends(get_db),
+):
+    return get_raw_capture_readiness(db)
+
+
+@app.post(
+    "/integrity/raw-capture/canary",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def execute_raw_capture_canary(
+    db: Session = Depends(get_db),
+):
+    return run_raw_capture_canary(db)
+
+
+@app.get(
+    "/integrity/raw-capture/retention/preview",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_raw_capture_retention_preview(
+    provider: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=64,
+    ),
+    batch_size: int | None = Query(
+        default=None,
+        ge=1,
+        le=10_000,
+    ),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_raw_capture_retention(
+            db,
+            provider=provider,
+            batch_size=batch_size,
+        )
+    except RawCaptureGovernanceError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={
+                "code": exception.code,
+                "message": str(exception),
+            },
+        ) from exception
+
+
+@app.post(
+    "/integrity/raw-capture/retention/prune",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def execute_raw_capture_retention_prune(
+    request: RawCaptureRetentionPruneRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return prune_raw_capture_retention(
+            db,
+            dry_run=request.dry_run,
+            confirmation=request.confirmation,
+            provider=request.provider,
+            batch_size=request.batch_size,
+        )
+    except RawCaptureGovernanceError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={
+                "code": exception.code,
+                "message": str(exception),
+            },
+        ) from exception
+# END M3 RAW CAPTURE GOVERNANCE ENDPOINTS

@@ -30,6 +30,7 @@ CAPTURE_STATUS_CREATED = "CREATED"
 CAPTURE_STATUS_DEDUPLICATED = "DEDUPLICATED"
 CAPTURE_STATUS_DISABLED = "DISABLED"
 CAPTURE_STATUS_PROVIDER_DISABLED = "PROVIDER_DISABLED"
+CAPTURE_STATUS_EVENT_TYPE_DISABLED = "EVENT_TYPE_DISABLED"
 CAPTURE_STATUS_OVERSIZE = "OVERSIZE"
 CAPTURE_STATUS_FAILED = "FAILED"
 
@@ -216,6 +217,34 @@ def _configured_providers(settings_object: Any) -> frozenset[str]:
     )
 
 
+def _configured_event_types(settings_object: Any) -> frozenset[str]:
+    configured = getattr(
+        settings_object,
+        "raw_blockchain_capture_event_types",
+        None,
+    )
+    if configured is not None:
+        return frozenset(
+            str(item).strip().upper()
+            for item in configured
+            if str(item).strip()
+        )
+
+    raw_value = str(
+        getattr(
+            settings_object,
+            "RAW_BLOCKCHAIN_CAPTURE_EVENT_TYPES",
+            "",
+        )
+        or ""
+    )
+    return frozenset(
+        item.strip().upper()
+        for item in raw_value.split(",")
+        if item.strip()
+    )
+
+
 def capture_raw_blockchain_payload_safely(
     payload: object,
     *,
@@ -230,6 +259,7 @@ def capture_raw_blockchain_payload_safely(
     """
 
     provider = str(context.provider or "").strip().lower()
+    event_type = str(context.event_type or "").strip().upper()
 
     if not bool(getattr(settings_object, "RAW_BLOCKCHAIN_CAPTURE_ENABLED", False)):
         return _record_result(RawCaptureResult(status=CAPTURE_STATUS_DISABLED))
@@ -237,6 +267,11 @@ def capture_raw_blockchain_payload_safely(
     if provider not in _configured_providers(settings_object):
         return _record_result(
             RawCaptureResult(status=CAPTURE_STATUS_PROVIDER_DISABLED)
+        )
+
+    if event_type not in _configured_event_types(settings_object):
+        return _record_result(
+            RawCaptureResult(status=CAPTURE_STATUS_EVENT_TYPE_DISABLED)
         )
 
     try:
@@ -256,7 +291,7 @@ def capture_raw_blockchain_payload_safely(
                 "raw_capture_skipped provider=%s event_type=%s reason=oversize "
                 "payload_size_bytes=%s max_payload_bytes=%s",
                 provider,
-                str(context.event_type or "").strip().upper(),
+                event_type,
                 payload_size_bytes,
                 max_payload_bytes,
             )
@@ -286,7 +321,7 @@ def capture_raw_blockchain_payload_safely(
                 provider=provider,
                 chain=context.chain,
                 network=context.network,
-                event_type=context.event_type,
+                event_type=event_type,
                 transaction_signature=context.transaction_signature,
                 slot=context.slot,
                 block_time=_normalize_block_time(context.block_time),
@@ -321,7 +356,7 @@ def capture_raw_blockchain_payload_safely(
         logger.warning(
             "raw_capture_failed provider=%s event_type=%s error=%s",
             provider or "unknown",
-            str(context.event_type or "").strip().upper() or "UNKNOWN",
+            event_type or "UNKNOWN",
             safe_error,
         )
         return _record_result(
@@ -361,6 +396,7 @@ def get_raw_capture_status(
         ),
         "mode": CAPTURE_MODE,
         "providers": sorted(_configured_providers(settings_object)),
+        "event_types": sorted(_configured_event_types(settings_object)),
         "max_payload_bytes": int(
             getattr(
                 settings_object,
@@ -387,6 +423,29 @@ def get_raw_capture_status(
                 }
                 if latest_event is not None
                 else None
+            ),
+        },
+        "retention": {
+            "days": int(
+                getattr(
+                    settings_object,
+                    "RAW_BLOCKCHAIN_CAPTURE_RETENTION_DAYS",
+                    30,
+                )
+            ),
+            "batch_size": int(
+                getattr(
+                    settings_object,
+                    "RAW_BLOCKCHAIN_CAPTURE_RETENTION_BATCH_SIZE",
+                    1000,
+                )
+            ),
+            "prune_enabled": bool(
+                getattr(
+                    settings_object,
+                    "RAW_BLOCKCHAIN_CAPTURE_PRUNE_ENABLED",
+                    False,
+                )
             ),
         },
         "runtime_metrics": _metrics.snapshot(),

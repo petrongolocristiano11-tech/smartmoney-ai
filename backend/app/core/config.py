@@ -101,11 +101,31 @@ class Settings(BaseSettings):
         "helius,solana_rpc"
     )
 
+    RAW_BLOCKCHAIN_CAPTURE_EVENT_TYPES: str = (
+        "WALLET_HISTORY_RESPONSE,"
+        "ENHANCED_TRANSACTION_RESPONSE,"
+        "RPC_RESPONSE"
+    )
+
     RAW_BLOCKCHAIN_CAPTURE_MAX_PAYLOAD_BYTES: int = Field(
         default=4_000_000,
         ge=1024,
         le=16_000_000,
     )
+
+    RAW_BLOCKCHAIN_CAPTURE_RETENTION_DAYS: int = Field(
+        default=30,
+        ge=1,
+        le=3650,
+    )
+
+    RAW_BLOCKCHAIN_CAPTURE_RETENTION_BATCH_SIZE: int = Field(
+        default=1000,
+        ge=1,
+        le=10_000,
+    )
+
+    RAW_BLOCKCHAIN_CAPTURE_PRUNE_ENABLED: bool = False
 
     # =========================
     # CONTROLLED DISCOVERY HYDRATION
@@ -632,6 +652,38 @@ class Settings(BaseSettings):
         return ",".join(providers)
 
     @field_validator(
+        "RAW_BLOCKCHAIN_CAPTURE_EVENT_TYPES",
+        mode="before",
+    )
+    @classmethod
+    def normalize_raw_capture_event_types(
+        cls,
+        value,
+    ) -> str:
+        if isinstance(value, (list, tuple, set)):
+            raw_items = [str(item) for item in value]
+        else:
+            raw_items = str(value or "").split(",")
+
+        event_types: list[str] = []
+        for item in raw_items:
+            normalized = item.strip().upper()
+            if not normalized or normalized in event_types:
+                continue
+            if not all(
+                character.isalnum()
+                or character == "_"
+                for character in normalized
+            ):
+                raise ValueError(
+                    "RAW_BLOCKCHAIN_CAPTURE_EVENT_TYPES "
+                    "contiene un event type non valido."
+                )
+            event_types.append(normalized)
+
+        return ",".join(event_types)
+
+    @field_validator(
         "LIVE_TRADING_WALLET_ADDRESS"
     )
     @classmethod
@@ -665,6 +717,17 @@ class Settings(BaseSettings):
             for provider
             in self.RAW_BLOCKCHAIN_CAPTURE_PROVIDERS.split(",")
             if provider.strip()
+        ]
+
+    @property
+    def raw_blockchain_capture_event_types(
+        self,
+    ) -> list[str]:
+        return [
+            event_type.strip().upper()
+            for event_type
+            in self.RAW_BLOCKCHAIN_CAPTURE_EVENT_TYPES.split(",")
+            if event_type.strip()
         ]
 
     @property
@@ -713,6 +776,27 @@ class Settings(BaseSettings):
                 "contenere almeno un provider quando "
                 "la cattura è abilitata."
             )
+
+        if (
+            self.RAW_BLOCKCHAIN_CAPTURE_ENABLED
+            and not self.raw_blockchain_capture_event_types
+        ):
+            raise ValueError(
+                "RAW_BLOCKCHAIN_CAPTURE_EVENT_TYPES deve "
+                "contenere almeno un event type quando "
+                "la cattura è abilitata."
+            )
+
+        if (
+            self.RAW_BLOCKCHAIN_CAPTURE_PRUNE_ENABLED
+            and self.RAW_BLOCKCHAIN_CAPTURE_RETENTION_DAYS < 7
+        ):
+            raise ValueError(
+                "Con la cancellazione retention abilitata, "
+                "RAW_BLOCKCHAIN_CAPTURE_RETENTION_DAYS "
+                "deve essere almeno 7."
+            )
+
         return self
 
     @model_validator(
