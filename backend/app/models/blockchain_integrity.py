@@ -228,3 +228,203 @@ class NormalizationRun(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class NormalizationArtifact(Base):
+    __tablename__ = "normalization_artifacts"
+
+    __table_args__ = (
+        CheckConstraint(
+            "artifact_index >= 0",
+            name="ck_normalization_artifacts_index_nonnegative",
+        ),
+        CheckConstraint(
+            "length(payload_hash) = 64",
+            name="ck_normalization_artifacts_payload_hash_length",
+        ),
+        CheckConstraint(
+            "length(parser_implementation_hash) = 64",
+            name="ck_normalization_artifacts_implementation_hash_length",
+        ),
+        UniqueConstraint(
+            "raw_event_id",
+            "parser_name",
+            "parser_version",
+            "artifact_type",
+            "artifact_index",
+            name="uq_normalization_artifacts_event_parser_output",
+        ),
+        Index(
+            "ix_normalization_artifacts_run_index",
+            "normalization_run_id",
+            "artifact_index",
+        ),
+        Index(
+            "ix_normalization_artifacts_event_parser_version",
+            "raw_event_id",
+            "parser_name",
+            "parser_version",
+        ),
+        Index(
+            "ix_normalization_artifacts_payload_hash",
+            "payload_hash",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        _PRIMARY_KEY_TYPE,
+        primary_key=True,
+    )
+    normalization_run_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "normalization_runs.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    raw_event_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "raw_blockchain_events.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    parser_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    parser_implementation_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+    artifact_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    artifact_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict | list] = mapped_column(JSON, nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    artifact_metadata: Mapped[dict] = mapped_column(
+        JSON,
+        default=dict,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
+class NormalizationReplayBatch(Base):
+    __tablename__ = "normalization_replay_batches"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('RUNNING', 'COMPLETED', 'PARTIAL', 'FAILED')",
+            name="ck_normalization_replay_batches_status",
+        ),
+        CheckConstraint(
+            "selection_mode IN ('UNNORMALIZED', 'OUTDATED', 'REPROCESS')",
+            name="ck_normalization_replay_batches_selection_mode",
+        ),
+        CheckConstraint(
+            "requested_limit >= 1",
+            name="ck_normalization_replay_batches_limit_positive",
+        ),
+        CheckConstraint(
+            "length(parser_implementation_hash) = 64",
+            name="ck_normalization_replay_batches_implementation_hash_length",
+        ),
+        CheckConstraint(
+            "selected_count >= 0 AND processed_count >= 0 "
+            "AND completed_count >= 0 AND failed_count >= 0 "
+            "AND skipped_count >= 0",
+            name="ck_normalization_replay_batches_counts_nonnegative",
+        ),
+        UniqueConstraint(
+            "replay_id",
+            name="uq_normalization_replay_batches_replay_id",
+        ),
+        Index(
+            "ix_normalization_replay_batches_parser_version_status",
+            "parser_name",
+            "parser_version",
+            "status",
+        ),
+        Index(
+            "ix_normalization_replay_batches_status_created_at",
+            "status",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        _PRIMARY_KEY_TYPE,
+        primary_key=True,
+    )
+    replay_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    parser_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    parser_implementation_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+    selection_mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16),
+        default="RUNNING",
+        nullable=False,
+    )
+    request_filters: Mapped[dict] = mapped_column(
+        JSON,
+        default=dict,
+        nullable=False,
+    )
+    requested_limit: Mapped[int] = mapped_column(Integer, nullable=False)
+    selected_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    processed_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    completed_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    failed_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    skipped_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    technical_metadata: Mapped[dict] = mapped_column(
+        JSON,
+        default=dict,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

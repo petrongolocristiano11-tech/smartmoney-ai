@@ -17,3 +17,25 @@ class RawCaptureRetentionPruneRequest(BaseModel):
         ge=1,
         le=10_000,
     )
+
+
+class NormalizationReplayExecuteRequest(BaseModel):
+    parser_name: str = Field(min_length=3, max_length=80)
+    parser_version: str = Field(min_length=5, max_length=64)
+    selection_mode: str = Field(default="REPROCESS", max_length=16)
+    confirmation: str = Field(default="", max_length=80)
+    provider: str | None = Field(default=None, min_length=1, max_length=64)
+    event_type: str | None = Field(default=None, min_length=1, max_length=80)
+    transaction_signature: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+    )
+    observed_wallet: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+    )
+    observed_from: str | None = None
+    observed_to: str | None = None
+    limit: int = Field(default=100, ge=1, le=1000)

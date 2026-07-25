@@ -501,6 +501,7 @@ def _apply_raw_event_filters(
     statement,
     *,
     provider: str | None = None,
+    event_type: str | None = None,
     transaction_signature: str | None = None,
     observed_wallet: str | None = None,
     observed_from: datetime | None = None,
@@ -509,6 +510,10 @@ def _apply_raw_event_filters(
     if provider:
         statement = statement.where(
             RawBlockchainEvent.provider == str(provider).strip().lower()
+        )
+    if event_type:
+        statement = statement.where(
+            RawBlockchainEvent.event_type == str(event_type).strip().upper()
         )
     if transaction_signature:
         statement = statement.where(
@@ -535,6 +540,7 @@ def get_unnormalized_events(
     *,
     parser_name: str | None = None,
     provider: str | None = None,
+    event_type: str | None = None,
     transaction_signature: str | None = None,
     observed_wallet: str | None = None,
     observed_from: datetime | None = None,
@@ -556,6 +562,7 @@ def get_unnormalized_events(
     statement = _apply_raw_event_filters(
         statement,
         provider=provider,
+        event_type=event_type,
         transaction_signature=transaction_signature,
         observed_wallet=observed_wallet,
         observed_from=observed_from,
@@ -574,6 +581,7 @@ def get_events_with_outdated_parser(
     parser_name: str,
     current_parser_version: str,
     provider: str | None = None,
+    event_type: str | None = None,
     transaction_signature: str | None = None,
     observed_wallet: str | None = None,
     observed_from: datetime | None = None,
@@ -609,6 +617,7 @@ def get_events_with_outdated_parser(
     statement = _apply_raw_event_filters(
         statement,
         provider=provider,
+        event_type=event_type,
         transaction_signature=transaction_signature,
         observed_wallet=observed_wallet,
         observed_from=observed_from,
@@ -627,6 +636,7 @@ def get_events_for_reprocessing(
     parser_name: str,
     current_parser_version: str,
     provider: str | None = None,
+    event_type: str | None = None,
     transaction_signature: str | None = None,
     observed_wallet: str | None = None,
     observed_from: datetime | None = None,
@@ -673,6 +683,7 @@ def get_events_for_reprocessing(
     statement = _apply_raw_event_filters(
         statement,
         provider=provider,
+        event_type=event_type,
         transaction_signature=transaction_signature,
         observed_wallet=observed_wallet,
         observed_from=observed_from,

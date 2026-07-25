@@ -71,7 +71,15 @@ from backend.app.api.wallets import (
 from backend.app.core.discovery_security import require_automation_key
 from backend.app.database.session import get_db
 from backend.app.schemas.blockchain_integrity import (
+    NormalizationReplayExecuteRequest,
     RawCaptureRetentionPruneRequest,
+)
+from backend.app.services.blockchain_normalization_replay_service import (
+    NormalizationReplayError,
+    execute_normalization_replay,
+    get_normalization_replay_batch,
+    get_parser_registry_status,
+    preview_normalization_replay,
 )
 from backend.app.services.raw_blockchain_capture_governance_service import (
     RawCaptureGovernanceError,
@@ -507,3 +515,132 @@ def execute_raw_capture_retention_prune(
             },
         ) from exception
 # END M3 RAW CAPTURE GOVERNANCE ENDPOINTS
+
+# BEGIN M4 VERSIONED PARSER REGISTRY AND CONTROLLED REPLAY
+@app.get(
+    "/integrity/parsers",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_blockchain_parser_registry():
+    return get_parser_registry_status()
+
+
+@app.get(
+    "/integrity/replay/preview",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_normalization_replay_preview(
+    parser_name: str = Query(min_length=3, max_length=80),
+    parser_version: str = Query(min_length=5, max_length=64),
+    selection_mode: str = Query(default="REPROCESS", max_length=16),
+    provider: str | None = Query(default=None, min_length=1, max_length=64),
+    event_type: str | None = Query(default=None, min_length=1, max_length=80),
+    transaction_signature: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=128,
+    ),
+    observed_wallet: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=64,
+    ),
+    limit: int = Query(default=100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_normalization_replay(
+            db,
+            parser_name=parser_name,
+            parser_version=parser_version,
+            selection_mode=selection_mode,
+            provider=provider,
+            event_type=event_type,
+            transaction_signature=transaction_signature,
+            observed_wallet=observed_wallet,
+            limit=limit,
+        )
+    except NormalizationReplayError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={
+                "code": exception.code,
+                "message": str(exception),
+            },
+        ) from exception
+
+
+@app.post(
+    "/integrity/replay/execute",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def execute_controlled_normalization_replay(
+    request: NormalizationReplayExecuteRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        observed_from = (
+            datetime.fromisoformat(request.observed_from)
+            if request.observed_from
+            else None
+        )
+        observed_to = (
+            datetime.fromisoformat(request.observed_to)
+            if request.observed_to
+            else None
+        )
+        return execute_normalization_replay(
+            db,
+            parser_name=request.parser_name,
+            parser_version=request.parser_version,
+            selection_mode=request.selection_mode,
+            confirmation=request.confirmation,
+            provider=request.provider,
+            event_type=request.event_type,
+            transaction_signature=request.transaction_signature,
+            observed_wallet=request.observed_wallet,
+            observed_from=observed_from,
+            observed_to=observed_to,
+            limit=request.limit,
+        )
+    except ValueError as exception:
+        if isinstance(exception, NormalizationReplayError):
+            raise HTTPException(
+                status_code=exception.status_code,
+                detail={
+                    "code": exception.code,
+                    "message": str(exception),
+                },
+            ) from exception
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "REPLAY_DATETIME_INVALID",
+                "message": "Intervallo temporale replay non valido.",
+            },
+        ) from exception
+
+
+@app.get(
+    "/integrity/replay/batches/{replay_id}",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_normalization_replay_batch(
+    replay_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_normalization_replay_batch(db, replay_id)
+    except NormalizationReplayError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={
+                "code": exception.code,
+                "message": str(exception),
+            },
+        ) from exception
+# END M4 VERSIONED PARSER REGISTRY AND CONTROLLED REPLAY

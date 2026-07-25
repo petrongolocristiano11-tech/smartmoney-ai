@@ -1,4 +1,6 @@
 from backend.app.models.blockchain_integrity import (
+    NormalizationArtifact,
+    NormalizationReplayBatch,
     NormalizationRun,
     RawBlockchainEvent,
 )
@@ -89,6 +91,8 @@ from backend.app.models.wallet_profile import (
 
 
 __all__ = [
+    "NormalizationArtifact",
+    "NormalizationReplayBatch",
     "NormalizationRun",
     "RawBlockchainEvent",
     "CandidateBacktestRun",

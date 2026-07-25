@@ -128,6 +128,23 @@ class Settings(BaseSettings):
     RAW_BLOCKCHAIN_CAPTURE_PRUNE_ENABLED: bool = False
 
     # =========================
+    # VERSIONED NORMALIZATION REPLAY
+    # Manual-only; disabled by default.
+    # =========================
+
+    RAW_BLOCKCHAIN_REPLAY_ENABLED: bool = False
+
+    RAW_BLOCKCHAIN_REPLAY_ALLOWED_PARSERS: str = (
+        "raw_event_envelope"
+    )
+
+    RAW_BLOCKCHAIN_REPLAY_MAX_BATCH_SIZE: int = Field(
+        default=100,
+        ge=1,
+        le=1000,
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 
@@ -684,6 +701,38 @@ class Settings(BaseSettings):
         return ",".join(event_types)
 
     @field_validator(
+        "RAW_BLOCKCHAIN_REPLAY_ALLOWED_PARSERS",
+        mode="before",
+    )
+    @classmethod
+    def normalize_raw_replay_allowed_parsers(
+        cls,
+        value,
+    ) -> str:
+        if isinstance(value, (list, tuple, set)):
+            raw_items = [str(item) for item in value]
+        else:
+            raw_items = str(value or "").split(",")
+
+        parsers: list[str] = []
+        for item in raw_items:
+            normalized = item.strip().lower()
+            if not normalized or normalized in parsers:
+                continue
+            if not all(
+                character.isalnum()
+                or character == "_"
+                for character in normalized
+            ):
+                raise ValueError(
+                    "RAW_BLOCKCHAIN_REPLAY_ALLOWED_PARSERS "
+                    "contiene un parser non valido."
+                )
+            parsers.append(normalized)
+
+        return ",".join(parsers)
+
+    @field_validator(
         "LIVE_TRADING_WALLET_ADDRESS"
     )
     @classmethod
@@ -728,6 +777,17 @@ class Settings(BaseSettings):
             for event_type
             in self.RAW_BLOCKCHAIN_CAPTURE_EVENT_TYPES.split(",")
             if event_type.strip()
+        ]
+
+    @property
+    def raw_blockchain_replay_allowed_parsers(
+        self,
+    ) -> list[str]:
+        return [
+            parser.strip().lower()
+            for parser
+            in self.RAW_BLOCKCHAIN_REPLAY_ALLOWED_PARSERS.split(",")
+            if parser.strip()
         ]
 
     @property
@@ -795,6 +855,16 @@ class Settings(BaseSettings):
                 "Con la cancellazione retention abilitata, "
                 "RAW_BLOCKCHAIN_CAPTURE_RETENTION_DAYS "
                 "deve essere almeno 7."
+            )
+
+        if (
+            self.RAW_BLOCKCHAIN_REPLAY_ENABLED
+            and not self.raw_blockchain_replay_allowed_parsers
+        ):
+            raise ValueError(
+                "RAW_BLOCKCHAIN_REPLAY_ALLOWED_PARSERS deve "
+                "contenere almeno un parser quando il replay "
+                "è abilitato."
             )
 
         return self
