@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -1278,6 +1279,213 @@ class CanonicalParserRuntimeBindingEvent(Base):
     )
     event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CanonicalParserAdmissionRun(Base):
+    __tablename__ = "canonical_parser_admission_runs"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('RUNNING', 'PASSED', 'PARTIAL', 'FAILED')",
+            name="ck_canonical_parser_admission_runs_status",
+        ),
+        CheckConstraint(
+            "scope IN ('SHADOW_ONLY')",
+            name="ck_canonical_parser_admission_runs_scope",
+        ),
+        CheckConstraint(
+            "channel IN ('CANONICAL_SHADOW')",
+            name="ck_canonical_parser_admission_runs_channel",
+        ),
+        CheckConstraint(
+            "requested_limit >= 1 AND selected_count >= 0 "
+            "AND processed_count >= 0 AND passed_count >= 0 "
+            "AND failed_count >= 0 AND skipped_count >= 0",
+            name="ck_canonical_parser_admission_runs_counts_nonnegative",
+        ),
+        CheckConstraint(
+            "selected_count >= processed_count",
+            name="ck_canonical_parser_admission_runs_selected_processed",
+        ),
+        CheckConstraint(
+            "processed_count = passed_count + failed_count + skipped_count",
+            name="ck_canonical_parser_admission_runs_processed_breakdown",
+        ),
+        CheckConstraint(
+            "length(admission_key) = 64",
+            name="ck_canonical_parser_admission_runs_key_length",
+        ),
+        CheckConstraint(
+            "length(parser_implementation_hash) = 64",
+            name="ck_canonical_parser_admission_runs_parser_hash_length",
+        ),
+        CheckConstraint(
+            "length(binding_event_hash) = 64",
+            name="ck_canonical_parser_admission_runs_binding_hash_length",
+        ),
+        CheckConstraint(
+            "length(release_manifest_hash) = 64",
+            name="ck_canonical_parser_admission_runs_release_hash_length",
+        ),
+        CheckConstraint(
+            "length(admission_policy_hash) = 64",
+            name="ck_canonical_parser_admission_runs_policy_hash_length",
+        ),
+        UniqueConstraint(
+            "admission_id",
+            name="uq_canonical_parser_admission_runs_admission_id",
+        ),
+        UniqueConstraint(
+            "admission_key",
+            name="uq_canonical_parser_admission_runs_admission_key",
+        ),
+        Index(
+            "ix_canonical_parser_admission_runs_status_started",
+            "status",
+            "started_at",
+        ),
+        Index(
+            "ix_canonical_parser_admission_runs_binding",
+            "binding_db_id",
+        ),
+        Index(
+            "ix_canonical_parser_admission_runs_parser_version",
+            "parser_name",
+            "parser_version",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    admission_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    admission_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    binding_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_runtime_bindings.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    binding_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    promotion_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    parser_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    parser_implementation_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    output_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    binding_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    release_manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    admission_policy_version: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    admission_policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    requested_limit: Mapped[int] = mapped_column(Integer, nullable=False)
+    selected_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    processed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    passed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    skipped_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    selection_snapshot: Mapped[dict] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    metrics_snapshot: Mapped[dict] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    technical_metadata: Mapped[dict] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class CanonicalParserAdmissionResult(Base):
+    __tablename__ = "canonical_parser_admission_results"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PASS', 'FAIL', 'SKIPPED')",
+            name="ck_canonical_parser_admission_results_status",
+        ),
+        CheckConstraint(
+            "artifact_count >= 0",
+            name="ck_canonical_parser_admission_results_artifact_count",
+        ),
+        CheckConstraint(
+            "first_output_hash IS NULL OR length(first_output_hash) = 64",
+            name="ck_canonical_parser_admission_results_first_hash_length",
+        ),
+        CheckConstraint(
+            "second_output_hash IS NULL OR length(second_output_hash) = 64",
+            name="ck_canonical_parser_admission_results_second_hash_length",
+        ),
+        UniqueConstraint(
+            "result_id",
+            name="uq_canonical_parser_admission_results_result_id",
+        ),
+        UniqueConstraint(
+            "admission_run_db_id",
+            "raw_event_id",
+            name="uq_canonical_parser_admission_results_run_event",
+        ),
+        Index(
+            "ix_canonical_parser_admission_results_run_status",
+            "admission_run_db_id",
+            "status",
+        ),
+        Index(
+            "ix_canonical_parser_admission_results_raw_event",
+            "raw_event_id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    result_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    admission_run_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_admission_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    raw_event_id: Mapped[int] = mapped_column(
+        ForeignKey("raw_blockchain_events.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    compatible: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    deterministic: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    first_output_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    second_output_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    artifact_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    artifact_summary: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    completed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(

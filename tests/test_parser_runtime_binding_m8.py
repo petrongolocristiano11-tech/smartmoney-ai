@@ -616,7 +616,11 @@ def test_m8_service_has_no_network_clients_or_trade_writes():
 def test_runtime_binding_service_not_imported_by_operational_pipelines():
     forbidden = []
     for path in Path("backend/app").rglob("*.py"):
-        if path.name in {"main.py", "blockchain_parser_runtime_binding_service.py"}:
+        if path.name in {
+            "main.py",
+            "blockchain_parser_runtime_binding_service.py",
+            "blockchain_parser_runtime_admission_service.py",
+        }:
             continue
         source = path.read_text(encoding="utf-8")
         if "blockchain_parser_runtime_binding_service" in source:

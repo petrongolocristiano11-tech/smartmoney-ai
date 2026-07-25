@@ -247,6 +247,19 @@ class Settings(BaseSettings):
     CANONICAL_PARSER_RUNTIME_BINDING_ENABLED: bool = False
 
     # =========================
+    # CANONICAL PARSER RUNTIME ADMISSION CANARY
+    # Manual shadow-only consumer; disabled by default.
+    # =========================
+
+    CANONICAL_PARSER_RUNTIME_ADMISSION_ENABLED: bool = False
+
+    CANONICAL_PARSER_RUNTIME_ADMISSION_MAX_SAMPLE_SIZE: int = Field(
+        default=25,
+        ge=1,
+        le=100,
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

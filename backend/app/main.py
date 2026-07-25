@@ -76,6 +76,7 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserPromotionRevokeRequest,
     CanonicalParserRuntimeBindRequest,
     CanonicalParserRuntimeUnbindRequest,
+    CanonicalParserRuntimeAdmissionRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -104,6 +105,13 @@ from backend.app.services.blockchain_parser_runtime_binding_service import (
     preview_parser_runtime_binding,
     resolve_shadow_parser_runtime,
     unbind_parser_runtime,
+)
+from backend.app.services.blockchain_parser_runtime_admission_service import (
+    CanonicalParserRuntimeAdmissionError,
+    get_parser_runtime_admission_run,
+    get_parser_runtime_admission_status,
+    preview_parser_runtime_admission,
+    run_parser_runtime_admission,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -1126,3 +1134,82 @@ def resolve_parser_runtime_endpoint(
             detail={"code": exception.code, "message": str(exception)},
         ) from exception
 # END M8 PARSER RUNTIME BINDING AND DRIFT CONTROL
+
+# BEGIN M9 PARSER RUNTIME ADMISSION CANARY
+@app.get(
+    "/integrity/parser-admission/status",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_parser_runtime_admission_status(db: Session = Depends(get_db)):
+    return get_parser_runtime_admission_status(db)
+
+
+@app.get(
+    "/integrity/parser-admission/preview",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_parser_runtime_admission_preview(
+    binding_id: str | None = Query(default=None, min_length=36, max_length=36),
+    raw_event_ids: list[int] | None = Query(default=None),
+    limit: int = Query(default=10, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_parser_runtime_admission(
+            db,
+            binding_id=binding_id,
+            raw_event_ids=raw_event_ids,
+            limit=limit,
+        )
+    except CanonicalParserRuntimeAdmissionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-admission/run",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def run_parser_runtime_admission_endpoint(
+    request: CanonicalParserRuntimeAdmissionRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return run_parser_runtime_admission(
+            db,
+            confirmation=request.confirmation,
+            binding_id=request.binding_id,
+            raw_event_ids=request.raw_event_ids,
+            limit=request.limit,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserRuntimeAdmissionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/parser-admission/runs/{admission_id}",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_parser_runtime_admission_run_endpoint(
+    admission_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_parser_runtime_admission_run(db, admission_id)
+    except CanonicalParserRuntimeAdmissionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+# END M9 PARSER RUNTIME ADMISSION CANARY
