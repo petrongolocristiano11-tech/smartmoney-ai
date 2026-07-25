@@ -227,6 +227,19 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # CANONICAL PARSER PROMOTION LEDGER
+    # Audit-only; disabled by default.
+    # =========================
+
+    CANONICAL_PARSER_PROMOTION_ENABLED: bool = False
+
+    CANONICAL_PARSER_PROMOTION_MAX_ASSESSMENT_AGE_HOURS: int = Field(
+        default=168,
+        ge=1,
+        le=8760,
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

@@ -72,6 +72,8 @@ from backend.app.core.discovery_security import require_automation_key
 from backend.app.database.session import get_db
 from backend.app.schemas.blockchain_integrity import (
     CanonicalMaterializationExecuteRequest,
+    CanonicalParserPromotionApproveRequest,
+    CanonicalParserPromotionRevokeRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -83,6 +85,14 @@ from backend.app.services.blockchain_canonical_quality_gate_service import (
     get_canonical_quality_assessment,
     get_canonical_quality_gate_status,
     preview_canonical_quality_gate,
+)
+from backend.app.services.blockchain_parser_promotion_service import (
+    CanonicalParserPromotionError,
+    approve_parser_promotion,
+    get_parser_promotion,
+    get_parser_promotion_status,
+    preview_parser_promotion,
+    revoke_parser_promotion,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -882,3 +892,107 @@ def read_canonical_quality_assessment_endpoint(
             detail={"code": exception.code, "message": str(exception)},
         ) from exception
 # END M6 CANONICAL QUALITY GATE
+
+# BEGIN M7 CANONICAL PARSER PROMOTION LEDGER
+@app.get(
+    "/integrity/parser-promotion/status",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_parser_promotion_status(
+    db: Session = Depends(get_db),
+):
+    return get_parser_promotion_status(db)
+
+
+@app.get(
+    "/integrity/parser-promotion/preview",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_parser_promotion_preview(
+    assessment_id: str | None = Query(
+        default=None, min_length=36, max_length=36
+    ),
+    scope: str = Query(default="SHADOW_ONLY", max_length=32),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_parser_promotion(
+            db,
+            assessment_id=assessment_id,
+            scope=scope,
+        )
+    except CanonicalParserPromotionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-promotion/approve",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def approve_parser_promotion_endpoint(
+    request: CanonicalParserPromotionApproveRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return approve_parser_promotion(
+            db,
+            confirmation=request.confirmation,
+            assessment_id=request.assessment_id,
+            scope=request.scope,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserPromotionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-promotion/revoke",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def revoke_parser_promotion_endpoint(
+    request: CanonicalParserPromotionRevokeRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return revoke_parser_promotion(
+            db,
+            promotion_id=request.promotion_id,
+            confirmation=request.confirmation,
+            reason=request.reason,
+            actor_label=request.actor_label,
+        )
+    except CanonicalParserPromotionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/parser-promotion/promotions/{promotion_id}",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_parser_promotion_endpoint(
+    promotion_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_parser_promotion(db, promotion_id)
+    except CanonicalParserPromotionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+# END M7 CANONICAL PARSER PROMOTION LEDGER

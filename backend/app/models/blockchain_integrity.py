@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -872,4 +873,222 @@ class CanonicalQualityAssessment(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+class CanonicalParserPromotion(Base):
+    __tablename__ = "canonical_parser_promotions"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('APPROVED', 'REVOKED')",
+            name="ck_canonical_parser_promotions_status",
+        ),
+        CheckConstraint(
+            "scope IN ('SHADOW_ONLY')",
+            name="ck_canonical_parser_promotions_scope",
+        ),
+        CheckConstraint(
+            "latest_event_sequence >= 1",
+            name="ck_canonical_parser_promotions_event_sequence_positive",
+        ),
+        CheckConstraint(
+            "length(promotion_key) = 64",
+            name="ck_canonical_parser_promotions_key_length",
+        ),
+        CheckConstraint(
+            "length(parser_implementation_hash) = 64",
+            name="ck_canonical_parser_promotions_parser_hash_length",
+        ),
+        CheckConstraint(
+            "length(assessment_policy_hash) = 64",
+            name="ck_canonical_parser_promotions_assessment_policy_hash_length",
+        ),
+        CheckConstraint(
+            "length(assessment_evidence_hash) = 64",
+            name="ck_canonical_parser_promotions_assessment_evidence_hash_length",
+        ),
+        CheckConstraint(
+            "length(promotion_policy_hash) = 64",
+            name="ck_canonical_parser_promotions_policy_hash_length",
+        ),
+        CheckConstraint(
+            "length(release_manifest_hash) = 64",
+            name="ck_canonical_parser_promotions_manifest_hash_length",
+        ),
+        CheckConstraint(
+            "length(latest_event_hash) = 64",
+            name="ck_canonical_parser_promotions_latest_event_hash_length",
+        ),
+        UniqueConstraint(
+            "promotion_id",
+            name="uq_canonical_parser_promotions_promotion_id",
+        ),
+        UniqueConstraint(
+            "promotion_key",
+            name="uq_canonical_parser_promotions_promotion_key",
+        ),
+        Index(
+            "ix_canonical_parser_promotions_status_scope",
+            "status",
+            "scope",
+        ),
+        Index(
+            "ix_canonical_parser_promotions_assessment",
+            "assessment_db_id",
+        ),
+        Index(
+            "ix_canonical_parser_promotions_parser_version",
+            "parser_name",
+            "parser_version",
+        ),
+        Index(
+            "uq_canonical_parser_promotions_active_parser_scope",
+            "parser_name",
+            "scope",
+            unique=True,
+            postgresql_where=text("status = 'APPROVED'"),
+            sqlite_where=text("status = 'APPROVED'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    promotion_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    promotion_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    assessment_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_quality_assessments.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    assessment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    scope: Mapped[str] = mapped_column(
+        String(32), default="SHADOW_ONLY", nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    parser_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    parser_implementation_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    output_schema_version: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    assessment_policy_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    assessment_evidence_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    promotion_policy_version: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    promotion_policy_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    release_manifest: Mapped[dict] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    release_manifest_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    approved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    revocation_reason: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+    latest_event_sequence: Mapped[int] = mapped_column(
+        Integer, default=1, nullable=False
+    )
+    latest_event_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    technical_metadata: Mapped[dict] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class CanonicalParserPromotionEvent(Base):
+    __tablename__ = "canonical_parser_promotion_events"
+
+    __table_args__ = (
+        CheckConstraint(
+            "sequence >= 1",
+            name="ck_canonical_parser_promotion_events_sequence_positive",
+        ),
+        CheckConstraint(
+            "event_type IN ('APPROVED', 'REVOKED')",
+            name="ck_canonical_parser_promotion_events_type",
+        ),
+        CheckConstraint(
+            "previous_status IS NULL OR previous_status IN ('APPROVED', 'REVOKED')",
+            name="ck_canonical_parser_promotion_events_previous_status",
+        ),
+        CheckConstraint(
+            "new_status IN ('APPROVED', 'REVOKED')",
+            name="ck_canonical_parser_promotion_events_new_status",
+        ),
+        CheckConstraint(
+            "previous_event_hash IS NULL OR length(previous_event_hash) = 64",
+            name="ck_canonical_parser_promotion_events_previous_hash_length",
+        ),
+        CheckConstraint(
+            "length(event_hash) = 64",
+            name="ck_canonical_parser_promotion_events_hash_length",
+        ),
+        UniqueConstraint(
+            "event_id",
+            name="uq_canonical_parser_promotion_events_event_id",
+        ),
+        UniqueConstraint(
+            "promotion_db_id",
+            "sequence",
+            name="uq_canonical_parser_promotion_events_promotion_sequence",
+        ),
+        Index(
+            "ix_canonical_parser_promotion_events_type_occurred",
+            "event_type",
+            "occurred_at",
+        ),
+        Index(
+            "ix_canonical_parser_promotion_events_promotion_sequence",
+            "promotion_db_id",
+            "sequence",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    promotion_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_promotions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    previous_status: Mapped[str | None] = mapped_column(
+        String(16), nullable=True
+    )
+    new_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -1,5 +1,7 @@
 from backend.app.models.blockchain_integrity import (
     CanonicalNormalizedEvent,
+    CanonicalParserPromotion,
+    CanonicalParserPromotionEvent,
     CanonicalQualityAssessment,
     CanonicalShadowValidationBatch,
     CanonicalShadowValidationResult,
@@ -96,6 +98,8 @@ from backend.app.models.wallet_profile import (
 
 __all__ = [
     "CanonicalNormalizedEvent",
+    "CanonicalParserPromotion",
+    "CanonicalParserPromotionEvent",
     "CanonicalQualityAssessment",
     "CanonicalShadowValidationBatch",
     "CanonicalShadowValidationResult",

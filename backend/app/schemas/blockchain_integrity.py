@@ -84,3 +84,22 @@ class CanonicalQualityAssessmentRequest(BaseModel):
         min_length=36,
         max_length=36,
     )
+
+
+class CanonicalParserPromotionApproveRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=120)
+    assessment_id: str | None = Field(
+        default=None,
+        min_length=36,
+        max_length=36,
+    )
+    scope: str = Field(default="SHADOW_ONLY", max_length=32)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserPromotionRevokeRequest(BaseModel):
+    promotion_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=120)
+    reason: str = Field(min_length=3, max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
