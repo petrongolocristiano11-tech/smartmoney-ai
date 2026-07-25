@@ -74,6 +74,8 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalMaterializationExecuteRequest,
     CanonicalParserPromotionApproveRequest,
     CanonicalParserPromotionRevokeRequest,
+    CanonicalParserRuntimeBindRequest,
+    CanonicalParserRuntimeUnbindRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -93,6 +95,15 @@ from backend.app.services.blockchain_parser_promotion_service import (
     get_parser_promotion_status,
     preview_parser_promotion,
     revoke_parser_promotion,
+)
+from backend.app.services.blockchain_parser_runtime_binding_service import (
+    CanonicalParserRuntimeBindingError,
+    bind_parser_runtime,
+    get_parser_runtime_binding,
+    get_parser_runtime_status,
+    preview_parser_runtime_binding,
+    resolve_shadow_parser_runtime,
+    unbind_parser_runtime,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -996,3 +1007,122 @@ def read_parser_promotion_endpoint(
             detail={"code": exception.code, "message": str(exception)},
         ) from exception
 # END M7 CANONICAL PARSER PROMOTION LEDGER
+
+# BEGIN M8 PARSER RUNTIME BINDING AND DRIFT CONTROL
+@app.get(
+    "/integrity/parser-runtime/status",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_parser_runtime_status(db: Session = Depends(get_db)):
+    return get_parser_runtime_status(db)
+
+
+@app.get(
+    "/integrity/parser-runtime/preview",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_parser_runtime_preview(
+    promotion_id: str | None = Query(default=None, min_length=36, max_length=36),
+    scope: str = Query(default="SHADOW_ONLY", max_length=32),
+    channel: str = Query(default="CANONICAL_SHADOW", max_length=32),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_parser_runtime_binding(
+            db, promotion_id=promotion_id, scope=scope, channel=channel
+        )
+    except CanonicalParserRuntimeBindingError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-runtime/bind",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def bind_parser_runtime_endpoint(
+    request: CanonicalParserRuntimeBindRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return bind_parser_runtime(
+            db,
+            promotion_id=request.promotion_id,
+            confirmation=request.confirmation,
+            scope=request.scope,
+            channel=request.channel,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserRuntimeBindingError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-runtime/unbind",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def unbind_parser_runtime_endpoint(
+    request: CanonicalParserRuntimeUnbindRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return unbind_parser_runtime(
+            db,
+            binding_id=request.binding_id,
+            confirmation=request.confirmation,
+            reason=request.reason,
+            actor_label=request.actor_label,
+        )
+    except CanonicalParserRuntimeBindingError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/parser-runtime/bindings/{binding_id}",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_parser_runtime_binding_endpoint(
+    binding_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_parser_runtime_binding(db, binding_id)
+    except CanonicalParserRuntimeBindingError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/parser-runtime/resolve",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def resolve_parser_runtime_endpoint(
+    scope: str = Query(default="SHADOW_ONLY", max_length=32),
+    channel: str = Query(default="CANONICAL_SHADOW", max_length=32),
+    db: Session = Depends(get_db),
+):
+    try:
+        return resolve_shadow_parser_runtime(db, scope=scope, channel=channel)
+    except CanonicalParserRuntimeBindingError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+# END M8 PARSER RUNTIME BINDING AND DRIFT CONTROL

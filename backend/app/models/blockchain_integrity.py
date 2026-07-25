@@ -1092,3 +1092,194 @@ class CanonicalParserPromotionEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+class CanonicalParserRuntimeBinding(Base):
+    __tablename__ = "canonical_parser_runtime_bindings"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('ACTIVE', 'UNBOUND')",
+            name="ck_canonical_parser_runtime_bindings_status",
+        ),
+        CheckConstraint(
+            "scope IN ('SHADOW_ONLY')",
+            name="ck_canonical_parser_runtime_bindings_scope",
+        ),
+        CheckConstraint(
+            "channel IN ('CANONICAL_SHADOW')",
+            name="ck_canonical_parser_runtime_bindings_channel",
+        ),
+        CheckConstraint(
+            "latest_event_sequence >= 1",
+            name="ck_canonical_parser_runtime_bindings_event_sequence_positive",
+        ),
+        CheckConstraint(
+            "length(binding_key) = 64",
+            name="ck_canonical_parser_runtime_bindings_key_length",
+        ),
+        CheckConstraint(
+            "length(parser_implementation_hash) = 64",
+            name="ck_canonical_parser_runtime_bindings_parser_hash_length",
+        ),
+        CheckConstraint(
+            "length(release_manifest_hash) = 64",
+            name="ck_canonical_parser_runtime_bindings_release_hash_length",
+        ),
+        CheckConstraint(
+            "length(binding_policy_hash) = 64",
+            name="ck_canonical_parser_runtime_bindings_policy_hash_length",
+        ),
+        CheckConstraint(
+            "length(latest_event_hash) = 64",
+            name="ck_canonical_parser_runtime_bindings_latest_event_hash_length",
+        ),
+        UniqueConstraint(
+            "binding_id",
+            name="uq_canonical_parser_runtime_bindings_binding_id",
+        ),
+        UniqueConstraint(
+            "binding_key",
+            name="uq_canonical_parser_runtime_bindings_binding_key",
+        ),
+        Index(
+            "ix_canonical_parser_runtime_bindings_status_scope_channel",
+            "status",
+            "scope",
+            "channel",
+        ),
+        Index(
+            "ix_canonical_parser_runtime_bindings_promotion",
+            "promotion_db_id",
+        ),
+        Index(
+            "ix_canonical_parser_runtime_bindings_parser_version",
+            "parser_name",
+            "parser_version",
+        ),
+        Index(
+            "uq_canonical_parser_runtime_bindings_active_scope_channel",
+            "scope",
+            "channel",
+            unique=True,
+            postgresql_where=text("status = 'ACTIVE'"),
+            sqlite_where=text("status = 'ACTIVE'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    binding_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    binding_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    promotion_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_promotions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    promotion_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    parser_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    parser_implementation_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    output_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    release_manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    binding_policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    binding_policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    bound_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    unbound_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    unbind_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latest_event_sequence: Mapped[int] = mapped_column(
+        Integer, default=1, nullable=False
+    )
+    latest_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    technical_metadata: Mapped[dict] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class CanonicalParserRuntimeBindingEvent(Base):
+    __tablename__ = "canonical_parser_runtime_binding_events"
+
+    __table_args__ = (
+        CheckConstraint(
+            "sequence >= 1",
+            name="ck_canonical_parser_runtime_binding_events_sequence_positive",
+        ),
+        CheckConstraint(
+            "event_type IN ('BOUND', 'UNBOUND')",
+            name="ck_canonical_parser_runtime_binding_events_type",
+        ),
+        CheckConstraint(
+            "previous_status IS NULL OR previous_status IN ('ACTIVE', 'UNBOUND')",
+            name="ck_canonical_parser_runtime_binding_events_previous_status",
+        ),
+        CheckConstraint(
+            "new_status IN ('ACTIVE', 'UNBOUND')",
+            name="ck_canonical_parser_runtime_binding_events_new_status",
+        ),
+        CheckConstraint(
+            "previous_event_hash IS NULL OR length(previous_event_hash) = 64",
+            name="ck_canonical_parser_runtime_binding_events_previous_hash_length",
+        ),
+        CheckConstraint(
+            "length(event_hash) = 64",
+            name="ck_canonical_parser_runtime_binding_events_hash_length",
+        ),
+        UniqueConstraint(
+            "event_id",
+            name="uq_canonical_parser_runtime_binding_events_event_id",
+        ),
+        UniqueConstraint(
+            "binding_db_id",
+            "sequence",
+            name="uq_canonical_parser_runtime_binding_events_binding_sequence",
+        ),
+        Index(
+            "ix_canonical_parser_runtime_binding_events_type_occurred",
+            "event_type",
+            "occurred_at",
+        ),
+        Index(
+            "ix_canonical_parser_runtime_binding_events_binding_sequence",
+            "binding_db_id",
+            "sequence",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    binding_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_runtime_bindings.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    previous_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    new_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

@@ -103,3 +103,18 @@ class CanonicalParserPromotionRevokeRequest(BaseModel):
     confirmation: str = Field(default="", max_length=120)
     reason: str = Field(min_length=3, max_length=500)
     actor_label: str | None = Field(default=None, max_length=80)
+
+class CanonicalParserRuntimeBindRequest(BaseModel):
+    promotion_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=180)
+    scope: str = Field(default="SHADOW_ONLY", max_length=32)
+    channel: str = Field(default="CANONICAL_SHADOW", max_length=32)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserRuntimeUnbindRequest(BaseModel):
+    binding_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=160)
+    reason: str = Field(min_length=3, max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)

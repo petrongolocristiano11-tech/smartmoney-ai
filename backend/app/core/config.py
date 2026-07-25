@@ -240,6 +240,13 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # CANONICAL PARSER RUNTIME BINDING
+    # Metadata-only SHADOW_ONLY resolver; disabled by default.
+    # =========================
+
+    CANONICAL_PARSER_RUNTIME_BINDING_ENABLED: bool = False
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 
