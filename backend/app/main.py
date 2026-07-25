@@ -15,7 +15,7 @@ from datetime import (
 from time import perf_counter
 from uuid import uuid4
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import (
     CORSMiddleware,
 )
@@ -62,6 +62,13 @@ from backend.app.api.trades import (
 from backend.app.api.wallets import (
     router as wallet_router,
 )
+from backend.app.core.discovery_security import require_automation_key
+from backend.app.database.session import get_db
+from backend.app.services.raw_blockchain_capture_service import (
+    get_raw_capture_status,
+)
+from sqlalchemy.orm import Session
+
 from backend.app.core.config import settings
 from backend.app.core.error_handlers import (
     register_exception_handlers,
@@ -387,3 +394,15 @@ def readiness():
         "timestamp":
             utc_timestamp(),
     }
+
+# BEGIN M2 DIRECT RAW CAPTURE STATUS ENDPOINT
+@app.get(
+    "/integrity/raw-capture/status",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_raw_capture_status(
+    db: Session = Depends(get_db),
+):
+    return get_raw_capture_status(db)
+# END M2 DIRECT RAW CAPTURE STATUS ENDPOINT

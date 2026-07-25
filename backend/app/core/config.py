@@ -91,6 +91,23 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # RAW BLOCKCHAIN CAPTURE
+    # Passive shadow mode; disabled by default.
+    # =========================
+
+    RAW_BLOCKCHAIN_CAPTURE_ENABLED: bool = False
+
+    RAW_BLOCKCHAIN_CAPTURE_PROVIDERS: str = (
+        "helius,solana_rpc"
+    )
+
+    RAW_BLOCKCHAIN_CAPTURE_MAX_PAYLOAD_BYTES: int = Field(
+        default=4_000_000,
+        ge=1024,
+        le=16_000_000,
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 
@@ -583,6 +600,38 @@ class Settings(BaseSettings):
         return normalized
 
     @field_validator(
+        "RAW_BLOCKCHAIN_CAPTURE_PROVIDERS",
+        mode="before",
+    )
+    @classmethod
+    def normalize_raw_capture_providers(
+        cls,
+        value,
+    ) -> str:
+        if isinstance(value, (list, tuple, set)):
+            raw_items = [str(item) for item in value]
+        else:
+            raw_items = str(value or "").split(",")
+
+        providers: list[str] = []
+        for item in raw_items:
+            normalized = item.strip().lower()
+            if not normalized or normalized in providers:
+                continue
+            if not all(
+                character.isalnum()
+                or character in {"_", "-"}
+                for character in normalized
+            ):
+                raise ValueError(
+                    "RAW_BLOCKCHAIN_CAPTURE_PROVIDERS "
+                    "contiene un provider non valido."
+                )
+            providers.append(normalized)
+
+        return ",".join(providers)
+
+    @field_validator(
         "LIVE_TRADING_WALLET_ADDRESS"
     )
     @classmethod
@@ -606,6 +655,17 @@ class Settings(BaseSettings):
             )
 
         return value
+
+    @property
+    def raw_blockchain_capture_providers(
+        self,
+    ) -> list[str]:
+        return [
+            provider.strip().lower()
+            for provider
+            in self.RAW_BLOCKCHAIN_CAPTURE_PROVIDERS.split(",")
+            if provider.strip()
+        ]
 
     @property
     def cors_origins(
@@ -637,6 +697,23 @@ class Settings(BaseSettings):
             and self.LIVE_TRADING_WALLET_ADDRESS
             and self.LIVE_TRADING_PRIVATE_KEY
         )
+
+    @model_validator(
+        mode="after"
+    )
+    def validate_raw_capture_configuration(
+        self,
+    ) -> Self:
+        if (
+            self.RAW_BLOCKCHAIN_CAPTURE_ENABLED
+            and not self.raw_blockchain_capture_providers
+        ):
+            raise ValueError(
+                "RAW_BLOCKCHAIN_CAPTURE_PROVIDERS deve "
+                "contenere almeno un provider quando "
+                "la cattura è abilitata."
+            )
+        return self
 
     @model_validator(
         mode="after"

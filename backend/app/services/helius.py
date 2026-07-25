@@ -10,6 +10,10 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 
 from backend.app.core.config import settings
+from backend.app.services.raw_blockchain_capture_service import (
+    RawCaptureContext,
+    capture_raw_blockchain_payload_safely,
+)
 from backend.app.services.trade_engine import normalize_swap
 
 
@@ -250,6 +254,96 @@ def get_helius_rpc_url() -> str:
     return "https://mainnet.helius-rpc.com/"
 
 
+def _first_payload_item(payload: object) -> dict[str, Any] | None:
+    if isinstance(payload, dict):
+        return payload
+    if isinstance(payload, list) and payload and isinstance(payload[0], dict):
+        return payload[0]
+    return None
+
+
+def _capture_helius_payload(
+    payload: object,
+    *,
+    event_type: str,
+    transaction_signature: str | None = None,
+    observed_wallet: str | None = None,
+    commitment: str | None = None,
+    technical_metadata: dict[str, Any] | None = None,
+) -> None:
+    first_item = _first_payload_item(payload)
+    inferred_signature = transaction_signature
+    inferred_slot: int | None = None
+    inferred_block_time: int | float | None = None
+
+    if first_item is not None:
+        if inferred_signature is None:
+            raw_signature = first_item.get("signature")
+            if raw_signature:
+                inferred_signature = str(raw_signature)
+
+        raw_slot = first_item.get("slot")
+        if raw_slot is not None:
+            try:
+                inferred_slot = int(raw_slot)
+            except (TypeError, ValueError):
+                inferred_slot = None
+
+        raw_block_time = (
+            first_item.get("timestamp")
+            if first_item.get("timestamp") is not None
+            else first_item.get("blockTime")
+        )
+        if isinstance(raw_block_time, (int, float)):
+            inferred_block_time = raw_block_time
+
+    capture_raw_blockchain_payload_safely(
+        payload,
+        context=RawCaptureContext(
+            provider="helius",
+            event_type=event_type,
+            transaction_signature=inferred_signature,
+            slot=inferred_slot,
+            block_time=inferred_block_time,
+            observed_wallet=observed_wallet,
+            commitment=commitment,
+            technical_metadata=technical_metadata,
+        ),
+    )
+
+
+def _rpc_capture_identity(
+    method: str,
+    params: list[Any],
+) -> tuple[str | None, str | None, str | None]:
+    observed_wallet: str | None = None
+    transaction_signature: str | None = None
+    commitment: str | None = None
+
+    wallet_methods = {
+        "getBalance",
+        "getSignaturesForAddress",
+        "getTokenAccountsByOwner",
+        "getTokenAccountBalance",
+    }
+    if method in wallet_methods and params and isinstance(params[0], str):
+        observed_wallet = params[0]
+
+    if method == "getTransaction" and params and isinstance(params[0], str):
+        transaction_signature = params[0]
+    elif method == "getSignatureStatuses" and params:
+        signatures = params[0]
+        if isinstance(signatures, list) and signatures:
+            transaction_signature = str(signatures[0])
+
+    for item in params:
+        if isinstance(item, dict) and item.get("commitment"):
+            commitment = str(item["commitment"])
+            break
+
+    return observed_wallet, transaction_signature, commitment
+
+
 def helius_rpc_call(
     method: str,
     params: list[Any] | None = None,
@@ -266,6 +360,21 @@ def helius_rpc_call(
         get_helius_rpc_url(),
         params={"api-key": settings.HELIUS_API_KEY},
         json=payload,
+    )
+
+    observed_wallet, transaction_signature, commitment = (
+        _rpc_capture_identity(method, payload["params"])
+    )
+    _capture_helius_payload(
+        result,
+        event_type="RPC_RESPONSE",
+        transaction_signature=transaction_signature,
+        observed_wallet=observed_wallet,
+        commitment=commitment,
+        technical_metadata={
+            "rpc_method": method,
+            "endpoint": get_helius_rpc_url(),
+        },
     )
 
     if isinstance(result, dict) and result.get("error"):
@@ -305,6 +414,15 @@ def get_enhanced_transaction(signature: str) -> list[dict[str, Any]]:
             attempts=1,
             error_code="HELIUS_INVALID_PAYLOAD",
         )
+
+    _capture_helius_payload(
+        result,
+        event_type="ENHANCED_TRANSACTION_RESPONSE",
+        transaction_signature=signature,
+        technical_metadata={
+            "endpoint": "https://api.helius.xyz/v0/transactions/",
+        },
+    )
 
     return result
 
@@ -356,6 +474,23 @@ def get_wallet_history(
             attempts=1,
             error_code="HELIUS_INVALID_PAYLOAD",
         )
+
+    _capture_helius_payload(
+        result,
+        event_type="WALLET_HISTORY_RESPONSE",
+        observed_wallet=address,
+        commitment=commitment,
+        technical_metadata={
+            "endpoint": _safe_endpoint(endpoint),
+            "transaction_type": (
+                str(transaction_type).upper()
+                if transaction_type
+                else None
+            ),
+            "requested_limit": params["limit"],
+            "has_before_signature": bool(before_signature),
+        },
+    )
 
     return [item for item in result if isinstance(item, dict)]
 

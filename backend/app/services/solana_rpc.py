@@ -3,12 +3,81 @@ from typing import Any
 import httpx
 
 from backend.app.core.config import settings
+from backend.app.services.raw_blockchain_capture_service import (
+    RawCaptureContext,
+    capture_raw_blockchain_payload_safely,
+)
 from backend.app.services.live_trading_errors import (
     SolanaRpcError,
 )
 
 
 LAMPORTS_PER_SOL = 1_000_000_000
+
+
+def _rpc_capture_context(
+    method: str,
+    params: list,
+    body: dict,
+) -> RawCaptureContext:
+    observed_wallet: str | None = None
+    transaction_signature: str | None = None
+    commitment: str | None = None
+    slot: int | None = None
+    block_time: int | float | None = None
+
+    wallet_methods = {
+        "getBalance",
+        "getSignaturesForAddress",
+        "getTokenAccountsByOwner",
+        "getTokenAccountBalance",
+    }
+    if method in wallet_methods and params and isinstance(params[0], str):
+        observed_wallet = params[0]
+
+    if method == "getTransaction" and params and isinstance(params[0], str):
+        transaction_signature = params[0]
+    elif method == "getSignatureStatuses" and params:
+        signatures = params[0]
+        if isinstance(signatures, list) and signatures:
+            transaction_signature = str(signatures[0])
+
+    for item in params:
+        if isinstance(item, dict) and item.get("commitment"):
+            commitment = str(item["commitment"])
+            break
+
+    result = body.get("result")
+    if isinstance(result, dict):
+        context = result.get("context")
+        raw_slot = (
+            context.get("slot")
+            if isinstance(context, dict)
+            else result.get("slot")
+        )
+        if raw_slot is not None:
+            try:
+                slot = int(raw_slot)
+            except (TypeError, ValueError):
+                slot = None
+
+        raw_block_time = result.get("blockTime")
+        if isinstance(raw_block_time, (int, float)):
+            block_time = raw_block_time
+
+    return RawCaptureContext(
+        provider="solana_rpc",
+        event_type="RPC_RESPONSE",
+        transaction_signature=transaction_signature,
+        slot=slot,
+        block_time=block_time,
+        observed_wallet=observed_wallet,
+        commitment=commitment,
+        technical_metadata={
+            "rpc_method": method,
+            "endpoint": "configured_solana_rpc",
+        },
+    )
 
 
 class SolanaRpcClient:
@@ -125,6 +194,15 @@ class SolanaRpcClient:
                 code="SOLANA_RPC_INVALID_RESPONSE",
                 status_code=502,
             )
+
+        capture_raw_blockchain_payload_safely(
+            body,
+            context=_rpc_capture_context(
+                method,
+                params or [],
+                body,
+            ),
+        )
 
         return body["result"]
 
