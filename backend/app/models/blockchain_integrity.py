@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
@@ -8,6 +9,7 @@ from sqlalchemy import (
     Index,
     Integer,
     JSON,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -427,4 +429,250 @@ class NormalizationReplayBatch(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+class CanonicalNormalizedEvent(Base):
+    __tablename__ = "canonical_normalized_events"
+
+    __table_args__ = (
+        CheckConstraint(
+            "quality_status IN ('PASS', 'WARN', 'FAIL')",
+            name="ck_canonical_normalized_events_quality_status",
+        ),
+        CheckConstraint(
+            "side IN ('BUY', 'SELL', 'UNKNOWN')",
+            name="ck_canonical_normalized_events_side",
+        ),
+        CheckConstraint(
+            "length(canonical_event_key) = 64",
+            name="ck_canonical_normalized_events_key_length",
+        ),
+        CheckConstraint(
+            "length(canonical_payload_hash) = 64",
+            name="ck_canonical_normalized_events_payload_hash_length",
+        ),
+        CheckConstraint(
+            "length(parser_implementation_hash) = 64",
+            name="ck_canonical_normalized_events_implementation_hash_length",
+        ),
+        UniqueConstraint(
+            "canonical_event_id",
+            name="uq_canonical_normalized_events_canonical_event_id",
+        ),
+        UniqueConstraint(
+            "normalization_artifact_id",
+            name="uq_canonical_normalized_events_artifact_id",
+        ),
+        UniqueConstraint(
+            "canonical_event_key",
+            name="uq_canonical_normalized_events_event_key",
+        ),
+        Index(
+            "ix_canonical_normalized_events_signature_wallet",
+            "transaction_signature",
+            "observed_wallet",
+        ),
+        Index(
+            "ix_canonical_normalized_events_parser_version",
+            "parser_name",
+            "parser_version",
+        ),
+        Index(
+            "ix_canonical_normalized_events_block_time",
+            "block_time",
+        ),
+        Index(
+            "ix_canonical_normalized_events_quality_created",
+            "quality_status",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    canonical_event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    canonical_event_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    normalization_artifact_id: Mapped[int] = mapped_column(
+        ForeignKey("normalization_artifacts.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    normalization_run_id: Mapped[int] = mapped_column(
+        ForeignKey("normalization_runs.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    raw_event_id: Mapped[int] = mapped_column(
+        ForeignKey("raw_blockchain_events.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    parser_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    parser_implementation_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    canonical_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    transaction_signature: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    observed_wallet: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    side: Mapped[str] = mapped_column(String(16), nullable=False)
+    source: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    token_mint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    token_amount: Mapped[Decimal | None] = mapped_column(
+        Numeric(38, 18), nullable=True
+    )
+    sol_amount: Mapped[Decimal | None] = mapped_column(
+        Numeric(38, 18), nullable=True
+    )
+    fee_lamports: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    success: Mapped[bool] = mapped_column(nullable=False)
+    block_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    quality_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    quality_flags: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    canonical_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    canonical_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    technical_metadata: Mapped[dict] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class CanonicalShadowValidationBatch(Base):
+    __tablename__ = "canonical_shadow_validation_batches"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('RUNNING', 'COMPLETED', 'PARTIAL', 'FAILED')",
+            name="ck_canonical_shadow_validation_batches_status",
+        ),
+        CheckConstraint(
+            "requested_limit >= 1",
+            name="ck_canonical_shadow_validation_batches_limit_positive",
+        ),
+        CheckConstraint(
+            "selected_count >= 0 AND processed_count >= 0 "
+            "AND match_count >= 0 AND mismatch_count >= 0 "
+            "AND missing_trade_count >= 0 AND not_comparable_count >= 0 "
+            "AND failed_count >= 0",
+            name="ck_canonical_shadow_validation_batches_counts_nonnegative",
+        ),
+        UniqueConstraint(
+            "validation_id",
+            name="uq_canonical_shadow_validation_batches_validation_id",
+        ),
+        Index(
+            "ix_canonical_shadow_validation_batches_status_created",
+            "status",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    validation_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    comparator_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    request_filters: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    requested_limit: Mapped[int] = mapped_column(Integer, nullable=False)
+    selected_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    processed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    match_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    mismatch_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    missing_trade_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    not_comparable_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    failed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    technical_metadata: Mapped[dict] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class CanonicalShadowValidationResult(Base):
+    __tablename__ = "canonical_shadow_validation_results"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('MATCH', 'MISMATCH', 'MISSING_TRADE', 'NOT_COMPARABLE')",
+            name="ck_canonical_shadow_validation_results_status",
+        ),
+        CheckConstraint(
+            "length(canonical_snapshot_hash) = 64",
+            name="ck_canonical_shadow_validation_results_canonical_hash_length",
+        ),
+        CheckConstraint(
+            "trade_snapshot_hash IS NULL OR length(trade_snapshot_hash) = 64",
+            name="ck_canonical_shadow_validation_results_trade_hash_length",
+        ),
+        UniqueConstraint(
+            "validation_batch_id",
+            "canonical_event_id",
+            name="uq_canonical_shadow_validation_results_batch_event",
+        ),
+        Index(
+            "ix_canonical_shadow_validation_results_status_created",
+            "status",
+            "created_at",
+        ),
+        Index(
+            "ix_canonical_shadow_validation_results_signature",
+            "transaction_signature",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    validation_batch_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_shadow_validation_batches.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    canonical_event_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_normalized_events.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    trade_id: Mapped[int | None] = mapped_column(
+        ForeignKey("trades.id", ondelete="SET NULL"), nullable=True
+    )
+    transaction_signature: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    comparator_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    mismatch_fields: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    canonical_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    trade_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    canonical_snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    trade_snapshot_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    technical_metadata: Mapped[dict] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )

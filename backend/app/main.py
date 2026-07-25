@@ -71,8 +71,19 @@ from backend.app.api.wallets import (
 from backend.app.core.discovery_security import require_automation_key
 from backend.app.database.session import get_db
 from backend.app.schemas.blockchain_integrity import (
+    CanonicalMaterializationExecuteRequest,
+    CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
     RawCaptureRetentionPruneRequest,
+)
+from backend.app.services.blockchain_canonical_shadow_service import (
+    CanonicalShadowError,
+    execute_canonical_materialization,
+    execute_shadow_validation,
+    get_canonical_shadow_status,
+    get_shadow_validation_batch,
+    preview_canonical_materialization,
+    preview_shadow_validation,
 )
 from backend.app.services.blockchain_normalization_replay_service import (
     NormalizationReplayError,
@@ -644,3 +655,147 @@ def read_normalization_replay_batch(
             },
         ) from exception
 # END M4 VERSIONED PARSER REGISTRY AND CONTROLLED REPLAY
+
+# BEGIN M5 CANONICAL NORMALIZATION AND SHADOW VALIDATION
+@app.get(
+    "/integrity/canonical/status",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_canonical_shadow_status(
+    db: Session = Depends(get_db),
+):
+    return get_canonical_shadow_status(db)
+
+
+@app.get(
+    "/integrity/canonical/materialization/preview",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_canonical_materialization_preview(
+    provider: str | None = Query(default=None, min_length=1, max_length=64),
+    observed_wallet: str | None = Query(
+        default=None, min_length=1, max_length=64
+    ),
+    transaction_signature: str | None = Query(
+        default=None, min_length=1, max_length=128
+    ),
+    limit: int = Query(default=100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_canonical_materialization(
+            db,
+            provider=provider,
+            observed_wallet=observed_wallet,
+            transaction_signature=transaction_signature,
+            limit=limit,
+        )
+    except CanonicalShadowError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/canonical/materialization/execute",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def execute_canonical_materialization_endpoint(
+    request: CanonicalMaterializationExecuteRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return execute_canonical_materialization(
+            db,
+            confirmation=request.confirmation,
+            provider=request.provider,
+            observed_wallet=request.observed_wallet,
+            transaction_signature=request.transaction_signature,
+            limit=request.limit,
+        )
+    except CanonicalShadowError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/shadow-validation/preview",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_validation_preview(
+    transaction_signature: str | None = Query(
+        default=None, min_length=1, max_length=128
+    ),
+    observed_wallet: str | None = Query(
+        default=None, min_length=1, max_length=64
+    ),
+    quality_status: str | None = Query(
+        default=None, min_length=4, max_length=8
+    ),
+    limit: int = Query(default=200, ge=1, le=5000),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_shadow_validation(
+            db,
+            transaction_signature=transaction_signature,
+            observed_wallet=observed_wallet,
+            quality_status=quality_status,
+            limit=limit,
+        )
+    except CanonicalShadowError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/shadow-validation/execute",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def execute_shadow_validation_endpoint(
+    request: CanonicalShadowValidationExecuteRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return execute_shadow_validation(
+            db,
+            confirmation=request.confirmation,
+            transaction_signature=request.transaction_signature,
+            observed_wallet=request.observed_wallet,
+            quality_status=request.quality_status,
+            limit=request.limit,
+        )
+    except CanonicalShadowError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/shadow-validation/batches/{validation_id}",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_validation_batch_endpoint(
+    validation_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_shadow_validation_batch(db, validation_id)
+    except CanonicalShadowError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+# END M5 CANONICAL NORMALIZATION AND SHADOW VALIDATION

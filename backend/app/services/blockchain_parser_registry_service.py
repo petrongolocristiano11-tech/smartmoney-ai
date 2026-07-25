@@ -5,11 +5,13 @@ import hashlib
 import inspect
 import re
 from dataclasses import dataclass
-from datetime import timezone
+from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from threading import RLock
 from typing import Any, Callable
 
 from backend.app.models.blockchain_integrity import RawBlockchainEvent
+from backend.app.services.trade_engine import build_trade, normalize_swap
 from backend.app.services.blockchain_integrity_service import (
     calculate_payload_hash,
     canonicalize_payload,
@@ -252,6 +254,130 @@ def parse_raw_event_envelope(
     ]
 
 
+
+def _canonical_decimal_string(value: object) -> str | None:
+    if value in (None, ""):
+        return None
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    if not number.is_finite():
+        return None
+    normalized = format(number.normalize(), "f")
+    if "." in normalized:
+        normalized = normalized.rstrip("0").rstrip(".")
+    return normalized or "0"
+
+
+def _timestamp_iso(value: object) -> str | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.fromtimestamp(float(value), tz=timezone.utc)
+        except (OSError, OverflowError, TypeError, ValueError):
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat()
+
+
+def _transaction_items(payload: dict | list) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [copy.deepcopy(item) for item in payload if isinstance(item, dict)]
+    if not isinstance(payload, dict):
+        return []
+    result = payload.get("result")
+    if isinstance(result, list):
+        return [copy.deepcopy(item) for item in result if isinstance(item, dict)]
+    if isinstance(result, dict):
+        return [copy.deepcopy(result)]
+    return [copy.deepcopy(payload)]
+
+
+def parse_swap_canonical_events(
+    event: RawBlockchainEvent,
+) -> list[NormalizedArtifactPayload]:
+    artifacts: list[NormalizedArtifactPayload] = []
+    for raw_index, transaction in enumerate(_transaction_items(event.raw_payload)):
+        transaction_type = str(transaction.get("type") or "").strip().upper()
+        if transaction_type != "SWAP":
+            continue
+
+        normalized = normalize_swap(
+            transaction,
+            wallet_address=event.observed_wallet,
+        )
+        reconstructed = build_trade(normalized)
+        signature = str(reconstructed.get("signature") or "").strip() or None
+        wallet = str(reconstructed.get("wallet_address") or "").strip() or None
+        side = str(reconstructed.get("side") or "UNKNOWN").strip().upper()
+        if side not in {"BUY", "SELL"}:
+            side = "UNKNOWN"
+        token_mint = str(reconstructed.get("token_mint") or "").strip() or None
+        token_amount = _canonical_decimal_string(reconstructed.get("token_amount"))
+        sol_amount = _canonical_decimal_string(reconstructed.get("sol_amount"))
+
+        flags: list[str] = []
+        if not signature:
+            flags.append("MISSING_SIGNATURE")
+        if not wallet:
+            flags.append("MISSING_WALLET")
+        if side == "UNKNOWN":
+            flags.append("UNKNOWN_SIDE")
+        if not token_mint:
+            flags.append("MISSING_TOKEN_MINT")
+        if token_amount is None:
+            flags.append("MISSING_TOKEN_AMOUNT")
+        if sol_amount is None:
+            flags.append("MISSING_SOL_AMOUNT")
+
+        if {"MISSING_SIGNATURE", "MISSING_WALLET"} & set(flags):
+            quality_status = "FAIL"
+        elif flags:
+            quality_status = "WARN"
+        else:
+            quality_status = "PASS"
+
+        raw_item_hash = calculate_payload_hash(transaction)
+        payload = {
+            "canonical_type": "SWAP",
+            "schema_version": "canonical-swap/1",
+            "signature": signature,
+            "wallet_address": wallet,
+            "side": side,
+            "source": str(reconstructed.get("source") or "").strip() or None,
+            "token_mint": token_mint,
+            "token_amount": token_amount,
+            "sol_amount": sol_amount,
+            "fee_lamports": transaction.get("fee"),
+            "success": not bool(transaction.get("transactionError")),
+            "block_time": _timestamp_iso(transaction.get("timestamp")),
+            "legacy_reconstruction_parser": reconstructed.get("parser"),
+            "quality_status": quality_status,
+            "quality_flags": flags,
+            "raw_transaction_hash": raw_item_hash,
+        }
+        artifacts.append(
+            NormalizedArtifactPayload(
+                artifact_type="CANONICAL_SWAP_EVENT",
+                schema_version="canonical-swap/1",
+                payload=payload,
+                metadata={
+                    "source": "trade_engine_shadow_adapter",
+                    "raw_item_index": raw_index,
+                    "raw_transaction_hash": raw_item_hash,
+                    "deterministic": True,
+                    "writes_trades": False,
+                    "external_requests": 0,
+                },
+            )
+        )
+    return artifacts
+
 def validate_parser_artifacts(
     definition: ParserDefinition,
     artifacts: list[NormalizedArtifactPayload],
@@ -319,5 +445,25 @@ DEFAULT_PARSER_REGISTRY.register(
         ),
         output_schema_version="raw-event-envelope/1",
         parse=parse_raw_event_envelope,
+    )
+)
+DEFAULT_PARSER_REGISTRY.register(
+    ParserDefinition(
+        name="swap_canonical_event",
+        version="1.0.0",
+        description=(
+            "Produce eventi swap canonici deterministici usando soltanto "
+            "il payload raw e il motore di ricostruzione esistente, senza "
+            "scrivere Trade o fare richieste esterne."
+        ),
+        supported_providers=frozenset({"helius"}),
+        supported_event_types=frozenset(
+            {
+                "WALLET_HISTORY_RESPONSE",
+                "ENHANCED_TRANSACTION_RESPONSE",
+            }
+        ),
+        output_schema_version="canonical-swap/1",
+        parse=parse_swap_canonical_events,
     )
 )

@@ -145,6 +145,33 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # CANONICAL NORMALIZATION / SHADOW VALIDATION
+    # Manual-only; disabled by default.
+    # =========================
+
+    CANONICAL_NORMALIZATION_ENABLED: bool = False
+
+    CANONICAL_NORMALIZATION_MAX_BATCH_SIZE: int = Field(
+        default=100,
+        ge=1,
+        le=1000,
+    )
+
+    CANONICAL_SHADOW_VALIDATION_ENABLED: bool = False
+
+    CANONICAL_SHADOW_VALIDATION_MAX_BATCH_SIZE: int = Field(
+        default=200,
+        ge=1,
+        le=5000,
+    )
+
+    CANONICAL_SHADOW_AMOUNT_TOLERANCE: float = Field(
+        default=0.000000001,
+        ge=0.0,
+        le=0.01,
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 
