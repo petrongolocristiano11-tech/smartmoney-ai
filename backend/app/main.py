@@ -83,6 +83,8 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserShadowRuntimeLeaseRevokeRequest,
     CanonicalParserShadowConsumerRunRequest,
     CanonicalParserShadowReadinessAssessmentRequest,
+    CanonicalParserShadowAutomationPermitIssueRequest,
+    CanonicalParserShadowAutomationPermitRevokeRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -151,6 +153,15 @@ from backend.app.services.blockchain_parser_shadow_readiness_service import (
     get_shadow_consumer_readiness_status,
     preview_shadow_consumer_readiness,
     resolve_shadow_consumer_readiness,
+)
+from backend.app.services.blockchain_parser_shadow_automation_permit_service import (
+    CanonicalParserShadowAutomationPermitError,
+    get_shadow_automation_permit,
+    get_shadow_automation_permit_status,
+    issue_shadow_automation_permit,
+    preview_shadow_automation_permit,
+    resolve_shadow_automation_permit,
+    revoke_shadow_automation_permit,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -1622,3 +1633,118 @@ def read_shadow_consumer_readiness_assessment_endpoint(
 def resolve_shadow_consumer_readiness_endpoint(db: Session = Depends(get_db)):
     return resolve_shadow_consumer_readiness(db)
 # END M13 SHADOW CONSUMER READINESS ASSESSMENT
+
+# BEGIN M14 CERTIFIED SHADOW AUTOMATION PERMIT
+@app.get(
+    "/integrity/parser-shadow-automation-permit/status",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_automation_permit_status(db: Session = Depends(get_db)):
+    return get_shadow_automation_permit_status(db)
+
+
+@app.get(
+    "/integrity/parser-shadow-automation-permit/preview",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_automation_permit_preview(
+    assessment_id: str | None = Query(default=None, min_length=36, max_length=36),
+    validity_minutes: int = Query(default=5, ge=1, le=1440),
+    run_budget: int = Query(default=3, ge=1, le=1000),
+    event_budget: int = Query(default=50, ge=1, le=100000),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_shadow_automation_permit(
+            db,
+            assessment_id=assessment_id,
+            validity_minutes=validity_minutes,
+            run_budget=run_budget,
+            event_budget=event_budget,
+        )
+    except CanonicalParserShadowAutomationPermitError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-shadow-automation-permit/issue",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def issue_shadow_automation_permit_endpoint(
+    request: CanonicalParserShadowAutomationPermitIssueRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return issue_shadow_automation_permit(
+            db,
+            confirmation=request.confirmation,
+            assessment_id=request.assessment_id,
+            validity_minutes=request.validity_minutes,
+            run_budget=request.run_budget,
+            event_budget=request.event_budget,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserShadowAutomationPermitError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-shadow-automation-permit/revoke",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def revoke_shadow_automation_permit_endpoint(
+    request: CanonicalParserShadowAutomationPermitRevokeRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return revoke_shadow_automation_permit(
+            db,
+            permit_id=request.permit_id,
+            confirmation=request.confirmation,
+            reason=request.reason,
+            actor_label=request.actor_label,
+        )
+    except CanonicalParserShadowAutomationPermitError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/parser-shadow-automation-permit/permits/{permit_id}",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_automation_permit_endpoint(
+    permit_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_shadow_automation_permit(db, permit_id)
+    except CanonicalParserShadowAutomationPermitError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/parser-shadow-automation-permit/resolve",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def resolve_shadow_automation_permit_endpoint(db: Session = Depends(get_db)):
+    return resolve_shadow_automation_permit(db)
+# END M14 CERTIFIED SHADOW AUTOMATION PERMIT

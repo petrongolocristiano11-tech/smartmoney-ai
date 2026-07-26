@@ -624,6 +624,7 @@ def test_runtime_binding_service_not_imported_by_operational_pipelines():
             "blockchain_parser_shadow_runtime_lease_service.py",
             "blockchain_parser_shadow_consumer_service.py",
             "blockchain_parser_shadow_readiness_service.py",
+            "blockchain_parser_shadow_automation_permit_service.py",
         }:
             continue
         source = path.read_text(encoding="utf-8")

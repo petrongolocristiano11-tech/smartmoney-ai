@@ -349,6 +349,26 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # CERTIFIED SHADOW AUTOMATION PERMIT
+    # Manual bounded authorization metadata; disabled by default.
+    # =========================
+
+    CANONICAL_PARSER_SHADOW_AUTOMATION_PERMIT_ENABLED: bool = False
+
+    CANONICAL_PARSER_SHADOW_AUTOMATION_PERMIT_MAX_VALIDITY_MINUTES: int = Field(
+        default=10, ge=1, le=1440
+    )
+    CANONICAL_PARSER_SHADOW_AUTOMATION_PERMIT_MIN_READINESS_REMAINING_MINUTES: int = Field(
+        default=2, ge=0, le=1440
+    )
+    CANONICAL_PARSER_SHADOW_AUTOMATION_PERMIT_MAX_RUN_BUDGET: int = Field(
+        default=5, ge=1, le=1000
+    )
+    CANONICAL_PARSER_SHADOW_AUTOMATION_PERMIT_MAX_EVENT_BUDGET: int = Field(
+        default=100, ge=1, le=100000
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

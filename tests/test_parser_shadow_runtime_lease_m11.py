@@ -552,6 +552,7 @@ def test_service_has_no_network_trade_writes_or_operational_consumers():
             path.name,
             "blockchain_parser_shadow_consumer_service.py",
             "blockchain_parser_shadow_readiness_service.py",
+            "blockchain_parser_shadow_automation_permit_service.py",
         }:
             continue
         if "blockchain_parser_shadow_runtime_lease_service" in candidate.read_text(encoding="utf-8"):

@@ -173,3 +173,22 @@ class CanonicalParserShadowReadinessAssessmentRequest(BaseModel):
     lease_id: str | None = Field(default=None, min_length=36, max_length=36)
     actor_label: str | None = Field(default=None, max_length=80)
     note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserShadowAutomationPermitIssueRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=220)
+    assessment_id: str | None = Field(
+        default=None, min_length=36, max_length=36
+    )
+    validity_minutes: int = Field(default=5, ge=1, le=1440)
+    run_budget: int = Field(default=3, ge=1, le=1000)
+    event_budget: int = Field(default=50, ge=1, le=100000)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserShadowAutomationPermitRevokeRequest(BaseModel):
+    permit_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=220)
+    reason: str = Field(min_length=3, max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
