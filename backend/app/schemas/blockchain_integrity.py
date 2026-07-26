@@ -208,3 +208,12 @@ class CanonicalParserShadowExecutionTicketReleaseRequest(BaseModel):
     confirmation: str = Field(default="", max_length=240)
     reason: str = Field(min_length=3, max_length=500)
     actor_label: str | None = Field(default=None, max_length=80)
+
+
+class CanonicalParserShadowTicketExecutionRunRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=240)
+    ticket_id: str = Field(min_length=36, max_length=36)
+    raw_event_ids: list[int] | None = None
+    limit: int = Field(default=10, ge=1, le=100)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)

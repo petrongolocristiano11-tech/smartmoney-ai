@@ -758,6 +758,7 @@ def test_m15_service_not_imported_by_operational_pipelines():
     allowed = {
         "main.py",
         "blockchain_parser_shadow_execution_ticket_service.py",
+        "blockchain_parser_shadow_ticket_execution_service.py",
     }
     for path in Path("backend/app").rglob("*.py"):
         if path.name in allowed:

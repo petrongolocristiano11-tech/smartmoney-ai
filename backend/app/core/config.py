@@ -386,6 +386,17 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # TICKET-BOUND SHADOW EXECUTION AND BUDGET SETTLEMENT
+    # Manual parser execution only; disabled by default.
+    # =========================
+
+    CANONICAL_PARSER_SHADOW_TICKET_EXECUTION_ENABLED: bool = False
+
+    CANONICAL_PARSER_SHADOW_TICKET_EXECUTION_MAX_SAMPLE_SIZE: int = Field(
+        default=25, ge=1, le=100
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

@@ -2744,3 +2744,283 @@ class CanonicalParserShadowExecutionTicketEvent(Base):
     event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserShadowTicketExecutionRun(Base):
+    __tablename__ = "canonical_parser_shadow_ticket_execution_runs"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('RUNNING', 'PASSED', 'PARTIAL', 'FAILED')",
+            name="ck_shadow_ticket_execution_runs_status",
+        ),
+        CheckConstraint(
+            "scope IN ('SHADOW_ONLY')",
+            name="ck_shadow_ticket_execution_runs_scope",
+        ),
+        CheckConstraint(
+            "channel IN ('CANONICAL_SHADOW')",
+            name="ck_shadow_ticket_execution_runs_channel",
+        ),
+        CheckConstraint(
+            "consumer IN ('CERTIFIED_SHADOW_AUTOMATION')",
+            name="ck_shadow_ticket_execution_runs_consumer",
+        ),
+        CheckConstraint(
+            "executor IN ('CERTIFIED_SHADOW_TICKET_EXECUTION')",
+            name="ck_shadow_ticket_execution_runs_executor",
+        ),
+        CheckConstraint(
+            "requested_limit >= 1 AND reserved_run_count = 1 "
+            "AND reserved_event_count >= 1 AND selected_count >= 0 "
+            "AND processed_count >= 0 AND passed_count >= 0 "
+            "AND failed_count >= 0 AND skipped_count >= 0 "
+            "AND artifact_count >= 0 AND consumed_run_count >= 0 "
+            "AND consumed_event_count >= 0 AND released_event_count >= 0",
+            name="ck_shadow_ticket_execution_runs_counts_nonnegative",
+        ),
+        CheckConstraint(
+            "selected_count >= processed_count",
+            name="ck_shadow_ticket_execution_runs_selected_processed",
+        ),
+        CheckConstraint(
+            "processed_count = passed_count + failed_count + skipped_count",
+            name="ck_shadow_ticket_execution_runs_processed_breakdown",
+        ),
+        CheckConstraint(
+            "consumed_run_count <= reserved_run_count",
+            name="ck_shadow_ticket_execution_runs_run_budget_bound",
+        ),
+        CheckConstraint(
+            "NOT budget_settled OR consumed_event_count + released_event_count = reserved_event_count",
+            name="ck_shadow_ticket_execution_runs_event_settlement",
+        ),
+        CheckConstraint(
+            "consumed_event_count = processed_count",
+            name="ck_shadow_ticket_execution_runs_consumed_processed",
+        ),
+        CheckConstraint(
+            "length(run_key) = 64",
+            name="ck_shadow_ticket_execution_runs_key_len",
+        ),
+        CheckConstraint(
+            "length(ticket_key) = 64",
+            name="ck_shadow_ticket_execution_runs_ticket_key_len",
+        ),
+        CheckConstraint(
+            "length(parser_implementation_hash) = 64",
+            name="ck_shadow_ticket_execution_runs_parser_hash_len",
+        ),
+        CheckConstraint(
+            "length(release_manifest_hash) = 64",
+            name="ck_shadow_ticket_execution_runs_release_hash_len",
+        ),
+        CheckConstraint(
+            "length(readiness_evidence_hash) = 64",
+            name="ck_shadow_ticket_execution_runs_readiness_hash_len",
+        ),
+        CheckConstraint(
+            "length(permit_policy_hash) = 64",
+            name="ck_shadow_ticket_execution_runs_permit_policy_hash_len",
+        ),
+        CheckConstraint(
+            "length(permit_event_hash) = 64",
+            name="ck_shadow_ticket_execution_runs_permit_event_hash_len",
+        ),
+        CheckConstraint(
+            "length(ticket_policy_hash) = 64",
+            name="ck_shadow_ticket_execution_runs_ticket_policy_hash_len",
+        ),
+        CheckConstraint(
+            "length(ticket_event_hash) = 64",
+            name="ck_shadow_ticket_execution_runs_ticket_event_hash_len",
+        ),
+        CheckConstraint(
+            "length(execution_policy_hash) = 64",
+            name="ck_shadow_ticket_execution_runs_policy_hash_len",
+        ),
+        CheckConstraint(
+            "settlement_hash IS NULL OR length(settlement_hash) = 64",
+            name="ck_shadow_ticket_execution_runs_settlement_hash_len",
+        ),
+        UniqueConstraint(
+            "run_id",
+            name="uq_shadow_ticket_execution_runs_id",
+        ),
+        UniqueConstraint(
+            "run_key",
+            name="uq_shadow_ticket_execution_runs_key",
+        ),
+        UniqueConstraint(
+            "ticket_db_id",
+            name="uq_shadow_ticket_execution_runs_ticket",
+        ),
+        Index(
+            "ix_shadow_ticket_execution_runs_permit_started",
+            "permit_db_id",
+            "started_at",
+        ),
+        Index(
+            "ix_shadow_ticket_execution_runs_status_completed",
+            "status",
+            "completed_at",
+        ),
+        Index(
+            "ix_shadow_ticket_execution_runs_parser",
+            "parser_name",
+            "parser_version",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    run_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    ticket_db_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "canonical_parser_shadow_execution_tickets.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    ticket_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    ticket_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    permit_db_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "canonical_parser_shadow_automation_permits.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    permit_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    assessment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    lease_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    certification_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    binding_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    promotion_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    consumer: Mapped[str] = mapped_column(String(64), nullable=False)
+    executor: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    parser_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    parser_implementation_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    output_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    release_manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    readiness_evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    permit_policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    permit_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    ticket_policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    ticket_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    execution_policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    execution_policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    execution_policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    requested_limit: Mapped[int] = mapped_column(Integer, nullable=False)
+    reserved_run_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    reserved_event_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    selected_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    processed_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    passed_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    failed_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    skipped_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    artifact_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    consumed_run_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    consumed_event_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    released_event_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    budget_settled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    settlement_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    selection_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    metrics_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    technical_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class CanonicalParserShadowTicketExecutionResult(Base):
+    __tablename__ = "canonical_parser_shadow_ticket_execution_results"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PASS', 'FAIL', 'SKIPPED')",
+            name="ck_shadow_ticket_execution_results_status",
+        ),
+        CheckConstraint(
+            "artifact_count >= 0",
+            name="ck_shadow_ticket_execution_results_artifact_count",
+        ),
+        CheckConstraint(
+            "length(raw_payload_hash) = 64",
+            name="ck_shadow_ticket_execution_results_raw_hash_len",
+        ),
+        CheckConstraint(
+            "output_hash IS NULL OR length(output_hash) = 64",
+            name="ck_shadow_ticket_execution_results_output_hash_len",
+        ),
+        CheckConstraint(
+            "verification_output_hash IS NULL OR length(verification_output_hash) = 64",
+            name="ck_shadow_ticket_execution_results_verify_hash_len",
+        ),
+        UniqueConstraint(
+            "result_id",
+            name="uq_shadow_ticket_execution_results_id",
+        ),
+        UniqueConstraint(
+            "execution_run_db_id",
+            "raw_event_id",
+            name="uq_shadow_ticket_execution_results_run_event",
+        ),
+        Index(
+            "ix_shadow_ticket_execution_results_run_status",
+            "execution_run_db_id",
+            "status",
+        ),
+        Index(
+            "ix_shadow_ticket_execution_results_raw_event",
+            "raw_event_id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    result_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    execution_run_db_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "canonical_parser_shadow_ticket_execution_runs.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+    raw_event_id: Mapped[int] = mapped_column(
+        ForeignKey("raw_blockchain_events.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    raw_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    compatible: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    deterministic: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    output_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    verification_output_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    artifact_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    shadow_artifacts: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

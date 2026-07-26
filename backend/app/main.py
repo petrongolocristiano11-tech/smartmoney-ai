@@ -87,6 +87,7 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserShadowAutomationPermitRevokeRequest,
     CanonicalParserShadowExecutionTicketReserveRequest,
     CanonicalParserShadowExecutionTicketReleaseRequest,
+    CanonicalParserShadowTicketExecutionRunRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -173,6 +174,13 @@ from backend.app.services.blockchain_parser_shadow_execution_ticket_service impo
     release_shadow_execution_ticket,
     reserve_shadow_execution_ticket,
     resolve_shadow_execution_ticket,
+)
+from backend.app.services.blockchain_parser_shadow_ticket_execution_service import (
+    CanonicalParserShadowTicketExecutionError,
+    get_shadow_ticket_execution_run,
+    get_shadow_ticket_execution_status,
+    preview_shadow_ticket_execution,
+    run_shadow_ticket_execution,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -1874,3 +1882,82 @@ def resolve_shadow_execution_ticket_endpoint(
 ):
     return resolve_shadow_execution_ticket(db, ticket_id=ticket_id)
 # END M15 SHADOW EXECUTION TICKET AND ATOMIC BUDGET RESERVATION
+
+# BEGIN M16 TICKET-BOUND SHADOW EXECUTION AND ATOMIC BUDGET SETTLEMENT
+@app.get(
+    "/integrity/parser-shadow-ticket-execution/status",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_ticket_execution_status(db: Session = Depends(get_db)):
+    return get_shadow_ticket_execution_status(db)
+
+
+@app.get(
+    "/integrity/parser-shadow-ticket-execution/preview",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_ticket_execution_preview(
+    ticket_id: str | None = Query(default=None, min_length=36, max_length=36),
+    raw_event_ids: list[int] | None = Query(default=None),
+    limit: int = Query(default=10, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_shadow_ticket_execution(
+            db,
+            ticket_id=ticket_id,
+            raw_event_ids=raw_event_ids,
+            limit=limit,
+        )
+    except CanonicalParserShadowTicketExecutionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-shadow-ticket-execution/run",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def run_shadow_ticket_execution_endpoint(
+    request: CanonicalParserShadowTicketExecutionRunRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return run_shadow_ticket_execution(
+            db,
+            confirmation=request.confirmation,
+            ticket_id=request.ticket_id,
+            raw_event_ids=request.raw_event_ids,
+            limit=request.limit,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserShadowTicketExecutionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/parser-shadow-ticket-execution/runs/{run_id}",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_ticket_execution_run_endpoint(
+    run_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_shadow_ticket_execution_run(db, run_id)
+    except CanonicalParserShadowTicketExecutionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+# END M16 TICKET-BOUND SHADOW EXECUTION AND ATOMIC BUDGET SETTLEMENT
