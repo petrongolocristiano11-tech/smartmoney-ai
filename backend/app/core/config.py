@@ -468,6 +468,53 @@ class Settings(BaseSettings):
     CANONICAL_PARSER_SHADOW_WORKER_LOOP_ENFORCE_KILL_SWITCH: bool = False
 
     # =========================
+    # SHADOW WORKER RECOVERY / RECONCILIATION
+    # Manual stale-state cleanup only; disabled by default.
+    # =========================
+
+    CANONICAL_PARSER_SHADOW_WORKER_RECOVERY_ENABLED: bool = False
+    CANONICAL_PARSER_SHADOW_WORKER_RECOVERY_STALE_AFTER_SECONDS: int = Field(
+        default=300, ge=5, le=86400
+    )
+    CANONICAL_PARSER_SHADOW_WORKER_RECOVERY_MAX_TARGETS: int = Field(
+        default=100, ge=1, le=1000
+    )
+
+    # =========================
+    # SHADOW AUTOMATION RELIABILITY EVIDENCE GATE
+    # Manual evidence-only assessment; no PAPER/LIVE admission.
+    # =========================
+
+    CANONICAL_PARSER_SHADOW_RELIABILITY_ENABLED: bool = False
+    CANONICAL_PARSER_SHADOW_RELIABILITY_LOOKBACK_MINUTES: int = Field(
+        default=60, ge=1, le=10080
+    )
+    CANONICAL_PARSER_SHADOW_RELIABILITY_MIN_LOOP_RUNS: int = Field(
+        default=3, ge=1, le=1000
+    )
+    CANONICAL_PARSER_SHADOW_RELIABILITY_MIN_ITERATIONS: int = Field(
+        default=10, ge=1, le=100000
+    )
+    CANONICAL_PARSER_SHADOW_RELIABILITY_MIN_PASS_RATE: float = Field(
+        default=95.0, ge=0.0, le=100.0
+    )
+    CANONICAL_PARSER_SHADOW_RELIABILITY_MAX_FAILED_ITERATIONS: int = Field(
+        default=0, ge=0, le=100000
+    )
+    CANONICAL_PARSER_SHADOW_RELIABILITY_MAX_CIRCUIT_OPEN_RUNS: int = Field(
+        default=0, ge=0, le=1000
+    )
+    CANONICAL_PARSER_SHADOW_RELIABILITY_MAX_RECOVERY_ACTIONS: int = Field(
+        default=0, ge=0, le=1000
+    )
+    CANONICAL_PARSER_SHADOW_RELIABILITY_MIN_OBSERVATION_MINUTES: int = Field(
+        default=5, ge=0, le=10080
+    )
+    CANONICAL_PARSER_SHADOW_RELIABILITY_VALIDITY_MINUTES: int = Field(
+        default=15, ge=1, le=1440
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

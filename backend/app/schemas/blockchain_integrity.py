@@ -292,3 +292,15 @@ class CanonicalParserShadowWorkerLoopRunRequest(BaseModel):
     raw_event_ids: list[int] | None = None
     actor_label: str | None = Field(default=None, max_length=80)
     note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserShadowWorkerRecoveryRunRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=320)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserShadowReliabilityAssessmentRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=320)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)

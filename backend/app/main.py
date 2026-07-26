@@ -98,6 +98,8 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserShadowWorkerHeartbeatRequest,
     CanonicalParserShadowWorkerIterationRequest,
     CanonicalParserShadowWorkerLoopRunRequest,
+    CanonicalParserShadowWorkerRecoveryRunRequest,
+    CanonicalParserShadowReliabilityAssessmentRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -235,6 +237,21 @@ from backend.app.services.blockchain_parser_shadow_worker_loop_service import (
     get_shadow_worker_loop_status,
     preview_shadow_worker_loop,
     run_shadow_worker_loop,
+)
+from backend.app.services.blockchain_parser_shadow_worker_recovery_service import (
+    CanonicalParserShadowWorkerRecoveryError,
+    get_shadow_worker_recovery_run,
+    get_shadow_worker_recovery_status,
+    preview_shadow_worker_recovery,
+    run_shadow_worker_recovery,
+)
+from backend.app.services.blockchain_parser_shadow_reliability_service import (
+    CanonicalParserShadowReliabilityError,
+    execute_shadow_reliability_assessment,
+    get_shadow_reliability_assessment,
+    get_shadow_reliability_status,
+    preview_shadow_reliability_assessment,
+    resolve_shadow_reliability,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -2411,3 +2428,55 @@ def read_shadow_worker_loop_endpoint(loop_id: str, db: Session = Depends(get_db)
     except CanonicalParserShadowWorkerLoopError as exception:
         raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
 # END M20 BOUNDED SHADOW WORKER LOOP
+
+# BEGIN M21 SHADOW WORKER RECOVERY
+@app.get("/integrity/parser-shadow-worker-recovery/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_shadow_worker_recovery_status(db: Session = Depends(get_db)):
+    return get_shadow_worker_recovery_status(db)
+
+@app.get("/integrity/parser-shadow-worker-recovery/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_shadow_worker_recovery_preview(db: Session = Depends(get_db)):
+    return preview_shadow_worker_recovery(db)
+
+@app.post("/integrity/parser-shadow-worker-recovery/run", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def run_shadow_worker_recovery_endpoint(request: CanonicalParserShadowWorkerRecoveryRunRequest, db: Session = Depends(get_db)):
+    try:
+        return run_shadow_worker_recovery(db, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserShadowWorkerRecoveryError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.get("/integrity/parser-shadow-worker-recovery/runs/{recovery_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_shadow_worker_recovery_run_endpoint(recovery_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_shadow_worker_recovery_run(db, recovery_id)
+    except CanonicalParserShadowWorkerRecoveryError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+# END M21 SHADOW WORKER RECOVERY
+
+# BEGIN M22 SHADOW RELIABILITY EVIDENCE GATE
+@app.get("/integrity/parser-shadow-reliability/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_shadow_reliability_status(db: Session = Depends(get_db)):
+    return get_shadow_reliability_status(db)
+
+@app.get("/integrity/parser-shadow-reliability/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_shadow_reliability_preview(db: Session = Depends(get_db)):
+    return preview_shadow_reliability_assessment(db)
+
+@app.post("/integrity/parser-shadow-reliability/assess", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def assess_shadow_reliability_endpoint(request: CanonicalParserShadowReliabilityAssessmentRequest, db: Session = Depends(get_db)):
+    try:
+        return execute_shadow_reliability_assessment(db, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserShadowReliabilityError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.get("/integrity/parser-shadow-reliability/assessments/{assessment_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_shadow_reliability_assessment_endpoint(assessment_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_shadow_reliability_assessment(db, assessment_id)
+    except CanonicalParserShadowReliabilityError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.get("/integrity/parser-shadow-reliability/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_shadow_reliability_endpoint(db: Session = Depends(get_db)):
+    return resolve_shadow_reliability(db)
+# END M22 SHADOW RELIABILITY EVIDENCE GATE
