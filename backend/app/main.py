@@ -82,6 +82,7 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserShadowRuntimeLeaseIssueRequest,
     CanonicalParserShadowRuntimeLeaseRevokeRequest,
     CanonicalParserShadowConsumerRunRequest,
+    CanonicalParserShadowReadinessAssessmentRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -142,6 +143,14 @@ from backend.app.services.blockchain_parser_shadow_consumer_service import (
     get_shadow_consumer_status,
     preview_shadow_consumer_run,
     run_shadow_consumer_dry_run,
+)
+from backend.app.services.blockchain_parser_shadow_readiness_service import (
+    CanonicalParserShadowReadinessError,
+    execute_shadow_consumer_readiness_assessment,
+    get_shadow_consumer_readiness_assessment,
+    get_shadow_consumer_readiness_status,
+    preview_shadow_consumer_readiness,
+    resolve_shadow_consumer_readiness,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -1534,3 +1543,82 @@ def read_shadow_consumer_run_endpoint(
             detail={"code": exception.code, "message": str(exception)},
         ) from exception
 # END M12 CERTIFIED SHADOW CONSUMER DRY-RUN
+
+# BEGIN M13 SHADOW CONSUMER READINESS ASSESSMENT
+@app.get(
+    "/integrity/parser-shadow-readiness/status",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_consumer_readiness_status(db: Session = Depends(get_db)):
+    return get_shadow_consumer_readiness_status(db)
+
+
+@app.get(
+    "/integrity/parser-shadow-readiness/preview",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_consumer_readiness_preview(
+    lease_id: str | None = Query(default=None, min_length=36, max_length=36),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_shadow_consumer_readiness(db, lease_id=lease_id)
+    except CanonicalParserShadowReadinessError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-shadow-readiness/assess",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def assess_shadow_consumer_readiness_endpoint(
+    request: CanonicalParserShadowReadinessAssessmentRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return execute_shadow_consumer_readiness_assessment(
+            db,
+            confirmation=request.confirmation,
+            lease_id=request.lease_id,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserShadowReadinessError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/parser-shadow-readiness/assessments/{assessment_id}",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_consumer_readiness_assessment_endpoint(
+    assessment_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_shadow_consumer_readiness_assessment(db, assessment_id)
+    except CanonicalParserShadowReadinessError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/parser-shadow-readiness/resolve",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def resolve_shadow_consumer_readiness_endpoint(db: Session = Depends(get_db)):
+    return resolve_shadow_consumer_readiness(db)
+# END M13 SHADOW CONSUMER READINESS ASSESSMENT

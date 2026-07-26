@@ -2084,3 +2084,244 @@ class CanonicalParserShadowConsumerResult(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class CanonicalParserShadowReadinessAssessment(Base):
+    __tablename__ = "canonical_parser_shadow_readiness_assessments"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('READY', 'REVIEW', 'BLOCKED', 'INSUFFICIENT_DATA')",
+            name="ck_shadow_readiness_assessments_status",
+        ),
+        CheckConstraint(
+            "scope IN ('SHADOW_ONLY')",
+            name="ck_shadow_readiness_assessments_scope",
+        ),
+        CheckConstraint(
+            "channel IN ('CANONICAL_SHADOW')",
+            name="ck_shadow_readiness_assessments_channel",
+        ),
+        CheckConstraint(
+            "consumer IN ('CERTIFIED_SHADOW_RUNTIME')",
+            name="ck_shadow_readiness_assessments_consumer",
+        ),
+        CheckConstraint(
+            "run_count >= 0 AND total_processed_count >= 0 "
+            "AND total_passed_count >= 0 AND total_failed_count >= 0 "
+            "AND total_skipped_count >= 0 AND total_artifact_count >= 0 "
+            "AND unique_event_count >= 0",
+            name="ck_shadow_readiness_assessments_counts",
+        ),
+        CheckConstraint(
+            "total_processed_count = total_passed_count + "
+            "total_failed_count + total_skipped_count",
+            name="ck_shadow_readiness_assessments_breakdown",
+        ),
+        CheckConstraint(
+            "pass_rate >= 0 AND pass_rate <= 100",
+            name="ck_shadow_readiness_assessments_pass_rate",
+        ),
+        CheckConstraint(
+            "length(assessment_key) = 64",
+            name="ck_shadow_readiness_assessments_key_len",
+        ),
+        CheckConstraint(
+            "length(parser_implementation_hash) = 64",
+            name="ck_shadow_readiness_assessments_parser_hash_len",
+        ),
+        CheckConstraint(
+            "length(release_manifest_hash) = 64",
+            name="ck_shadow_readiness_assessments_release_hash_len",
+        ),
+        CheckConstraint(
+            "length(lease_event_hash) = 64",
+            name="ck_shadow_readiness_assessments_lease_hash_len",
+        ),
+        CheckConstraint(
+            "length(certification_event_hash) = 64",
+            name="ck_shadow_readiness_assessments_cert_hash_len",
+        ),
+        CheckConstraint(
+            "length(readiness_policy_hash) = 64",
+            name="ck_shadow_readiness_assessments_policy_hash_len",
+        ),
+        CheckConstraint(
+            "length(evidence_hash) = 64",
+            name="ck_shadow_readiness_assessments_evidence_hash_len",
+        ),
+        UniqueConstraint(
+            "assessment_id",
+            name="uq_shadow_readiness_assessments_id",
+        ),
+        UniqueConstraint(
+            "assessment_key",
+            name="uq_shadow_readiness_assessments_key",
+        ),
+        Index(
+            "ix_shadow_readiness_assessments_lease_time",
+            "lease_db_id",
+            "evaluated_at",
+        ),
+        Index(
+            "ix_shadow_readiness_assessments_status_valid",
+            "status",
+            "valid_until",
+        ),
+        Index(
+            "ix_shadow_readiness_assessments_parser",
+            "parser_name",
+            "parser_version",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    assessment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    assessment_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    lease_db_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "canonical_parser_shadow_runtime_leases.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    lease_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    certification_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    binding_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    promotion_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    consumer: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    parser_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    parser_implementation_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    output_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    release_manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    lease_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    certification_event_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    readiness_policy_version: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    readiness_policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    run_ids: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    run_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_processed_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_passed_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_failed_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_skipped_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_artifact_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    unique_event_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    pass_rate: Mapped[Decimal] = mapped_column(
+        Numeric(7, 4), nullable=False
+    )
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    metrics_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    evidence_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    evaluated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    valid_until: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    technical_metadata: Mapped[dict] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CanonicalParserShadowReadinessEvidenceRun(Base):
+    __tablename__ = "canonical_parser_shadow_readiness_evidence_runs"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('RUNNING', 'PASSED', 'PARTIAL', 'FAILED')",
+            name="ck_shadow_readiness_evidence_runs_status",
+        ),
+        CheckConstraint(
+            "result_count >= 0 AND processed_count >= 0 "
+            "AND passed_count >= 0 AND failed_count >= 0 "
+            "AND skipped_count >= 0 AND artifact_count >= 0",
+            name="ck_shadow_readiness_evidence_runs_counts",
+        ),
+        CheckConstraint(
+            "processed_count = passed_count + failed_count + skipped_count",
+            name="ck_shadow_readiness_evidence_runs_breakdown",
+        ),
+        CheckConstraint(
+            "length(run_key) = 64",
+            name="ck_shadow_readiness_evidence_runs_key_len",
+        ),
+        CheckConstraint(
+            "length(run_evidence_hash) = 64",
+            name="ck_shadow_readiness_evidence_runs_hash_len",
+        ),
+        UniqueConstraint(
+            "evidence_id",
+            name="uq_shadow_readiness_evidence_runs_id",
+        ),
+        UniqueConstraint(
+            "assessment_db_id",
+            "consumer_run_db_id",
+            name="uq_shadow_readiness_evidence_runs_assessment_run",
+        ),
+        Index(
+            "ix_shadow_readiness_evidence_runs_assessment",
+            "assessment_db_id",
+            "completed_at",
+        ),
+        Index(
+            "ix_shadow_readiness_evidence_runs_consumer_run",
+            "consumer_run_db_id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    evidence_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    assessment_db_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "canonical_parser_shadow_readiness_assessments.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+    consumer_run_db_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "canonical_parser_shadow_consumer_runs.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    run_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    run_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    result_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    processed_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    passed_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    failed_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    skipped_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    artifact_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    run_evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    evidence_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

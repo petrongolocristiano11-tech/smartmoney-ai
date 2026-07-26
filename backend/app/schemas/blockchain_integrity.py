@@ -166,3 +166,10 @@ class CanonicalParserShadowConsumerRunRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=100)
     actor_label: str | None = Field(default=None, max_length=80)
     note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserShadowReadinessAssessmentRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=180)
+    lease_id: str | None = Field(default=None, min_length=36, max_length=36)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)

@@ -311,6 +311,44 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # SHADOW CONSUMER READINESS ASSESSMENT
+    # Manual evidence gate; disabled by default.
+    # =========================
+
+    CANONICAL_PARSER_SHADOW_READINESS_ENABLED: bool = False
+
+    CANONICAL_PARSER_SHADOW_READINESS_MIN_RUNS: int = Field(
+        default=3, ge=1, le=20
+    )
+    CANONICAL_PARSER_SHADOW_READINESS_MAX_RUNS: int = Field(
+        default=20, ge=1, le=100
+    )
+    CANONICAL_PARSER_SHADOW_READINESS_MIN_TOTAL_EVENTS: int = Field(
+        default=15, ge=1, le=10000
+    )
+    CANONICAL_PARSER_SHADOW_READINESS_MIN_UNIQUE_EVENTS: int = Field(
+        default=10, ge=1, le=10000
+    )
+    CANONICAL_PARSER_SHADOW_READINESS_MIN_PASS_RATE: float = Field(
+        default=100.0, ge=0.0, le=100.0
+    )
+    CANONICAL_PARSER_SHADOW_READINESS_MAX_FAILED_EVENTS: int = Field(
+        default=0, ge=0, le=1000
+    )
+    CANONICAL_PARSER_SHADOW_READINESS_MAX_SKIPPED_EVENTS: int = Field(
+        default=0, ge=0, le=1000
+    )
+    CANONICAL_PARSER_SHADOW_READINESS_MIN_OBSERVATION_SPAN_MINUTES: int = Field(
+        default=5, ge=0, le=10080
+    )
+    CANONICAL_PARSER_SHADOW_READINESS_MAX_EVIDENCE_AGE_MINUTES: int = Field(
+        default=30, ge=1, le=10080
+    )
+    CANONICAL_PARSER_SHADOW_READINESS_VALIDITY_MINUTES: int = Field(
+        default=15, ge=1, le=1440
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 
