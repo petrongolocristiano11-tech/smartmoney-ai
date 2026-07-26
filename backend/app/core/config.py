@@ -514,6 +514,36 @@ class Settings(BaseSettings):
         default=15, ge=1, le=1440
     )
 
+
+    # =========================
+    # SHADOW RELIABILITY CERTIFICATION
+    # Manual, revocable certification of M22 READY evidence.
+    # =========================
+
+    CANONICAL_PARSER_SHADOW_RELIABILITY_CERTIFICATION_ENABLED: bool = False
+    CANONICAL_PARSER_SHADOW_RELIABILITY_CERTIFICATION_VALIDITY_MINUTES: int = Field(
+        default=60, ge=1, le=10080
+    )
+
+    # =========================
+    # PAPER PROJECTION DRY-RUN
+    # Projection-only compatibility analysis; never writes PAPER/LIVE state.
+    # =========================
+
+    CANONICAL_PARSER_PAPER_PROJECTION_ENABLED: bool = False
+    CANONICAL_PARSER_PAPER_PROJECTION_LOOKBACK_MINUTES: int = Field(
+        default=1440, ge=1, le=10080
+    )
+    CANONICAL_PARSER_PAPER_PROJECTION_MAX_SOURCE_RUNS: int = Field(
+        default=10, ge=1, le=1000
+    )
+    CANONICAL_PARSER_PAPER_PROJECTION_MAX_ARTIFACTS: int = Field(
+        default=100, ge=1, le=10000
+    )
+    CANONICAL_PARSER_PAPER_PROJECTION_MIN_PROJECTABLE_RESULTS: int = Field(
+        default=1, ge=1, le=10000
+    )
+
     # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================

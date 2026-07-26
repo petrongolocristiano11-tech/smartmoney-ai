@@ -3800,3 +3800,150 @@ class CanonicalParserShadowReliabilityEvidenceLoop(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class CanonicalParserShadowReliabilityCertification(Base):
+    __tablename__ = "canonical_parser_shadow_reliability_certifications"
+    __table_args__ = (
+        CheckConstraint("status IN ('ACTIVE', 'REVOKED')", name="ck_shadow_reliability_certifications_status"),
+        CheckConstraint("length(certification_key) = 64", name="ck_shadow_reliability_certifications_key"),
+        CheckConstraint("length(policy_hash) = 64", name="ck_shadow_reliability_certifications_policy_hash"),
+        CheckConstraint("length(evidence_hash) = 64", name="ck_shadow_reliability_certifications_evidence_hash"),
+        CheckConstraint("latest_event_sequence >= 1", name="ck_shadow_reliability_certifications_event_sequence"),
+        CheckConstraint("length(latest_event_hash) = 64", name="ck_shadow_reliability_certifications_event_hash"),
+        UniqueConstraint("certification_id", name="uq_shadow_reliability_certifications_id"),
+        UniqueConstraint("certification_key", name="uq_shadow_reliability_certifications_key"),
+        Index("ix_shadow_reliability_certifications_status_expiry", "status", "expires_at"),
+        Index("ix_shadow_reliability_certifications_assessment", "assessment_db_id", "certified_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    certification_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    certification_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    assessment_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_shadow_reliability_assessments.id", ondelete="RESTRICT"), nullable=False)
+    assessment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    assessment_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    worker_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    lease_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    worker_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    certified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revocation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latest_event_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    latest_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    technical_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class CanonicalParserShadowReliabilityCertificationEvent(Base):
+    __tablename__ = "canonical_parser_shadow_reliability_certification_events"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_shadow_reliability_certification_events_sequence"),
+        CheckConstraint("event_type IN ('CERTIFIED', 'REVOKED')", name="ck_shadow_reliability_certification_events_type"),
+        CheckConstraint("new_status IN ('ACTIVE', 'REVOKED')", name="ck_shadow_reliability_certification_events_status"),
+        CheckConstraint("length(event_hash) = 64", name="ck_shadow_reliability_certification_events_hash"),
+        UniqueConstraint("event_id", name="uq_shadow_reliability_certification_events_id"),
+        UniqueConstraint("certification_db_id", "sequence", name="uq_shadow_reliability_certification_events_sequence"),
+        Index("ix_shadow_reliability_certification_events_cert_sequence", "certification_db_id", "sequence"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    certification_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_shadow_reliability_certifications.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    previous_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    new_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPaperProjectionRun(Base):
+    __tablename__ = "canonical_parser_paper_projection_runs"
+    __table_args__ = (
+        CheckConstraint("status IN ('PASSED', 'PARTIAL', 'BLOCKED', 'INSUFFICIENT_DATA')", name="ck_parser_paper_projection_runs_status"),
+        CheckConstraint("source_run_count >= 0 AND source_result_count >= 0 AND projectable_count >= 0 AND review_count >= 0 AND rejected_count >= 0", name="ck_parser_paper_projection_runs_counts"),
+        CheckConstraint("source_result_count = projectable_count + review_count + rejected_count", name="ck_parser_paper_projection_runs_breakdown"),
+        CheckConstraint("length(projection_key) = 64", name="ck_parser_paper_projection_runs_key"),
+        CheckConstraint("length(certification_event_hash) = 64", name="ck_parser_paper_projection_runs_cert_event_hash"),
+        CheckConstraint("length(policy_hash) = 64", name="ck_parser_paper_projection_runs_policy_hash"),
+        CheckConstraint("length(source_evidence_hash) = 64", name="ck_parser_paper_projection_runs_evidence_hash"),
+        UniqueConstraint("projection_id", name="uq_parser_paper_projection_runs_id"),
+        UniqueConstraint("projection_key", name="uq_parser_paper_projection_runs_key"),
+        Index("ix_parser_paper_projection_runs_status_completed", "status", "completed_at"),
+        Index("ix_parser_paper_projection_runs_certification", "certification_db_id", "started_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    projection_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    projection_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    certification_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_shadow_reliability_certifications.id", ondelete="RESTRICT"), nullable=False)
+    certification_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    certification_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    assessment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    source_run_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_result_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    projectable_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    review_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    rejected_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    source_evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    metrics_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPaperProjectionResult(Base):
+    __tablename__ = "canonical_parser_paper_projection_results"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_parser_paper_projection_results_sequence"),
+        CheckConstraint("status IN ('PROJECTABLE', 'REVIEW', 'REJECTED')", name="ck_parser_paper_projection_results_status"),
+        CheckConstraint("action IN ('BUY', 'SELL', 'UNKNOWN')", name="ck_parser_paper_projection_results_action"),
+        CheckConstraint("artifact_index >= 0", name="ck_parser_paper_projection_results_artifact_index"),
+        CheckConstraint("length(artifact_hash) = 64", name="ck_parser_paper_projection_results_artifact_hash"),
+        CheckConstraint("length(projection_hash) = 64", name="ck_parser_paper_projection_results_projection_hash"),
+        UniqueConstraint("result_id", name="uq_parser_paper_projection_results_id"),
+        UniqueConstraint("projection_run_db_id", "sequence", name="uq_parser_paper_projection_results_sequence"),
+        UniqueConstraint("projection_run_db_id", "source_result_db_id", "artifact_index", name="uq_parser_paper_projection_results_source_artifact"),
+        Index("ix_parser_paper_projection_results_run_status", "projection_run_db_id", "status"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    result_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    projection_run_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_paper_projection_runs.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_execution_run_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_shadow_ticket_execution_runs.id", ondelete="RESTRICT"), nullable=False)
+    source_execution_run_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    source_result_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_shadow_ticket_execution_results.id", ondelete="RESTRICT"), nullable=False)
+    source_result_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    raw_event_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    artifact_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    wallet_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    token_mint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    token_amount: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    sol_amount: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    artifact_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    projection_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    projection_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

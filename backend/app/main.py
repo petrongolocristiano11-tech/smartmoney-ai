@@ -100,6 +100,9 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserShadowWorkerLoopRunRequest,
     CanonicalParserShadowWorkerRecoveryRunRequest,
     CanonicalParserShadowReliabilityAssessmentRequest,
+    CanonicalParserShadowReliabilityCertificationRequest,
+    CanonicalParserShadowReliabilityCertificationRevokeRequest,
+    CanonicalParserPaperProjectionRunRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -252,6 +255,24 @@ from backend.app.services.blockchain_parser_shadow_reliability_service import (
     get_shadow_reliability_status,
     preview_shadow_reliability_assessment,
     resolve_shadow_reliability,
+)
+
+from backend.app.services.blockchain_parser_shadow_reliability_certification_service import (
+    CanonicalParserShadowReliabilityCertificationError,
+    certify_shadow_reliability,
+    get_shadow_reliability_certification,
+    get_shadow_reliability_certification_status,
+    preview_shadow_reliability_certification,
+    resolve_shadow_reliability_certification,
+    revoke_shadow_reliability_certification,
+)
+from backend.app.services.blockchain_parser_paper_projection_service import (
+    CanonicalParserPaperProjectionError,
+    get_paper_projection_run,
+    get_paper_projection_status,
+    preview_paper_projection,
+    resolve_paper_projection,
+    run_paper_projection,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -2480,3 +2501,66 @@ def read_shadow_reliability_assessment_endpoint(assessment_id: str, db: Session 
 def resolve_shadow_reliability_endpoint(db: Session = Depends(get_db)):
     return resolve_shadow_reliability(db)
 # END M22 SHADOW RELIABILITY EVIDENCE GATE
+
+# BEGIN M23 SHADOW RELIABILITY CERTIFICATION
+@app.get("/integrity/parser-shadow-reliability-certification/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_shadow_reliability_certification_status(db: Session = Depends(get_db)):
+    return get_shadow_reliability_certification_status(db)
+
+@app.get("/integrity/parser-shadow-reliability-certification/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_shadow_reliability_certification_preview(db: Session = Depends(get_db)):
+    return preview_shadow_reliability_certification(db)
+
+@app.post("/integrity/parser-shadow-reliability-certification/certify", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def certify_shadow_reliability_endpoint(request: CanonicalParserShadowReliabilityCertificationRequest, db: Session = Depends(get_db)):
+    try:
+        return certify_shadow_reliability(db, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserShadowReliabilityCertificationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.post("/integrity/parser-shadow-reliability-certification/revoke", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def revoke_shadow_reliability_certification_endpoint(request: CanonicalParserShadowReliabilityCertificationRevokeRequest, db: Session = Depends(get_db)):
+    try:
+        return revoke_shadow_reliability_certification(db, certification_id=request.certification_id, confirmation=request.confirmation, reason=request.reason, actor_label=request.actor_label)
+    except CanonicalParserShadowReliabilityCertificationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.get("/integrity/parser-shadow-reliability-certification/certifications/{certification_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_shadow_reliability_certification_endpoint(certification_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_shadow_reliability_certification(db, certification_id)
+    except CanonicalParserShadowReliabilityCertificationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.get("/integrity/parser-shadow-reliability-certification/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_shadow_reliability_certification_endpoint(db: Session = Depends(get_db)):
+    return resolve_shadow_reliability_certification(db)
+# END M23 SHADOW RELIABILITY CERTIFICATION
+
+# BEGIN M24 PAPER PROJECTION DRY RUN
+@app.get("/integrity/parser-paper-projection/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_projection_status(db: Session = Depends(get_db)):
+    return get_paper_projection_status(db)
+
+@app.get("/integrity/parser-paper-projection/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_projection_preview(db: Session = Depends(get_db)):
+    return preview_paper_projection(db)
+
+@app.post("/integrity/parser-paper-projection/run", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def run_paper_projection_endpoint(request: CanonicalParserPaperProjectionRunRequest, db: Session = Depends(get_db)):
+    try:
+        return run_paper_projection(db, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserPaperProjectionError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.get("/integrity/parser-paper-projection/runs/{projection_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_projection_run_endpoint(projection_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_paper_projection_run(db, projection_id)
+    except CanonicalParserPaperProjectionError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.get("/integrity/parser-paper-projection/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_paper_projection_endpoint(db: Session = Depends(get_db)):
+    return resolve_paper_projection(db)
+# END M24 PAPER PROJECTION DRY RUN
