@@ -438,6 +438,36 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # SHADOW SCHEDULER WORKER LEASE / FENCING
+    # Single-iteration runtime only; disabled by default.
+    # =========================
+
+    CANONICAL_PARSER_SHADOW_WORKER_ENABLED: bool = False
+    CANONICAL_PARSER_SHADOW_WORKER_LEASE_TTL_SECONDS: int = Field(
+        default=120, ge=5, le=3600
+    )
+    CANONICAL_PARSER_SHADOW_WORKER_HEARTBEAT_TIMEOUT_SECONDS: int = Field(
+        default=180, ge=5, le=86400
+    )
+    CANONICAL_PARSER_SHADOW_WORKER_MAX_CONSECUTIVE_FAILURES: int = Field(
+        default=3, ge=1, le=100
+    )
+
+    # =========================
+    # BOUNDED SHADOW WORKER LOOP / CIRCUIT BREAKER
+    # Explicit bounded supervisor session; disabled by default.
+    # =========================
+
+    CANONICAL_PARSER_SHADOW_WORKER_LOOP_ENABLED: bool = False
+    CANONICAL_PARSER_SHADOW_WORKER_LOOP_MAX_ITERATIONS: int = Field(
+        default=5, ge=1, le=50
+    )
+    CANONICAL_PARSER_SHADOW_WORKER_LOOP_MAX_CONSECUTIVE_FAILURES: int = Field(
+        default=2, ge=1, le=20
+    )
+    CANONICAL_PARSER_SHADOW_WORKER_LOOP_ENFORCE_KILL_SWITCH: bool = False
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

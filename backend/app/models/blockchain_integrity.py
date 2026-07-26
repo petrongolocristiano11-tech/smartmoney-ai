@@ -3370,3 +3370,220 @@ class CanonicalParserShadowSchedulerTick(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class CanonicalParserShadowSchedulerWorkerState(Base):
+    __tablename__ = "canonical_parser_shadow_scheduler_worker_states"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('STOPPED', 'ACTIVE', 'KILLED')",
+            name="ck_shadow_scheduler_worker_states_status",
+        ),
+        CheckConstraint(
+            "generation >= 0 AND lease_epoch >= 0 AND consecutive_failures >= 0",
+            name="ck_shadow_scheduler_worker_states_counters",
+        ),
+        CheckConstraint(
+            "lease_token_hash IS NULL OR length(lease_token_hash) = 64",
+            name="ck_shadow_scheduler_worker_states_lease_hash",
+        ),
+        CheckConstraint(
+            "length(worker_policy_hash) = 64",
+            name="ck_shadow_scheduler_worker_states_policy_hash",
+        ),
+        CheckConstraint(
+            "latest_event_hash IS NULL OR length(latest_event_hash) = 64",
+            name="ck_shadow_scheduler_worker_states_event_hash",
+        ),
+        UniqueConstraint("worker_name", name="uq_shadow_scheduler_worker_states_name"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    worker_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    owner_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    lease_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lease_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    lease_acquired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False)
+    latest_iteration_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    latest_tick_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    worker_policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    worker_policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    worker_policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    kill_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latest_event_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    latest_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class CanonicalParserShadowSchedulerWorkerEvent(Base):
+    __tablename__ = "canonical_parser_shadow_scheduler_worker_events"
+
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('STARTED', 'STOPPED', 'KILLED', 'RESET', 'HEARTBEAT', "
+            "'ITERATION_STARTED', 'ITERATION_COMPLETED', 'ITERATION_FAILED', 'ITERATION_IDLE')",
+            name="ck_shadow_scheduler_worker_events_type",
+        ),
+        CheckConstraint("sequence >= 1", name="ck_shadow_scheduler_worker_events_sequence"),
+        CheckConstraint("length(event_hash) = 64", name="ck_shadow_scheduler_worker_events_hash"),
+        CheckConstraint(
+            "previous_event_hash IS NULL OR length(previous_event_hash) = 64",
+            name="ck_shadow_scheduler_worker_events_previous_hash",
+        ),
+        UniqueConstraint("event_id", name="uq_shadow_scheduler_worker_events_id"),
+        UniqueConstraint("worker_state_db_id", "sequence", name="uq_shadow_scheduler_worker_events_sequence"),
+        Index("ix_shadow_scheduler_worker_events_state_time", "worker_state_db_id", "occurred_at"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    worker_state_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_shadow_scheduler_worker_states.id", ondelete="CASCADE"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    previous_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    new_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserShadowSchedulerWorkerIteration(Base):
+    __tablename__ = "canonical_parser_shadow_scheduler_worker_iterations"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('RUNNING', 'IDLE', 'PASSED', 'PARTIAL', 'FAILED', 'SKIPPED', 'KILLED')",
+            name="ck_shadow_scheduler_worker_iterations_status",
+        ),
+        CheckConstraint(
+            "worker_generation >= 1 AND lease_epoch >= 1",
+            name="ck_shadow_scheduler_worker_iterations_fencing",
+        ),
+        CheckConstraint("length(iteration_key) = 64", name="ck_shadow_scheduler_worker_iterations_key"),
+        UniqueConstraint("iteration_id", name="uq_shadow_scheduler_worker_iterations_id"),
+        UniqueConstraint("iteration_key", name="uq_shadow_scheduler_worker_iterations_key"),
+        Index("ix_shadow_scheduler_worker_iterations_state_started", "worker_state_db_id", "started_at"),
+        Index("ix_shadow_scheduler_worker_iterations_status_completed", "status", "completed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    iteration_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    iteration_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    worker_state_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_shadow_scheduler_worker_states.id", ondelete="RESTRICT"), nullable=False
+    )
+    worker_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    lease_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    owner_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    scheduler_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    tick_db_id: Mapped[int | None] = mapped_column(
+        ForeignKey("canonical_parser_shadow_scheduler_ticks.id", ondelete="RESTRICT"), nullable=True
+    )
+    tick_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    cycle_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    raw_event_ids: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    scheduler_preview: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    tick_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    technical_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class CanonicalParserShadowWorkerLoopRun(Base):
+    __tablename__ = "canonical_parser_shadow_worker_loop_runs"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('RUNNING', 'COMPLETED', 'STOPPED', 'CIRCUIT_OPEN', 'FAILED', 'KILLED')",
+            name="ck_shadow_worker_loop_runs_status",
+        ),
+        CheckConstraint(
+            "requested_iterations >= 1 AND completed_iterations >= 0 AND "
+            "passed_iterations >= 0 AND partial_iterations >= 0 AND idle_iterations >= 0 AND "
+            "failed_iterations >= 0 AND skipped_iterations >= 0 AND max_consecutive_failures >= 1",
+            name="ck_shadow_worker_loop_runs_counts",
+        ),
+        CheckConstraint("length(loop_key) = 64", name="ck_shadow_worker_loop_runs_key"),
+        UniqueConstraint("loop_id", name="uq_shadow_worker_loop_runs_id"),
+        UniqueConstraint("loop_key", name="uq_shadow_worker_loop_runs_key"),
+        Index("ix_shadow_worker_loop_runs_state_started", "worker_state_db_id", "started_at"),
+        Index("ix_shadow_worker_loop_runs_status_completed", "status", "completed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    loop_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    loop_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    worker_state_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_shadow_scheduler_worker_states.id", ondelete="RESTRICT"), nullable=False
+    )
+    worker_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    lease_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    owner_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    requested_iterations: Mapped[int] = mapped_column(Integer, nullable=False)
+    completed_iterations: Mapped[int] = mapped_column(Integer, nullable=False)
+    passed_iterations: Mapped[int] = mapped_column(Integer, nullable=False)
+    partial_iterations: Mapped[int] = mapped_column(Integer, nullable=False)
+    idle_iterations: Mapped[int] = mapped_column(Integer, nullable=False)
+    failed_iterations: Mapped[int] = mapped_column(Integer, nullable=False)
+    skipped_iterations: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False)
+    observed_consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False)
+    circuit_breaker_open: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    kill_switch_enforced: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stop_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    summary: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class CanonicalParserShadowWorkerLoopIteration(Base):
+    __tablename__ = "canonical_parser_shadow_worker_loop_iterations"
+
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_shadow_worker_loop_iterations_sequence"),
+        UniqueConstraint("loop_run_db_id", "sequence", name="uq_shadow_worker_loop_iterations_sequence"),
+        UniqueConstraint("worker_iteration_db_id", name="uq_shadow_worker_loop_iterations_worker_iteration"),
+        Index("ix_shadow_worker_loop_iterations_loop_sequence", "loop_run_db_id", "sequence"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    loop_run_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_shadow_worker_loop_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    worker_iteration_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_shadow_scheduler_worker_iterations.id", ondelete="RESTRICT"), nullable=False
+    )
+    iteration_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

@@ -93,6 +93,11 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserShadowSchedulerControlRequest,
     CanonicalParserShadowSchedulerHeartbeatRequest,
     CanonicalParserShadowSchedulerTickRequest,
+    CanonicalParserShadowWorkerStartRequest,
+    CanonicalParserShadowWorkerControlRequest,
+    CanonicalParserShadowWorkerHeartbeatRequest,
+    CanonicalParserShadowWorkerIterationRequest,
+    CanonicalParserShadowWorkerLoopRunRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -207,6 +212,29 @@ from backend.app.services.blockchain_parser_shadow_scheduler_service import (
     run_shadow_scheduler_tick,
     start_shadow_scheduler,
     stop_shadow_scheduler,
+)
+from backend.app.services.blockchain_parser_shadow_worker_service import (
+    CanonicalParserShadowWorkerError,
+    SHADOW_WORKER_HEARTBEAT_PREFIX,
+    SHADOW_WORKER_KILL_PREFIX,
+    SHADOW_WORKER_RESET_PREFIX,
+    SHADOW_WORKER_STOP_PREFIX,
+    control_shadow_worker,
+    get_shadow_worker_iteration,
+    get_shadow_worker_state,
+    get_shadow_worker_status,
+    heartbeat_shadow_worker,
+    preview_shadow_worker_iteration,
+    preview_shadow_worker_start,
+    run_shadow_worker_iteration,
+    start_shadow_worker,
+)
+from backend.app.services.blockchain_parser_shadow_worker_loop_service import (
+    CanonicalParserShadowWorkerLoopError,
+    get_shadow_worker_loop,
+    get_shadow_worker_loop_status,
+    preview_shadow_worker_loop,
+    run_shadow_worker_loop,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -2285,3 +2313,101 @@ def read_shadow_scheduler_tick_endpoint(
             detail={"code": exception.code, "message": str(exception)},
         ) from exception
 # END M18 SHADOW SCHEDULER CONTROL PLANE
+
+
+# BEGIN M19 SHADOW SCHEDULER WORKER RUNTIME
+@app.get("/integrity/parser-shadow-worker/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_shadow_worker_status(db: Session = Depends(get_db)):
+    return get_shadow_worker_status(db)
+
+@app.get("/integrity/parser-shadow-worker/state", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_shadow_worker_state(db: Session = Depends(get_db)):
+    return get_shadow_worker_state(db)
+
+@app.get("/integrity/parser-shadow-worker/start-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_shadow_worker_start_preview(owner_id: str = Query(min_length=3, max_length=80)):
+    return preview_shadow_worker_start(owner_id=owner_id)
+
+@app.post("/integrity/parser-shadow-worker/start", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def start_shadow_worker_endpoint(request: CanonicalParserShadowWorkerStartRequest, db: Session = Depends(get_db)):
+    try:
+        return start_shadow_worker(db, confirmation=request.confirmation, owner_id=request.owner_id, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserShadowWorkerError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.post("/integrity/parser-shadow-worker/stop", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def stop_shadow_worker_endpoint(request: CanonicalParserShadowWorkerControlRequest, db: Session = Depends(get_db)):
+    try:
+        return control_shadow_worker(db, action="STOP", confirmation=request.confirmation, owner_id=request.owner_id, reason=request.reason, actor_label=request.actor_label)
+    except CanonicalParserShadowWorkerError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.post("/integrity/parser-shadow-worker/kill", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def kill_shadow_worker_endpoint(request: CanonicalParserShadowWorkerControlRequest, db: Session = Depends(get_db)):
+    try:
+        return control_shadow_worker(db, action="KILL", confirmation=request.confirmation, owner_id=request.owner_id, reason=request.reason, actor_label=request.actor_label)
+    except CanonicalParserShadowWorkerError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.post("/integrity/parser-shadow-worker/reset", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def reset_shadow_worker_endpoint(request: CanonicalParserShadowWorkerControlRequest, db: Session = Depends(get_db)):
+    try:
+        return control_shadow_worker(db, action="RESET", confirmation=request.confirmation, owner_id=request.owner_id, reason=request.reason, actor_label=request.actor_label)
+    except CanonicalParserShadowWorkerError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.post("/integrity/parser-shadow-worker/heartbeat", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def heartbeat_shadow_worker_endpoint(request: CanonicalParserShadowWorkerHeartbeatRequest, db: Session = Depends(get_db)):
+    try:
+        return heartbeat_shadow_worker(db, confirmation=request.confirmation, owner_id=request.owner_id, actor_label=request.actor_label)
+    except CanonicalParserShadowWorkerError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.get("/integrity/parser-shadow-worker/iteration-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_shadow_worker_iteration_preview(owner_id: str = Query(min_length=3, max_length=80), raw_event_ids: list[int] | None = Query(default=None), db: Session = Depends(get_db)):
+    try:
+        return preview_shadow_worker_iteration(db, owner_id=owner_id, raw_event_ids=raw_event_ids)
+    except CanonicalParserShadowWorkerError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.post("/integrity/parser-shadow-worker/iterate", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def run_shadow_worker_iteration_endpoint(request: CanonicalParserShadowWorkerIterationRequest, db: Session = Depends(get_db)):
+    try:
+        return run_shadow_worker_iteration(db, confirmation=request.confirmation, owner_id=request.owner_id, raw_event_ids=request.raw_event_ids, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserShadowWorkerError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.get("/integrity/parser-shadow-worker/iterations/{iteration_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_shadow_worker_iteration_endpoint(iteration_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_shadow_worker_iteration(db, iteration_id)
+    except CanonicalParserShadowWorkerError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+# END M19 SHADOW SCHEDULER WORKER RUNTIME
+
+# BEGIN M20 BOUNDED SHADOW WORKER LOOP
+@app.get("/integrity/parser-shadow-worker-loop/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_shadow_worker_loop_status(db: Session = Depends(get_db)):
+    return get_shadow_worker_loop_status(db)
+
+@app.get("/integrity/parser-shadow-worker-loop/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_shadow_worker_loop_preview(owner_id: str = Query(min_length=3, max_length=80), iterations: int = Query(default=3, ge=1, le=50), raw_event_ids: list[int] | None = Query(default=None), db: Session = Depends(get_db)):
+    try:
+        return preview_shadow_worker_loop(db, owner_id=owner_id, iterations=iterations, raw_event_ids=raw_event_ids)
+    except CanonicalParserShadowWorkerLoopError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.post("/integrity/parser-shadow-worker-loop/run", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def run_shadow_worker_loop_endpoint(request: CanonicalParserShadowWorkerLoopRunRequest, db: Session = Depends(get_db)):
+    try:
+        return run_shadow_worker_loop(db, confirmation=request.confirmation, owner_id=request.owner_id, iterations=request.iterations, raw_event_ids=request.raw_event_ids, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserShadowWorkerLoopError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.get("/integrity/parser-shadow-worker-loop/runs/{loop_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_shadow_worker_loop_endpoint(loop_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_shadow_worker_loop(db, loop_id)
+    except CanonicalParserShadowWorkerLoopError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+# END M20 BOUNDED SHADOW WORKER LOOP

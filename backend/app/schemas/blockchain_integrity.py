@@ -255,3 +255,40 @@ class CanonicalParserShadowSchedulerTickRequest(BaseModel):
     raw_event_ids: list[int] | None = None
     actor_label: str | None = Field(default=None, max_length=80)
     note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserShadowWorkerStartRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=320)
+    owner_id: str = Field(min_length=3, max_length=80)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserShadowWorkerControlRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=320)
+    owner_id: str = Field(min_length=3, max_length=80)
+    reason: str = Field(min_length=3, max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+
+
+class CanonicalParserShadowWorkerHeartbeatRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=320)
+    owner_id: str = Field(min_length=3, max_length=80)
+    actor_label: str | None = Field(default=None, max_length=80)
+
+
+class CanonicalParserShadowWorkerIterationRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=320)
+    owner_id: str = Field(min_length=3, max_length=80)
+    raw_event_ids: list[int] | None = None
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserShadowWorkerLoopRunRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=320)
+    owner_id: str = Field(min_length=3, max_length=80)
+    iterations: int = Field(default=3, ge=1, le=50)
+    raw_event_ids: list[int] | None = None
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)

@@ -475,7 +475,12 @@ def test_m18_service_has_no_network_live_paper_or_trade_writes():
 def test_m18_service_not_imported_by_workers_or_live_pipelines():
     forbidden = []
     for path in Path("backend/app").rglob("*.py"):
-        if path.name in {"main.py", "blockchain_parser_shadow_scheduler_service.py"}:
+        if path.name in {
+            "main.py",
+            "blockchain_parser_shadow_scheduler_service.py",
+            "blockchain_parser_shadow_worker_service.py",
+            "blockchain_parser_shadow_worker_loop_service.py",
+        }:
             continue
         if "blockchain_parser_shadow_scheduler_service" in path.read_text(encoding="utf-8"):
             forbidden.append(str(path))
