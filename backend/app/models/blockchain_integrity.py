@@ -2600,3 +2600,147 @@ class CanonicalParserShadowAutomationPermitEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class CanonicalParserShadowExecutionTicket(Base):
+    __tablename__ = "canonical_parser_shadow_execution_tickets"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('RESERVED', 'RELEASED', 'EXPIRED')",
+            name="ck_shadow_execution_tickets_status",
+        ),
+        CheckConstraint(
+            "scope IN ('SHADOW_ONLY')",
+            name="ck_shadow_execution_tickets_scope",
+        ),
+        CheckConstraint(
+            "channel IN ('CANONICAL_SHADOW')",
+            name="ck_shadow_execution_tickets_channel",
+        ),
+        CheckConstraint(
+            "consumer IN ('CERTIFIED_SHADOW_AUTOMATION')",
+            name="ck_shadow_execution_tickets_consumer",
+        ),
+        CheckConstraint(
+            "executor IN ('CERTIFIED_SHADOW_EXECUTION_TICKET')",
+            name="ck_shadow_execution_tickets_executor",
+        ),
+        CheckConstraint(
+            "ticket_generation >= 1",
+            name="ck_shadow_execution_tickets_generation",
+        ),
+        CheckConstraint(
+            "requested_validity_seconds >= 1",
+            name="ck_shadow_execution_tickets_validity",
+        ),
+        CheckConstraint(
+            "run_reservation = 1",
+            name="ck_shadow_execution_tickets_run_reservation",
+        ),
+        CheckConstraint(
+            "event_reservation >= 1",
+            name="ck_shadow_execution_tickets_event_reservation",
+        ),
+        CheckConstraint(
+            "latest_event_sequence >= 1",
+            name="ck_shadow_execution_tickets_sequence",
+        ),
+        CheckConstraint("length(ticket_key) = 64", name="ck_shadow_execution_tickets_key_len"),
+        CheckConstraint("length(permit_key) = 64", name="ck_shadow_execution_tickets_permit_key_len"),
+        CheckConstraint("length(parser_implementation_hash) = 64", name="ck_shadow_execution_tickets_parser_hash_len"),
+        CheckConstraint("length(release_manifest_hash) = 64", name="ck_shadow_execution_tickets_release_hash_len"),
+        CheckConstraint("length(readiness_evidence_hash) = 64", name="ck_shadow_execution_tickets_readiness_hash_len"),
+        CheckConstraint("length(permit_policy_hash) = 64", name="ck_shadow_execution_tickets_permit_policy_hash_len"),
+        CheckConstraint("length(permit_event_hash) = 64", name="ck_shadow_execution_tickets_permit_event_hash_len"),
+        CheckConstraint("length(ticket_policy_hash) = 64", name="ck_shadow_execution_tickets_policy_hash_len"),
+        CheckConstraint("length(latest_event_hash) = 64", name="ck_shadow_execution_tickets_latest_hash_len"),
+        UniqueConstraint("ticket_id", name="uq_shadow_execution_tickets_id"),
+        UniqueConstraint("ticket_key", name="uq_shadow_execution_tickets_key"),
+        UniqueConstraint("permit_db_id", "ticket_generation", name="uq_shadow_execution_tickets_generation"),
+        Index("ix_shadow_execution_tickets_permit_status", "permit_db_id", "status"),
+        Index("ix_shadow_execution_tickets_expires", "status", "expires_at"),
+        Index("ix_shadow_execution_tickets_parser", "parser_name", "parser_version"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    ticket_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    ticket_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    ticket_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    permit_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_shadow_automation_permits.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    permit_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    permit_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    assessment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    lease_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    certification_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    binding_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    promotion_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    consumer: Mapped[str] = mapped_column(String(64), nullable=False)
+    executor: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    parser_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    parser_implementation_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    release_manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    readiness_evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    permit_policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    permit_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    ticket_policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    ticket_policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    ticket_policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    requested_validity_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    run_reservation: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_reservation: Mapped[int] = mapped_column(Integer, nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    release_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latest_event_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    latest_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    technical_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class CanonicalParserShadowExecutionTicketEvent(Base):
+    __tablename__ = "canonical_parser_shadow_execution_ticket_events"
+
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_shadow_execution_ticket_events_sequence"),
+        CheckConstraint("event_type IN ('RESERVED', 'RELEASED', 'EXPIRED')", name="ck_shadow_execution_ticket_events_type"),
+        CheckConstraint("previous_status IS NULL OR previous_status IN ('RESERVED', 'RELEASED', 'EXPIRED')", name="ck_shadow_execution_ticket_events_previous_status"),
+        CheckConstraint("new_status IN ('RESERVED', 'RELEASED', 'EXPIRED')", name="ck_shadow_execution_ticket_events_new_status"),
+        CheckConstraint("previous_event_hash IS NULL OR length(previous_event_hash) = 64", name="ck_shadow_execution_ticket_events_prev_hash_len"),
+        CheckConstraint("length(event_hash) = 64", name="ck_shadow_execution_ticket_events_hash_len"),
+        UniqueConstraint("event_id", name="uq_shadow_execution_ticket_events_id"),
+        UniqueConstraint("ticket_db_id", "sequence", name="uq_shadow_execution_ticket_events_sequence"),
+        UniqueConstraint("event_hash", name="uq_shadow_execution_ticket_events_hash"),
+        Index("ix_shadow_execution_ticket_events_ticket_sequence", "ticket_db_id", "sequence"),
+        Index("ix_shadow_execution_ticket_events_type_time", "event_type", "occurred_at"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    ticket_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_shadow_execution_tickets.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    previous_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    new_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

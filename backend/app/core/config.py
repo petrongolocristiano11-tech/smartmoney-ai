@@ -369,6 +369,23 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # CERTIFIED SHADOW EXECUTION TICKET
+    # Manual atomic budget reservation; disabled by default.
+    # =========================
+
+    CANONICAL_PARSER_SHADOW_EXECUTION_TICKET_ENABLED: bool = False
+
+    CANONICAL_PARSER_SHADOW_EXECUTION_TICKET_MAX_VALIDITY_SECONDS: int = Field(
+        default=180, ge=1, le=3600
+    )
+    CANONICAL_PARSER_SHADOW_EXECUTION_TICKET_MIN_PERMIT_REMAINING_SECONDS: int = Field(
+        default=30, ge=0, le=3600
+    )
+    CANONICAL_PARSER_SHADOW_EXECUTION_TICKET_MAX_EVENT_RESERVATION: int = Field(
+        default=25, ge=1, le=100000
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 
