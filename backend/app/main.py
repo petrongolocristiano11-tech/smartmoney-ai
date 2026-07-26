@@ -81,6 +81,7 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserRuntimeCertificationRevokeRequest,
     CanonicalParserShadowRuntimeLeaseIssueRequest,
     CanonicalParserShadowRuntimeLeaseRevokeRequest,
+    CanonicalParserShadowConsumerRunRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -134,6 +135,13 @@ from backend.app.services.blockchain_parser_shadow_runtime_lease_service import 
     preview_shadow_runtime_lease,
     resolve_shadow_runtime_lease,
     revoke_shadow_runtime_lease,
+)
+from backend.app.services.blockchain_parser_shadow_consumer_service import (
+    CanonicalParserShadowConsumerError,
+    get_shadow_consumer_run,
+    get_shadow_consumer_status,
+    preview_shadow_consumer_run,
+    run_shadow_consumer_dry_run,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -1447,3 +1455,82 @@ def read_shadow_runtime_lease_endpoint(
 def resolve_shadow_runtime_lease_endpoint(db: Session = Depends(get_db)):
     return resolve_shadow_runtime_lease(db)
 # END M11 CERTIFIED SHADOW RUNTIME LEASE
+
+# BEGIN M12 CERTIFIED SHADOW CONSUMER DRY-RUN
+@app.get(
+    "/integrity/parser-shadow-consumer/status",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_consumer_status(db: Session = Depends(get_db)):
+    return get_shadow_consumer_status(db)
+
+
+@app.get(
+    "/integrity/parser-shadow-consumer/preview",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_consumer_preview(
+    lease_id: str | None = Query(default=None, min_length=36, max_length=36),
+    raw_event_ids: list[int] | None = Query(default=None),
+    limit: int = Query(default=10, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_shadow_consumer_run(
+            db,
+            lease_id=lease_id,
+            raw_event_ids=raw_event_ids,
+            limit=limit,
+        )
+    except CanonicalParserShadowConsumerError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-shadow-consumer/run",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def run_shadow_consumer_endpoint(
+    request: CanonicalParserShadowConsumerRunRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return run_shadow_consumer_dry_run(
+            db,
+            confirmation=request.confirmation,
+            lease_id=request.lease_id,
+            raw_event_ids=request.raw_event_ids,
+            limit=request.limit,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserShadowConsumerError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/parser-shadow-consumer/runs/{run_id}",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_consumer_run_endpoint(
+    run_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_shadow_consumer_run(db, run_id)
+    except CanonicalParserShadowConsumerError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+# END M12 CERTIFIED SHADOW CONSUMER DRY-RUN

@@ -300,6 +300,17 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # CERTIFIED SHADOW CONSUMER DRY-RUN
+    # Manual bounded shadow execution; disabled by default.
+    # =========================
+
+    CANONICAL_PARSER_SHADOW_CONSUMER_ENABLED: bool = False
+
+    CANONICAL_PARSER_SHADOW_CONSUMER_MAX_SAMPLE_SIZE: int = Field(
+        default=25, ge=1, le=100
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

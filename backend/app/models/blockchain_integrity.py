@@ -1855,3 +1855,232 @@ class CanonicalParserShadowRuntimeLeaseEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class CanonicalParserShadowConsumerRun(Base):
+    __tablename__ = "canonical_parser_shadow_consumer_runs"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('RUNNING', 'PASSED', 'PARTIAL', 'FAILED')",
+            name="ck_canonical_parser_shadow_consumer_runs_status",
+        ),
+        CheckConstraint(
+            "scope IN ('SHADOW_ONLY')",
+            name="ck_canonical_parser_shadow_consumer_runs_scope",
+        ),
+        CheckConstraint(
+            "channel IN ('CANONICAL_SHADOW')",
+            name="ck_canonical_parser_shadow_consumer_runs_channel",
+        ),
+        CheckConstraint(
+            "consumer IN ('CERTIFIED_SHADOW_RUNTIME')",
+            name="ck_canonical_parser_shadow_consumer_runs_consumer",
+        ),
+        CheckConstraint(
+            "requested_limit >= 1 AND selected_count >= 0 "
+            "AND processed_count >= 0 AND passed_count >= 0 "
+            "AND failed_count >= 0 AND skipped_count >= 0 "
+            "AND artifact_count >= 0",
+            name="ck_canonical_parser_shadow_consumer_runs_counts_nonnegative",
+        ),
+        CheckConstraint(
+            "selected_count >= processed_count",
+            name="ck_canonical_parser_shadow_consumer_runs_selected_processed",
+        ),
+        CheckConstraint(
+            "processed_count = passed_count + failed_count + skipped_count",
+            name="ck_canonical_parser_shadow_consumer_runs_processed_breakdown",
+        ),
+        CheckConstraint(
+            "length(run_key) = 64",
+            name="ck_canonical_parser_shadow_consumer_runs_key_length",
+        ),
+        CheckConstraint(
+            "length(parser_implementation_hash) = 64",
+            name="ck_canonical_parser_shadow_consumer_runs_parser_hash_length",
+        ),
+        CheckConstraint(
+            "length(lease_event_hash) = 64",
+            name="ck_canonical_parser_shadow_consumer_runs_lease_hash_length",
+        ),
+        CheckConstraint(
+            "length(certification_event_hash) = 64",
+            name="ck_canonical_parser_shadow_consumer_runs_cert_hash_length",
+        ),
+        CheckConstraint(
+            "length(release_manifest_hash) = 64",
+            name="ck_canonical_parser_shadow_consumer_runs_release_hash_length",
+        ),
+        CheckConstraint(
+            "length(consumer_policy_hash) = 64",
+            name="ck_canonical_parser_shadow_consumer_runs_policy_hash_length",
+        ),
+        UniqueConstraint(
+            "run_id",
+            name="uq_canonical_parser_shadow_consumer_runs_id",
+        ),
+        UniqueConstraint(
+            "run_key",
+            name="uq_canonical_parser_shadow_consumer_runs_key",
+        ),
+        Index(
+            "ix_canonical_parser_shadow_consumer_runs_lease_started",
+            "lease_db_id",
+            "started_at",
+        ),
+        Index(
+            "ix_canonical_parser_shadow_consumer_runs_status_completed",
+            "status",
+            "completed_at",
+        ),
+        Index(
+            "ix_canonical_parser_shadow_consumer_runs_parser_version",
+            "parser_name",
+            "parser_version",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    run_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    lease_db_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "canonical_parser_shadow_runtime_leases.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    lease_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    certification_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    binding_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    promotion_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    consumer: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    parser_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    parser_implementation_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    output_schema_version: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    release_manifest_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    lease_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    certification_event_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    consumer_policy_version: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    consumer_policy_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    requested_limit: Mapped[int] = mapped_column(Integer, nullable=False)
+    selected_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    processed_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    passed_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    failed_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    skipped_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    artifact_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    selection_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    metrics_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    technical_metadata: Mapped[dict] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CanonicalParserShadowConsumerResult(Base):
+    __tablename__ = "canonical_parser_shadow_consumer_results"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PASS', 'FAIL', 'SKIPPED')",
+            name="ck_canonical_parser_shadow_consumer_results_status",
+        ),
+        CheckConstraint(
+            "artifact_count >= 0",
+            name="ck_canonical_parser_shadow_consumer_results_artifact_count",
+        ),
+        CheckConstraint(
+            "length(raw_payload_hash) = 64",
+            name="ck_canonical_parser_shadow_consumer_results_raw_hash_length",
+        ),
+        CheckConstraint(
+            "output_hash IS NULL OR length(output_hash) = 64",
+            name="ck_canonical_parser_shadow_consumer_results_output_hash_length",
+        ),
+        CheckConstraint(
+            "verification_output_hash IS NULL OR length(verification_output_hash) = 64",
+            name="ck_canonical_parser_shadow_consumer_results_verify_hash_length",
+        ),
+        UniqueConstraint(
+            "result_id",
+            name="uq_canonical_parser_shadow_consumer_results_id",
+        ),
+        UniqueConstraint(
+            "consumer_run_db_id",
+            "raw_event_id",
+            name="uq_canonical_parser_shadow_consumer_results_run_event",
+        ),
+        Index(
+            "ix_canonical_parser_shadow_consumer_results_run_status",
+            "consumer_run_db_id",
+            "status",
+        ),
+        Index(
+            "ix_canonical_parser_shadow_consumer_results_raw_event",
+            "raw_event_id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    result_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    consumer_run_db_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "canonical_parser_shadow_consumer_runs.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+    raw_event_id: Mapped[int] = mapped_column(
+        ForeignKey("raw_blockchain_events.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    raw_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    compatible: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    deterministic: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    output_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    verification_output_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    artifact_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    shadow_artifacts: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    completed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

@@ -157,3 +157,12 @@ class CanonicalParserShadowRuntimeLeaseRevokeRequest(BaseModel):
     confirmation: str = Field(default="", max_length=180)
     reason: str = Field(min_length=3, max_length=500)
     actor_label: str | None = Field(default=None, max_length=80)
+
+
+class CanonicalParserShadowConsumerRunRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=180)
+    lease_id: str | None = Field(default=None, min_length=36, max_length=36)
+    raw_event_ids: list[int] = Field(default_factory=list, max_length=100)
+    limit: int = Field(default=10, ge=1, le=100)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)

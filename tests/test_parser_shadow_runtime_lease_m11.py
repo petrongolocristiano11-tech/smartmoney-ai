@@ -547,7 +547,11 @@ def test_service_has_no_network_trade_writes_or_operational_consumers():
     assert '"consumer_connected": False' in source
     consumers = []
     for candidate in Path("backend/app").rglob("*.py"):
-        if candidate.name in {"main.py", path.name}:
+        if candidate.name in {
+            "main.py",
+            path.name,
+            "blockchain_parser_shadow_consumer_service.py",
+        }:
             continue
         if "blockchain_parser_shadow_runtime_lease_service" in candidate.read_text(encoding="utf-8"):
             consumers.append(str(candidate))
