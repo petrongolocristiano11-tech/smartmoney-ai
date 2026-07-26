@@ -397,6 +397,47 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # SHADOW AUTOMATION CYCLE COORDINATOR
+    # Manual reserve + execute orchestration; disabled by default.
+    # =========================
+
+    CANONICAL_PARSER_SHADOW_AUTOMATION_CYCLE_ENABLED: bool = False
+    CANONICAL_PARSER_SHADOW_AUTOMATION_CYCLE_MAX_EVENT_RESERVATION: int = Field(
+        default=25, ge=1, le=100
+    )
+    CANONICAL_PARSER_SHADOW_AUTOMATION_CYCLE_MAX_EXECUTION_LIMIT: int = Field(
+        default=25, ge=1, le=100
+    )
+    CANONICAL_PARSER_SHADOW_AUTOMATION_CYCLE_TICKET_VALIDITY_SECONDS: int = Field(
+        default=120, ge=1, le=3600
+    )
+
+    # =========================
+    # SHADOW SCHEDULER CONTROL PLANE
+    # Persistent state, lock, heartbeat and kill switch. Manual tick only.
+    # =========================
+
+    CANONICAL_PARSER_SHADOW_SCHEDULER_ENABLED: bool = False
+    CANONICAL_PARSER_SHADOW_SCHEDULER_MIN_INTERVAL_SECONDS: int = Field(
+        default=300, ge=1, le=86400
+    )
+    CANONICAL_PARSER_SHADOW_SCHEDULER_MAX_INTERVAL_SECONDS: int = Field(
+        default=3600, ge=1, le=86400
+    )
+    CANONICAL_PARSER_SHADOW_SCHEDULER_LOCK_TTL_SECONDS: int = Field(
+        default=180, ge=1, le=3600
+    )
+    CANONICAL_PARSER_SHADOW_SCHEDULER_HEARTBEAT_TIMEOUT_SECONDS: int = Field(
+        default=300, ge=1, le=86400
+    )
+    CANONICAL_PARSER_SHADOW_SCHEDULER_MAX_EVENT_RESERVATION: int = Field(
+        default=25, ge=1, le=100
+    )
+    CANONICAL_PARSER_SHADOW_SCHEDULER_MAX_EXECUTION_LIMIT: int = Field(
+        default=25, ge=1, le=100
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

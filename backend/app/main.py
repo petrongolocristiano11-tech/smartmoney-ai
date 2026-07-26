@@ -88,6 +88,11 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserShadowExecutionTicketReserveRequest,
     CanonicalParserShadowExecutionTicketReleaseRequest,
     CanonicalParserShadowTicketExecutionRunRequest,
+    CanonicalParserShadowAutomationCycleRunRequest,
+    CanonicalParserShadowSchedulerStartRequest,
+    CanonicalParserShadowSchedulerControlRequest,
+    CanonicalParserShadowSchedulerHeartbeatRequest,
+    CanonicalParserShadowSchedulerTickRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -181,6 +186,27 @@ from backend.app.services.blockchain_parser_shadow_ticket_execution_service impo
     get_shadow_ticket_execution_status,
     preview_shadow_ticket_execution,
     run_shadow_ticket_execution,
+)
+from backend.app.services.blockchain_parser_shadow_automation_cycle_service import (
+    CanonicalParserShadowAutomationCycleError,
+    get_shadow_automation_cycle,
+    get_shadow_automation_cycle_status,
+    preview_shadow_automation_cycle,
+    run_shadow_automation_cycle,
+)
+from backend.app.services.blockchain_parser_shadow_scheduler_service import (
+    CanonicalParserShadowSchedulerError,
+    engage_shadow_scheduler_kill_switch,
+    get_shadow_scheduler_state,
+    get_shadow_scheduler_status,
+    get_shadow_scheduler_tick,
+    heartbeat_shadow_scheduler,
+    preview_shadow_scheduler_start,
+    preview_shadow_scheduler_tick,
+    reset_shadow_scheduler_kill_switch,
+    run_shadow_scheduler_tick,
+    start_shadow_scheduler,
+    stop_shadow_scheduler,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -1961,3 +1987,301 @@ def read_shadow_ticket_execution_run_endpoint(
             detail={"code": exception.code, "message": str(exception)},
         ) from exception
 # END M16 TICKET-BOUND SHADOW EXECUTION AND ATOMIC BUDGET SETTLEMENT
+
+
+# BEGIN M17 SHADOW AUTOMATION CYCLE COORDINATOR
+@app.get(
+    "/integrity/parser-shadow-automation-cycle/status",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_automation_cycle_status(db: Session = Depends(get_db)):
+    return get_shadow_automation_cycle_status(db)
+
+
+@app.get(
+    "/integrity/parser-shadow-automation-cycle/preview",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_automation_cycle_preview(
+    permit_id: str | None = Query(default=None, min_length=36, max_length=36),
+    raw_event_ids: list[int] | None = Query(default=None),
+    event_reservation: int = Query(default=10, ge=1, le=100),
+    limit: int = Query(default=10, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_shadow_automation_cycle(
+            db,
+            permit_id=permit_id,
+            raw_event_ids=raw_event_ids,
+            event_reservation=event_reservation,
+            limit=limit,
+        )
+    except CanonicalParserShadowAutomationCycleError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-shadow-automation-cycle/run",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def run_shadow_automation_cycle_endpoint(
+    request: CanonicalParserShadowAutomationCycleRunRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return run_shadow_automation_cycle(
+            db,
+            confirmation=request.confirmation,
+            permit_id=request.permit_id,
+            raw_event_ids=request.raw_event_ids,
+            event_reservation=request.event_reservation,
+            limit=request.limit,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserShadowAutomationCycleError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/parser-shadow-automation-cycle/cycles/{cycle_id}",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_automation_cycle_endpoint(
+    cycle_id: str, db: Session = Depends(get_db)
+):
+    try:
+        return get_shadow_automation_cycle(db, cycle_id)
+    except CanonicalParserShadowAutomationCycleError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+# END M17 SHADOW AUTOMATION CYCLE COORDINATOR
+
+
+# BEGIN M18 SHADOW SCHEDULER CONTROL PLANE
+@app.get(
+    "/integrity/parser-shadow-scheduler/status",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_scheduler_status(db: Session = Depends(get_db)):
+    return get_shadow_scheduler_status(db)
+
+
+@app.get(
+    "/integrity/parser-shadow-scheduler/state",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_scheduler_state(db: Session = Depends(get_db)):
+    return get_shadow_scheduler_state(db)
+
+
+@app.get(
+    "/integrity/parser-shadow-scheduler/start-preview",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_scheduler_start_preview(
+    permit_id: str = Query(min_length=36, max_length=36),
+    interval_seconds: int = Query(default=300, ge=1, le=86400),
+    event_reservation: int = Query(default=10, ge=1, le=100),
+    limit: int = Query(default=10, ge=1, le=100),
+):
+    return preview_shadow_scheduler_start(
+        permit_id=permit_id,
+        interval_seconds=interval_seconds,
+        event_reservation=event_reservation,
+        limit=limit,
+    )
+
+
+@app.post(
+    "/integrity/parser-shadow-scheduler/start",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def start_shadow_scheduler_endpoint(
+    request: CanonicalParserShadowSchedulerStartRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return start_shadow_scheduler(
+            db,
+            confirmation=request.confirmation,
+            permit_id=request.permit_id,
+            interval_seconds=request.interval_seconds,
+            event_reservation=request.event_reservation,
+            limit=request.limit,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserShadowSchedulerError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-shadow-scheduler/stop",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def stop_shadow_scheduler_endpoint(
+    request: CanonicalParserShadowSchedulerControlRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return stop_shadow_scheduler(
+            db,
+            confirmation=request.confirmation,
+            reason=request.reason,
+            actor_label=request.actor_label,
+        )
+    except CanonicalParserShadowSchedulerError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-shadow-scheduler/kill",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def kill_shadow_scheduler_endpoint(
+    request: CanonicalParserShadowSchedulerControlRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return engage_shadow_scheduler_kill_switch(
+            db,
+            confirmation=request.confirmation,
+            reason=request.reason,
+            actor_label=request.actor_label,
+        )
+    except CanonicalParserShadowSchedulerError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-shadow-scheduler/reset",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def reset_shadow_scheduler_endpoint(
+    request: CanonicalParserShadowSchedulerControlRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return reset_shadow_scheduler_kill_switch(
+            db,
+            confirmation=request.confirmation,
+            reason=request.reason,
+            actor_label=request.actor_label,
+        )
+    except CanonicalParserShadowSchedulerError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-shadow-scheduler/heartbeat",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def heartbeat_shadow_scheduler_endpoint(
+    request: CanonicalParserShadowSchedulerHeartbeatRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return heartbeat_shadow_scheduler(
+            db,
+            confirmation=request.confirmation,
+            actor_label=request.actor_label,
+        )
+    except CanonicalParserShadowSchedulerError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/parser-shadow-scheduler/tick-preview",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_scheduler_tick_preview(
+    raw_event_ids: list[int] | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_shadow_scheduler_tick(db, raw_event_ids=raw_event_ids)
+    except CanonicalParserShadowSchedulerError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-shadow-scheduler/tick",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def run_shadow_scheduler_tick_endpoint(
+    request: CanonicalParserShadowSchedulerTickRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return run_shadow_scheduler_tick(
+            db,
+            confirmation=request.confirmation,
+            raw_event_ids=request.raw_event_ids,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserShadowSchedulerError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/parser-shadow-scheduler/ticks/{tick_id}",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_shadow_scheduler_tick_endpoint(
+    tick_id: str, db: Session = Depends(get_db)
+):
+    try:
+        return get_shadow_scheduler_tick(db, tick_id)
+    except CanonicalParserShadowSchedulerError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+# END M18 SHADOW SCHEDULER CONTROL PLANE

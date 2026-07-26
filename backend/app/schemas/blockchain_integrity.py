@@ -217,3 +217,41 @@ class CanonicalParserShadowTicketExecutionRunRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=100)
     actor_label: str | None = Field(default=None, max_length=80)
     note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserShadowAutomationCycleRunRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=260)
+    permit_id: str | None = Field(default=None, min_length=36, max_length=36)
+    raw_event_ids: list[int] | None = None
+    event_reservation: int = Field(default=10, ge=1, le=100)
+    limit: int = Field(default=10, ge=1, le=100)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserShadowSchedulerStartRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=280)
+    permit_id: str = Field(min_length=36, max_length=36)
+    interval_seconds: int = Field(default=300, ge=1, le=86400)
+    event_reservation: int = Field(default=10, ge=1, le=100)
+    limit: int = Field(default=10, ge=1, le=100)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserShadowSchedulerControlRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=280)
+    reason: str = Field(min_length=3, max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+
+
+class CanonicalParserShadowSchedulerHeartbeatRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=280)
+    actor_label: str | None = Field(default=None, max_length=80)
+
+
+class CanonicalParserShadowSchedulerTickRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=280)
+    raw_event_ids: list[int] | None = None
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
