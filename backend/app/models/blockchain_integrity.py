@@ -4243,3 +4243,234 @@ class CanonicalParserPaperAdmissionCanaryResult(Base):
     reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     canary_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPaperCanaryReadinessAssessment(Base):
+    __tablename__ = "canonical_parser_paper_canary_readiness_assessments"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('READY', 'REVIEW', 'BLOCKED', 'INSUFFICIENT_DATA')",
+            name="ck_parser_paper_canary_readiness_status",
+        ),
+        CheckConstraint(
+            "run_count >= 0 AND passed_run_count >= 0 AND review_run_count >= 0 "
+            "AND blocked_run_count >= 0 AND insufficient_run_count >= 0",
+            name="ck_parser_paper_canary_readiness_run_counts",
+        ),
+        CheckConstraint(
+            "run_count = passed_run_count + review_run_count + blocked_run_count + insufficient_run_count",
+            name="ck_parser_paper_canary_readiness_run_breakdown",
+        ),
+        CheckConstraint(
+            "result_count >= 0 AND admissible_count >= 0 AND review_result_count >= 0 AND blocked_result_count >= 0",
+            name="ck_parser_paper_canary_readiness_result_counts",
+        ),
+        CheckConstraint(
+            "result_count = admissible_count + review_result_count + blocked_result_count",
+            name="ck_parser_paper_canary_readiness_result_breakdown",
+        ),
+        CheckConstraint("length(assessment_key) = 64", name="ck_parser_paper_canary_readiness_key"),
+        CheckConstraint("length(binding_event_hash) = 64", name="ck_parser_paper_canary_readiness_binding_hash"),
+        CheckConstraint("length(policy_hash) = 64", name="ck_parser_paper_canary_readiness_policy_hash"),
+        CheckConstraint("length(evidence_hash) = 64", name="ck_parser_paper_canary_readiness_evidence_hash"),
+        UniqueConstraint("assessment_id", name="uq_parser_paper_canary_readiness_id"),
+        UniqueConstraint("assessment_key", name="uq_parser_paper_canary_readiness_key"),
+        Index("ix_parser_paper_canary_readiness_status_valid", "status", "valid_until"),
+        Index("ix_parser_paper_canary_readiness_binding_evaluated", "binding_db_id", "evaluated_at"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    assessment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    assessment_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    binding_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_paper_runtime_bindings.id", ondelete="RESTRICT"), nullable=False
+    )
+    binding_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    binding_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    certification_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    paper_account_id: Mapped[int] = mapped_column(ForeignKey("paper_accounts.id", ondelete="RESTRICT"), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    run_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    passed_run_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    review_run_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    blocked_run_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    insufficient_run_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    result_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    admissible_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    review_result_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    blocked_result_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    observation_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    observation_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    latest_source_valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    freshness_cutoff_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    metrics_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPaperCanaryReadinessEvidenceRun(Base):
+    __tablename__ = "canonical_parser_paper_canary_readiness_evidence_runs"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_parser_paper_canary_readiness_evidence_sequence"),
+        CheckConstraint(
+            "status IN ('PASSED', 'REVIEW', 'BLOCKED', 'INSUFFICIENT_DATA')",
+            name="ck_parser_paper_canary_readiness_evidence_status",
+        ),
+        CheckConstraint(
+            "source_result_count >= 0 AND admissible_count >= 0 AND review_count >= 0 AND blocked_count >= 0",
+            name="ck_parser_paper_canary_readiness_evidence_counts",
+        ),
+        CheckConstraint(
+            "source_result_count = admissible_count + review_count + blocked_count",
+            name="ck_parser_paper_canary_readiness_evidence_breakdown",
+        ),
+        CheckConstraint("length(canary_key) = 64", name="ck_parser_paper_canary_readiness_evidence_key"),
+        CheckConstraint("length(binding_event_hash) = 64", name="ck_parser_paper_canary_readiness_evidence_binding_hash"),
+        CheckConstraint("length(source_evidence_hash) = 64", name="ck_parser_paper_canary_readiness_evidence_source_hash"),
+        CheckConstraint("length(account_state_hash) = 64", name="ck_parser_paper_canary_readiness_evidence_account_hash"),
+        CheckConstraint("length(policy_hash) = 64", name="ck_parser_paper_canary_readiness_evidence_policy_hash"),
+        CheckConstraint("length(run_evidence_hash) = 64", name="ck_parser_paper_canary_readiness_evidence_run_hash"),
+        UniqueConstraint("assessment_db_id", "sequence", name="uq_parser_paper_canary_readiness_evidence_sequence"),
+        UniqueConstraint("assessment_db_id", "canary_run_db_id", name="uq_parser_paper_canary_readiness_evidence_source"),
+        Index("ix_parser_paper_canary_readiness_evidence_assessment_status", "assessment_db_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    assessment_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_paper_canary_readiness_assessments.id", ondelete="CASCADE"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    canary_run_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_paper_admission_canary_runs.id", ondelete="RESTRICT"), nullable=False
+    )
+    canary_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_result_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    admissible_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    review_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    blocked_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    canary_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    binding_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    account_state_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    run_evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPaperExecutionPermit(Base):
+    __tablename__ = "canonical_parser_paper_execution_permits"
+    __table_args__ = (
+        CheckConstraint("status IN ('ACTIVE', 'REVOKED')", name="ck_parser_paper_execution_permits_status"),
+        CheckConstraint(
+            "scope = 'PAPER_EXECUTION_METADATA_ONLY'",
+            name="ck_parser_paper_execution_permits_scope",
+        ),
+        CheckConstraint("requested_validity_minutes >= 1", name="ck_parser_paper_execution_permits_validity"),
+        CheckConstraint(
+            "total_budget_sol > 0 AND max_order_budget_sol > 0 AND max_order_budget_sol <= total_budget_sol",
+            name="ck_parser_paper_execution_permits_budget",
+        ),
+        CheckConstraint("max_order_count >= 1", name="ck_parser_paper_execution_permits_order_count"),
+        CheckConstraint(
+            "consumed_budget_sol >= 0 AND consumed_budget_sol <= total_budget_sol",
+            name="ck_parser_paper_execution_permits_consumed_budget",
+        ),
+        CheckConstraint(
+            "consumed_order_count >= 0 AND consumed_order_count <= max_order_count",
+            name="ck_parser_paper_execution_permits_consumed_orders",
+        ),
+        CheckConstraint("latest_event_sequence >= 1", name="ck_parser_paper_execution_permits_event_sequence"),
+        CheckConstraint("length(permit_key) = 64", name="ck_parser_paper_execution_permits_key"),
+        CheckConstraint("length(readiness_evidence_hash) = 64", name="ck_parser_paper_execution_permits_evidence_hash"),
+        CheckConstraint("length(binding_event_hash) = 64", name="ck_parser_paper_execution_permits_binding_hash"),
+        CheckConstraint("length(policy_hash) = 64", name="ck_parser_paper_execution_permits_policy_hash"),
+        CheckConstraint("length(latest_event_hash) = 64", name="ck_parser_paper_execution_permits_event_hash"),
+        UniqueConstraint("permit_id", name="uq_parser_paper_execution_permits_id"),
+        UniqueConstraint("permit_key", name="uq_parser_paper_execution_permits_key"),
+        Index("ix_parser_paper_execution_permits_status_expires", "status", "expires_at"),
+        Index("ix_parser_paper_execution_permits_account_issued", "paper_account_id", "issued_at"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    permit_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    permit_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    readiness_assessment_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_paper_canary_readiness_assessments.id", ondelete="RESTRICT"), nullable=False
+    )
+    readiness_assessment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    readiness_evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    binding_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_paper_runtime_bindings.id", ondelete="RESTRICT"), nullable=False
+    )
+    binding_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    binding_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    certification_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    paper_account_id: Mapped[int] = mapped_column(ForeignKey("paper_accounts.id", ondelete="RESTRICT"), nullable=False)
+    paper_account_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    scope: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    requested_validity_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    max_order_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    max_order_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    consumed_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"), nullable=False)
+    consumed_order_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revocation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latest_event_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    latest_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    technical_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPaperExecutionPermitEvent(Base):
+    __tablename__ = "canonical_parser_paper_execution_permit_events"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_parser_paper_execution_permit_events_sequence"),
+        CheckConstraint("event_type IN ('ISSUED', 'REVOKED')", name="ck_parser_paper_execution_permit_events_type"),
+        CheckConstraint("new_status IN ('ACTIVE', 'REVOKED')", name="ck_parser_paper_execution_permit_events_status"),
+        CheckConstraint("length(event_hash) = 64", name="ck_parser_paper_execution_permit_events_hash"),
+        CheckConstraint(
+            "previous_event_hash IS NULL OR length(previous_event_hash) = 64",
+            name="ck_parser_paper_execution_permit_events_previous_hash",
+        ),
+        UniqueConstraint("event_id", name="uq_parser_paper_execution_permit_events_id"),
+        UniqueConstraint("permit_db_id", "sequence", name="uq_parser_paper_execution_permit_events_sequence"),
+        Index("ix_parser_paper_execution_permit_events_permit_occurred", "permit_db_id", "occurred_at"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    permit_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_paper_execution_permits.id", ondelete="CASCADE"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    previous_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    new_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

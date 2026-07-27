@@ -621,6 +621,68 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # PAPER CANARY READINESS EVIDENCE GATE
+    # Aggregates M28 metadata only; disabled by default.
+    # =========================
+
+    CANONICAL_PARSER_PAPER_CANARY_READINESS_ENABLED: bool = False
+    CANONICAL_PARSER_PAPER_CANARY_READINESS_LOOKBACK_MINUTES: int = Field(
+        default=1440, ge=1, le=10080
+    )
+    CANONICAL_PARSER_PAPER_CANARY_READINESS_MAX_SOURCE_RUNS: int = Field(
+        default=20, ge=1, le=200
+    )
+    CANONICAL_PARSER_PAPER_CANARY_READINESS_MIN_RUNS: int = Field(
+        default=3, ge=1, le=200
+    )
+    CANONICAL_PARSER_PAPER_CANARY_READINESS_MIN_RESULTS: int = Field(
+        default=3, ge=1, le=10000
+    )
+    CANONICAL_PARSER_PAPER_CANARY_READINESS_MIN_ADMISSIBLE_RESULTS: int = Field(
+        default=3, ge=1, le=10000
+    )
+    CANONICAL_PARSER_PAPER_CANARY_READINESS_MAX_REVIEW_RUNS: int = Field(
+        default=0, ge=0, le=200
+    )
+    CANONICAL_PARSER_PAPER_CANARY_READINESS_MAX_BLOCKED_RUNS: int = Field(
+        default=0, ge=0, le=200
+    )
+    CANONICAL_PARSER_PAPER_CANARY_READINESS_MAX_INSUFFICIENT_RUNS: int = Field(
+        default=0, ge=0, le=200
+    )
+    CANONICAL_PARSER_PAPER_CANARY_READINESS_MIN_OBSERVATION_MINUTES: int = Field(
+        default=5, ge=0, le=10080
+    )
+    CANONICAL_PARSER_PAPER_CANARY_READINESS_MAX_SOURCE_AGE_MINUTES: int = Field(
+        default=30, ge=1, le=10080
+    )
+    CANONICAL_PARSER_PAPER_CANARY_READINESS_VALIDITY_MINUTES: int = Field(
+        default=30, ge=1, le=1440
+    )
+
+    # =========================
+    # PAPER EXECUTION PERMIT GOVERNANCE
+    # Metadata-only permit; disabled by default and disconnected from execution.
+    # =========================
+
+    CANONICAL_PARSER_PAPER_EXECUTION_PERMIT_ENABLED: bool = False
+    CANONICAL_PARSER_PAPER_EXECUTION_PERMIT_MAX_VALIDITY_MINUTES: int = Field(
+        default=60, ge=1, le=1440
+    )
+    CANONICAL_PARSER_PAPER_EXECUTION_PERMIT_MAX_TOTAL_BUDGET_SOL: float = Field(
+        default=1.0, gt=0, le=1000000
+    )
+    CANONICAL_PARSER_PAPER_EXECUTION_PERMIT_MAX_ORDER_BUDGET_SOL: float = Field(
+        default=0.25, gt=0, le=1000000
+    )
+    CANONICAL_PARSER_PAPER_EXECUTION_PERMIT_MAX_ORDER_COUNT: int = Field(
+        default=20, ge=1, le=100000
+    )
+    CANONICAL_PARSER_PAPER_EXECUTION_PERMIT_MIN_READINESS_REMAINING_MINUTES: int = Field(
+        default=2, ge=0, le=1440
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

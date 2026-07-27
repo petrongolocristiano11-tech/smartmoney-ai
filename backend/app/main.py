@@ -109,6 +109,9 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserPaperRuntimeBindRequest,
     CanonicalParserPaperRuntimeUnbindRequest,
     CanonicalParserPaperAdmissionCanaryRunRequest,
+    CanonicalParserPaperCanaryReadinessAssessmentRequest,
+    CanonicalParserPaperExecutionPermitIssueRequest,
+    CanonicalParserPaperExecutionPermitRevokeRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -313,6 +316,23 @@ from backend.app.services.blockchain_parser_paper_admission_canary_service impor
     preview_paper_admission_canary,
     resolve_paper_admission_canary,
     run_paper_admission_canary,
+)
+from backend.app.services.blockchain_parser_paper_canary_readiness_service import (
+    CanonicalParserPaperCanaryReadinessError,
+    execute_paper_canary_readiness_assessment,
+    get_paper_canary_readiness_assessment,
+    get_paper_canary_readiness_status,
+    preview_paper_canary_readiness,
+    resolve_paper_canary_readiness,
+)
+from backend.app.services.blockchain_parser_paper_execution_permit_service import (
+    CanonicalParserPaperExecutionPermitError,
+    get_paper_execution_permit,
+    get_paper_execution_permit_status,
+    issue_paper_execution_permit,
+    preview_paper_execution_permit,
+    resolve_paper_execution_permit,
+    revoke_paper_execution_permit,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -2730,3 +2750,110 @@ def read_paper_admission_canary_run_endpoint(canary_id: str, db: Session = Depen
 def resolve_paper_admission_canary_endpoint(db: Session = Depends(get_db)):
     return resolve_paper_admission_canary(db)
 # END M28 PAPER ADMISSION CANARY
+
+# BEGIN M29 PAPER CANARY READINESS EVIDENCE GATE
+@app.get("/integrity/parser-paper-canary-readiness/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_canary_readiness_status(db: Session = Depends(get_db)):
+    return get_paper_canary_readiness_status(db)
+
+
+@app.get("/integrity/parser-paper-canary-readiness/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_canary_readiness_preview(db: Session = Depends(get_db)):
+    return preview_paper_canary_readiness(db)
+
+
+@app.post("/integrity/parser-paper-canary-readiness/assess", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def assess_paper_canary_readiness_endpoint(request: CanonicalParserPaperCanaryReadinessAssessmentRequest, db: Session = Depends(get_db)):
+    try:
+        return execute_paper_canary_readiness_assessment(
+            db,
+            confirmation=request.confirmation,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserPaperCanaryReadinessError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-paper-canary-readiness/assessments/{assessment_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_canary_readiness_assessment_endpoint(assessment_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_paper_canary_readiness_assessment(db, assessment_id)
+    except CanonicalParserPaperCanaryReadinessError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-paper-canary-readiness/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_paper_canary_readiness_endpoint(db: Session = Depends(get_db)):
+    return resolve_paper_canary_readiness(db)
+# END M29 PAPER CANARY READINESS EVIDENCE GATE
+
+# BEGIN M30 PAPER EXECUTION PERMIT GOVERNANCE
+@app.get("/integrity/parser-paper-execution-permit/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_execution_permit_status(db: Session = Depends(get_db)):
+    return get_paper_execution_permit_status(db)
+
+
+@app.get("/integrity/parser-paper-execution-permit/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_execution_permit_preview(
+    readiness_assessment_id: str | None = Query(default=None, min_length=36, max_length=36),
+    validity_minutes: int = Query(default=15, ge=1, le=1440),
+    total_budget_sol: float = Query(default=0.5, gt=0, le=1000000),
+    max_order_budget_sol: float = Query(default=0.1, gt=0, le=1000000),
+    max_order_count: int = Query(default=5, ge=1, le=100000),
+    db: Session = Depends(get_db),
+):
+    return preview_paper_execution_permit(
+        db,
+        readiness_assessment_id=readiness_assessment_id,
+        validity_minutes=validity_minutes,
+        total_budget_sol=total_budget_sol,
+        max_order_budget_sol=max_order_budget_sol,
+        max_order_count=max_order_count,
+    )
+
+
+@app.post("/integrity/parser-paper-execution-permit/issue", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def issue_paper_execution_permit_endpoint(request: CanonicalParserPaperExecutionPermitIssueRequest, db: Session = Depends(get_db)):
+    try:
+        return issue_paper_execution_permit(
+            db,
+            readiness_assessment_id=request.readiness_assessment_id,
+            validity_minutes=request.validity_minutes,
+            total_budget_sol=request.total_budget_sol,
+            max_order_budget_sol=request.max_order_budget_sol,
+            max_order_count=request.max_order_count,
+            confirmation=request.confirmation,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserPaperExecutionPermitError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-paper-execution-permit/revoke", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def revoke_paper_execution_permit_endpoint(request: CanonicalParserPaperExecutionPermitRevokeRequest, db: Session = Depends(get_db)):
+    try:
+        return revoke_paper_execution_permit(
+            db,
+            permit_id=request.permit_id,
+            confirmation=request.confirmation,
+            reason=request.reason,
+            actor_label=request.actor_label,
+        )
+    except CanonicalParserPaperExecutionPermitError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-paper-execution-permit/permits/{permit_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_execution_permit_endpoint(permit_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_paper_execution_permit(db, permit_id)
+    except CanonicalParserPaperExecutionPermitError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-paper-execution-permit/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_paper_execution_permit_endpoint(db: Session = Depends(get_db)):
+    return resolve_paper_execution_permit(db)
+# END M30 PAPER EXECUTION PERMIT GOVERNANCE

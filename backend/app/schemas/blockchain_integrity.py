@@ -361,3 +361,26 @@ class CanonicalParserPaperAdmissionCanaryRunRequest(BaseModel):
     confirmation: str = Field(default="", max_length=320)
     actor_label: str | None = Field(default=None, max_length=80)
     note: str | None = Field(default=None, max_length=500)
+
+class CanonicalParserPaperCanaryReadinessAssessmentRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=320)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserPaperExecutionPermitIssueRequest(BaseModel):
+    readiness_assessment_id: str | None = Field(default=None, min_length=36, max_length=36)
+    validity_minutes: int = Field(default=15, ge=1, le=1440)
+    total_budget_sol: float = Field(default=0.5, gt=0, le=1000000)
+    max_order_budget_sol: float = Field(default=0.1, gt=0, le=1000000)
+    max_order_count: int = Field(default=5, ge=1, le=100000)
+    confirmation: str = Field(default="", max_length=320)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserPaperExecutionPermitRevokeRequest(BaseModel):
+    permit_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=320)
+    reason: str = Field(min_length=3, max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
