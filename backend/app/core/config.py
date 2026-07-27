@@ -545,6 +545,50 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # PAPER PROJECTION READINESS GATE
+    # Evidence-only assessment across multiple M24 dry-runs.
+    # =========================
+
+    CANONICAL_PARSER_PAPER_PROJECTION_READINESS_ENABLED: bool = False
+    CANONICAL_PARSER_PAPER_PROJECTION_READINESS_LOOKBACK_MINUTES: int = Field(
+        default=1440, ge=1, le=10080
+    )
+    CANONICAL_PARSER_PAPER_PROJECTION_READINESS_MAX_SOURCE_RUNS: int = Field(
+        default=20, ge=1, le=1000
+    )
+    CANONICAL_PARSER_PAPER_PROJECTION_READINESS_MIN_RUNS: int = Field(
+        default=3, ge=1, le=1000
+    )
+    CANONICAL_PARSER_PAPER_PROJECTION_READINESS_MIN_RESULTS: int = Field(
+        default=3, ge=1, le=100000
+    )
+    CANONICAL_PARSER_PAPER_PROJECTION_READINESS_MIN_PROJECTABLE_RATE: float = Field(
+        default=100.0, ge=0.0, le=100.0
+    )
+    CANONICAL_PARSER_PAPER_PROJECTION_READINESS_MAX_REVIEW_RESULTS: int = Field(
+        default=0, ge=0, le=100000
+    )
+    CANONICAL_PARSER_PAPER_PROJECTION_READINESS_MAX_REJECTED_RESULTS: int = Field(
+        default=0, ge=0, le=100000
+    )
+    CANONICAL_PARSER_PAPER_PROJECTION_READINESS_MIN_OBSERVATION_MINUTES: int = Field(
+        default=5, ge=0, le=10080
+    )
+    CANONICAL_PARSER_PAPER_PROJECTION_READINESS_VALIDITY_MINUTES: int = Field(
+        default=30, ge=1, le=10080
+    )
+
+    # =========================
+    # PAPER ADMISSION CERTIFICATION
+    # Metadata-only certification; not connected to PAPER execution.
+    # =========================
+
+    CANONICAL_PARSER_PAPER_ADMISSION_CERTIFICATION_ENABLED: bool = False
+    CANONICAL_PARSER_PAPER_ADMISSION_CERTIFICATION_VALIDITY_MINUTES: int = Field(
+        default=60, ge=1, le=10080
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

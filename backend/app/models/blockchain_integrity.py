@@ -3947,3 +3947,149 @@ class CanonicalParserPaperProjectionResult(Base):
     projection_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPaperProjectionReadinessAssessment(Base):
+    __tablename__ = "canonical_parser_paper_projection_readiness_assessments"
+    __table_args__ = (
+        CheckConstraint("status IN ('READY', 'REVIEW', 'BLOCKED', 'INSUFFICIENT_DATA')", name="ck_parser_paper_projection_readiness_status"),
+        CheckConstraint("run_count >= 0 AND result_count >= 0 AND projectable_count >= 0 AND review_count >= 0 AND rejected_count >= 0", name="ck_parser_paper_projection_readiness_counts"),
+        CheckConstraint("result_count = projectable_count + review_count + rejected_count", name="ck_parser_paper_projection_readiness_breakdown"),
+        CheckConstraint("projectable_rate >= 0 AND projectable_rate <= 100", name="ck_parser_paper_projection_readiness_rate"),
+        CheckConstraint("length(assessment_key) = 64", name="ck_parser_paper_projection_readiness_key"),
+        CheckConstraint("length(certification_event_hash) = 64", name="ck_parser_paper_projection_readiness_cert_hash"),
+        CheckConstraint("length(policy_hash) = 64", name="ck_parser_paper_projection_readiness_policy_hash"),
+        CheckConstraint("length(evidence_hash) = 64", name="ck_parser_paper_projection_readiness_evidence_hash"),
+        UniqueConstraint("assessment_id", name="uq_parser_paper_projection_readiness_id"),
+        UniqueConstraint("assessment_key", name="uq_parser_paper_projection_readiness_key"),
+        Index("ix_parser_paper_projection_readiness_status_valid", "status", "valid_until"),
+        Index("ix_parser_paper_projection_readiness_cert", "certification_db_id", "evaluated_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    assessment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    assessment_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    certification_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_shadow_reliability_certifications.id", ondelete="RESTRICT"), nullable=False)
+    certification_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    certification_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    run_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    result_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    projectable_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    review_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    rejected_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    projectable_rate: Mapped[Decimal] = mapped_column(Numeric(7, 4), nullable=False)
+    observation_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    observation_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    metrics_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPaperProjectionReadinessEvidenceRun(Base):
+    __tablename__ = "canonical_parser_paper_projection_readiness_evidence_runs"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_parser_paper_projection_readiness_evidence_sequence"),
+        CheckConstraint("status IN ('PASSED', 'PARTIAL', 'BLOCKED', 'INSUFFICIENT_DATA')", name="ck_parser_paper_projection_readiness_evidence_status"),
+        CheckConstraint("source_result_count >= 0 AND projectable_count >= 0 AND review_count >= 0 AND rejected_count >= 0", name="ck_parser_paper_projection_readiness_evidence_counts"),
+        CheckConstraint("source_result_count = projectable_count + review_count + rejected_count", name="ck_parser_paper_projection_readiness_evidence_breakdown"),
+        CheckConstraint("length(projection_key) = 64", name="ck_parser_paper_projection_readiness_evidence_projection_key"),
+        CheckConstraint("length(policy_hash) = 64", name="ck_parser_paper_projection_readiness_evidence_policy_hash"),
+        CheckConstraint("length(source_evidence_hash) = 64", name="ck_parser_paper_projection_readiness_evidence_source_hash"),
+        CheckConstraint("length(run_evidence_hash) = 64", name="ck_parser_paper_projection_readiness_evidence_run_hash"),
+        UniqueConstraint("assessment_db_id", "sequence", name="uq_parser_paper_projection_readiness_evidence_sequence"),
+        UniqueConstraint("assessment_db_id", "projection_run_db_id", name="uq_parser_paper_projection_readiness_evidence_run"),
+        Index("ix_parser_paper_projection_readiness_evidence_assessment", "assessment_db_id", "sequence"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    assessment_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_paper_projection_readiness_assessments.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    projection_run_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_paper_projection_runs.id", ondelete="RESTRICT"), nullable=False)
+    projection_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_result_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    projectable_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    review_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    rejected_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    projection_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    run_evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPaperAdmissionCertification(Base):
+    __tablename__ = "canonical_parser_paper_admission_certifications"
+    __table_args__ = (
+        CheckConstraint("status IN ('ACTIVE', 'REVOKED')", name="ck_parser_paper_admission_certifications_status"),
+        CheckConstraint("length(certification_key) = 64", name="ck_parser_paper_admission_certifications_key"),
+        CheckConstraint("length(reliability_certification_event_hash) = 64", name="ck_parser_paper_admission_certifications_reliability_hash"),
+        CheckConstraint("length(evidence_hash) = 64", name="ck_parser_paper_admission_certifications_evidence_hash"),
+        CheckConstraint("length(policy_hash) = 64", name="ck_parser_paper_admission_certifications_policy_hash"),
+        CheckConstraint("latest_event_sequence >= 1", name="ck_parser_paper_admission_certifications_event_sequence"),
+        CheckConstraint("length(latest_event_hash) = 64", name="ck_parser_paper_admission_certifications_event_hash"),
+        UniqueConstraint("certification_id", name="uq_parser_paper_admission_certifications_id"),
+        UniqueConstraint("certification_key", name="uq_parser_paper_admission_certifications_key"),
+        Index("ix_parser_paper_admission_certifications_status_expiry", "status", "expires_at"),
+        Index("ix_parser_paper_admission_certifications_assessment", "assessment_db_id", "certified_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    certification_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    certification_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    assessment_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_paper_projection_readiness_assessments.id", ondelete="RESTRICT"), nullable=False)
+    assessment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    assessment_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    reliability_certification_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    reliability_certification_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    certified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revocation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latest_event_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    latest_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    technical_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class CanonicalParserPaperAdmissionCertificationEvent(Base):
+    __tablename__ = "canonical_parser_paper_admission_certification_events"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_parser_paper_admission_certification_events_sequence"),
+        CheckConstraint("event_type IN ('CERTIFIED', 'REVOKED')", name="ck_parser_paper_admission_certification_events_type"),
+        CheckConstraint("new_status IN ('ACTIVE', 'REVOKED')", name="ck_parser_paper_admission_certification_events_status"),
+        CheckConstraint("length(event_hash) = 64", name="ck_parser_paper_admission_certification_events_hash"),
+        UniqueConstraint("event_id", name="uq_parser_paper_admission_certification_events_id"),
+        UniqueConstraint("certification_db_id", "sequence", name="uq_parser_paper_admission_certification_events_sequence"),
+        Index("ix_parser_paper_admission_certification_events_cert_sequence", "certification_db_id", "sequence"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    certification_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_paper_admission_certifications.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    previous_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    new_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

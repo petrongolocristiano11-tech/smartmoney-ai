@@ -322,3 +322,22 @@ class CanonicalParserPaperProjectionRunRequest(BaseModel):
     confirmation: str = Field(default="", max_length=320)
     actor_label: str | None = Field(default=None, max_length=80)
     note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserPaperProjectionReadinessAssessmentRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=320)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserPaperAdmissionCertificationRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=320)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserPaperAdmissionCertificationRevokeRequest(BaseModel):
+    certification_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=320)
+    reason: str = Field(min_length=3, max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)

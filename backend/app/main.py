@@ -103,6 +103,9 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserShadowReliabilityCertificationRequest,
     CanonicalParserShadowReliabilityCertificationRevokeRequest,
     CanonicalParserPaperProjectionRunRequest,
+    CanonicalParserPaperProjectionReadinessAssessmentRequest,
+    CanonicalParserPaperAdmissionCertificationRequest,
+    CanonicalParserPaperAdmissionCertificationRevokeRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -273,6 +276,23 @@ from backend.app.services.blockchain_parser_paper_projection_service import (
     preview_paper_projection,
     resolve_paper_projection,
     run_paper_projection,
+)
+from backend.app.services.blockchain_parser_paper_projection_readiness_service import (
+    CanonicalParserPaperProjectionReadinessError,
+    execute_paper_projection_readiness_assessment,
+    get_paper_projection_readiness_assessment,
+    get_paper_projection_readiness_status,
+    preview_paper_projection_readiness,
+    resolve_paper_projection_readiness,
+)
+from backend.app.services.blockchain_parser_paper_admission_certification_service import (
+    CanonicalParserPaperAdmissionCertificationError,
+    certify_paper_admission,
+    get_paper_admission_certification,
+    get_paper_admission_certification_status,
+    preview_paper_admission_certification,
+    resolve_paper_admission_certification,
+    revoke_paper_admission_certification,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -2564,3 +2584,66 @@ def read_paper_projection_run_endpoint(projection_id: str, db: Session = Depends
 def resolve_paper_projection_endpoint(db: Session = Depends(get_db)):
     return resolve_paper_projection(db)
 # END M24 PAPER PROJECTION DRY RUN
+
+# BEGIN M25 PAPER PROJECTION READINESS EVIDENCE GATE
+@app.get("/integrity/parser-paper-projection-readiness/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_projection_readiness_status(db: Session = Depends(get_db)):
+    return get_paper_projection_readiness_status(db)
+
+@app.get("/integrity/parser-paper-projection-readiness/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_projection_readiness_preview(db: Session = Depends(get_db)):
+    return preview_paper_projection_readiness(db)
+
+@app.post("/integrity/parser-paper-projection-readiness/assess", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def assess_paper_projection_readiness_endpoint(request: CanonicalParserPaperProjectionReadinessAssessmentRequest, db: Session = Depends(get_db)):
+    try:
+        return execute_paper_projection_readiness_assessment(db, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserPaperProjectionReadinessError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.get("/integrity/parser-paper-projection-readiness/assessments/{assessment_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_projection_readiness_assessment_endpoint(assessment_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_paper_projection_readiness_assessment(db, assessment_id)
+    except CanonicalParserPaperProjectionReadinessError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.get("/integrity/parser-paper-projection-readiness/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_paper_projection_readiness_endpoint(db: Session = Depends(get_db)):
+    return resolve_paper_projection_readiness(db)
+# END M25 PAPER PROJECTION READINESS EVIDENCE GATE
+
+# BEGIN M26 PAPER ADMISSION CERTIFICATION
+@app.get("/integrity/parser-paper-admission-certification/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_admission_certification_status(db: Session = Depends(get_db)):
+    return get_paper_admission_certification_status(db)
+
+@app.get("/integrity/parser-paper-admission-certification/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_admission_certification_preview(db: Session = Depends(get_db)):
+    return preview_paper_admission_certification(db)
+
+@app.post("/integrity/parser-paper-admission-certification/certify", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def certify_paper_admission_endpoint(request: CanonicalParserPaperAdmissionCertificationRequest, db: Session = Depends(get_db)):
+    try:
+        return certify_paper_admission(db, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserPaperAdmissionCertificationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.post("/integrity/parser-paper-admission-certification/revoke", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def revoke_paper_admission_certification_endpoint(request: CanonicalParserPaperAdmissionCertificationRevokeRequest, db: Session = Depends(get_db)):
+    try:
+        return revoke_paper_admission_certification(db, certification_id=request.certification_id, confirmation=request.confirmation, reason=request.reason, actor_label=request.actor_label)
+    except CanonicalParserPaperAdmissionCertificationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.get("/integrity/parser-paper-admission-certification/certifications/{certification_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_admission_certification_endpoint(certification_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_paper_admission_certification(db, certification_id)
+    except CanonicalParserPaperAdmissionCertificationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.get("/integrity/parser-paper-admission-certification/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_paper_admission_certification_endpoint(db: Session = Depends(get_db)):
+    return resolve_paper_admission_certification(db)
+# END M26 PAPER ADMISSION CERTIFICATION
