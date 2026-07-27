@@ -589,6 +589,38 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # PAPER RUNTIME BINDING
+    # Read-only metadata binding to one PAPER account.
+    # =========================
+
+    CANONICAL_PARSER_PAPER_RUNTIME_BINDING_ENABLED: bool = False
+    CANONICAL_PARSER_PAPER_RUNTIME_BINDING_VALIDITY_MINUTES: int = Field(
+        default=60, ge=1, le=10080
+    )
+
+    # =========================
+    # PAPER ADMISSION CANARY
+    # Read-only risk interlock; never executes PAPER orders.
+    # =========================
+
+    CANONICAL_PARSER_PAPER_ADMISSION_CANARY_ENABLED: bool = False
+    CANONICAL_PARSER_PAPER_ADMISSION_CANARY_VALIDITY_MINUTES: int = Field(
+        default=15, ge=1, le=1440
+    )
+    CANONICAL_PARSER_PAPER_ADMISSION_CANARY_MAX_SOURCE_RUNS: int = Field(
+        default=3, ge=1, le=100
+    )
+    CANONICAL_PARSER_PAPER_ADMISSION_CANARY_MAX_RESULTS: int = Field(
+        default=25, ge=1, le=1000
+    )
+    CANONICAL_PARSER_PAPER_ADMISSION_CANARY_MIN_ADMISSIBLE_RESULTS: int = Field(
+        default=1, ge=1, le=1000
+    )
+    CANONICAL_PARSER_PAPER_ADMISSION_CANARY_MAX_CUMULATIVE_BUY_FRACTION: float = Field(
+        default=0.5, gt=0, le=1
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

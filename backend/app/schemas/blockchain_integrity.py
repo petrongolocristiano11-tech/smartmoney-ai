@@ -341,3 +341,23 @@ class CanonicalParserPaperAdmissionCertificationRevokeRequest(BaseModel):
     confirmation: str = Field(default="", max_length=320)
     reason: str = Field(min_length=3, max_length=500)
     actor_label: str | None = Field(default=None, max_length=80)
+
+
+class CanonicalParserPaperRuntimeBindRequest(BaseModel):
+    paper_account_id: int = Field(ge=1)
+    confirmation: str = Field(default="", max_length=320)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserPaperRuntimeUnbindRequest(BaseModel):
+    binding_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=320)
+    reason: str = Field(min_length=3, max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+
+
+class CanonicalParserPaperAdmissionCanaryRunRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=320)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)

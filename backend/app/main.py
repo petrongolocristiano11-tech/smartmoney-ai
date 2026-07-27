@@ -106,6 +106,9 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserPaperProjectionReadinessAssessmentRequest,
     CanonicalParserPaperAdmissionCertificationRequest,
     CanonicalParserPaperAdmissionCertificationRevokeRequest,
+    CanonicalParserPaperRuntimeBindRequest,
+    CanonicalParserPaperRuntimeUnbindRequest,
+    CanonicalParserPaperAdmissionCanaryRunRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -293,6 +296,23 @@ from backend.app.services.blockchain_parser_paper_admission_certification_servic
     preview_paper_admission_certification,
     resolve_paper_admission_certification,
     revoke_paper_admission_certification,
+)
+from backend.app.services.blockchain_parser_paper_runtime_binding_service import (
+    CanonicalParserPaperRuntimeBindingError,
+    bind_paper_runtime,
+    get_paper_runtime_binding,
+    get_paper_runtime_binding_status,
+    preview_paper_runtime_binding,
+    resolve_paper_runtime_binding,
+    unbind_paper_runtime,
+)
+from backend.app.services.blockchain_parser_paper_admission_canary_service import (
+    CanonicalParserPaperAdmissionCanaryError,
+    get_paper_admission_canary_run,
+    get_paper_admission_canary_status,
+    preview_paper_admission_canary,
+    resolve_paper_admission_canary,
+    run_paper_admission_canary,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -2647,3 +2667,66 @@ def read_paper_admission_certification_endpoint(certification_id: str, db: Sessi
 def resolve_paper_admission_certification_endpoint(db: Session = Depends(get_db)):
     return resolve_paper_admission_certification(db)
 # END M26 PAPER ADMISSION CERTIFICATION
+
+# BEGIN M27 PAPER RUNTIME BINDING
+@app.get("/integrity/parser-paper-runtime-binding/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_runtime_binding_status(db: Session = Depends(get_db)):
+    return get_paper_runtime_binding_status(db)
+
+@app.get("/integrity/parser-paper-runtime-binding/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_runtime_binding_preview(paper_account_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
+    return preview_paper_runtime_binding(db, paper_account_id=paper_account_id)
+
+@app.post("/integrity/parser-paper-runtime-binding/bind", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def bind_paper_runtime_endpoint(request: CanonicalParserPaperRuntimeBindRequest, db: Session = Depends(get_db)):
+    try:
+        return bind_paper_runtime(db, paper_account_id=request.paper_account_id, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserPaperRuntimeBindingError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.post("/integrity/parser-paper-runtime-binding/unbind", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def unbind_paper_runtime_endpoint(request: CanonicalParserPaperRuntimeUnbindRequest, db: Session = Depends(get_db)):
+    try:
+        return unbind_paper_runtime(db, binding_id=request.binding_id, confirmation=request.confirmation, reason=request.reason, actor_label=request.actor_label)
+    except CanonicalParserPaperRuntimeBindingError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.get("/integrity/parser-paper-runtime-binding/bindings/{binding_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_runtime_binding_endpoint(binding_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_paper_runtime_binding(db, binding_id)
+    except CanonicalParserPaperRuntimeBindingError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.get("/integrity/parser-paper-runtime-binding/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_paper_runtime_binding_endpoint(db: Session = Depends(get_db)):
+    return resolve_paper_runtime_binding(db)
+# END M27 PAPER RUNTIME BINDING
+
+# BEGIN M28 PAPER ADMISSION CANARY
+@app.get("/integrity/parser-paper-admission-canary/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_admission_canary_status(db: Session = Depends(get_db)):
+    return get_paper_admission_canary_status(db)
+
+@app.get("/integrity/parser-paper-admission-canary/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_admission_canary_preview(db: Session = Depends(get_db)):
+    return preview_paper_admission_canary(db)
+
+@app.post("/integrity/parser-paper-admission-canary/run", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def run_paper_admission_canary_endpoint(request: CanonicalParserPaperAdmissionCanaryRunRequest, db: Session = Depends(get_db)):
+    try:
+        return run_paper_admission_canary(db, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserPaperAdmissionCanaryError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.get("/integrity/parser-paper-admission-canary/runs/{canary_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_admission_canary_run_endpoint(canary_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_paper_admission_canary_run(db, canary_id)
+    except CanonicalParserPaperAdmissionCanaryError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+@app.get("/integrity/parser-paper-admission-canary/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_paper_admission_canary_endpoint(db: Session = Depends(get_db)):
+    return resolve_paper_admission_canary(db)
+# END M28 PAPER ADMISSION CANARY
