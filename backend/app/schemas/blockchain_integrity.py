@@ -1,3 +1,6 @@
+from datetime import datetime
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -391,5 +394,35 @@ class CanonicalParserUnifiedDecisionRunRequest(BaseModel):
     lookback_minutes: int | None = Field(default=None, ge=1, le=10080)
     max_results: int | None = Field(default=None, ge=1, le=1000)
     source_trade_ids: list[int] | None = Field(default=None, max_length=1000)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+class CanonicalParserPermitBoundPaperExecutionRequest(BaseModel):
+    permit_id: str = Field(min_length=36, max_length=36)
+    decision_result_id: str = Field(min_length=36, max_length=36)
+    side: Literal["BUY", "SELL"]
+    market_price_sol: float = Field(gt=0, le=1000000000)
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    confirmation: str = Field(default="", max_length=500)
+    quantity: float | None = Field(default=None, gt=0)
+    slippage_percent: float = Field(default=0.5, ge=0, le=50)
+    fee_percent: float = Field(default=0.25, ge=0, le=20)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserPermitBoundPaperReconcileRequest(BaseModel):
+    execution_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+
+
+class CanonicalParserPaperCalibrationRunRequest(BaseModel):
+    paper_account_id: int = Field(ge=1)
+    permit_id: str | None = Field(default=None, min_length=36, max_length=36)
+    lookback_days: int | None = Field(default=None, ge=1, le=3650)
+    window_started_at: datetime | None = None
+    window_ended_at: datetime | None = None
+    confirmation: str = Field(default="", max_length=500)
     actor_label: str | None = Field(default=None, max_length=80)
     note: str | None = Field(default=None, max_length=500)

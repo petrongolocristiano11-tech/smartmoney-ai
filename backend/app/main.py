@@ -113,6 +113,9 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserPaperExecutionPermitIssueRequest,
     CanonicalParserPaperExecutionPermitRevokeRequest,
     CanonicalParserUnifiedDecisionRunRequest,
+    CanonicalParserPermitBoundPaperExecutionRequest,
+    CanonicalParserPermitBoundPaperReconcileRequest,
+    CanonicalParserPaperCalibrationRunRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -342,6 +345,23 @@ from backend.app.services.blockchain_parser_unified_decision_service import (
     preview_unified_decision,
     resolve_unified_decision,
     run_unified_decision_shadow_validation,
+)
+from backend.app.services.blockchain_parser_permit_bound_paper_execution_service import (
+    CanonicalParserPermitBoundPaperExecutionError,
+    execute_permit_bound_paper,
+    get_permit_bound_paper_execution,
+    get_permit_bound_paper_execution_status,
+    preview_permit_bound_paper_execution,
+    reconcile_permit_bound_paper_execution,
+    resolve_permit_bound_paper_execution,
+)
+from backend.app.services.blockchain_parser_paper_calibration_service import (
+    CanonicalParserPaperCalibrationError,
+    get_paper_calibration_campaign,
+    get_paper_calibration_status,
+    preview_paper_calibration_campaign,
+    resolve_paper_calibration_campaign,
+    run_paper_calibration_campaign,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -2926,3 +2946,176 @@ def resolve_unified_decision_endpoint(
 ):
     return resolve_unified_decision(db, token_mint=token_mint)
 # END M31 UNIFIED DECISION INTELLIGENCE & SHADOW VALIDATION
+
+# BEGIN M32 PERMIT-BOUND PAPER EXECUTION
+@app.get("/integrity/parser-permit-bound-paper-execution/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_permit_bound_paper_execution_status(db: Session = Depends(get_db)):
+    return get_permit_bound_paper_execution_status(db)
+
+
+@app.get("/integrity/parser-permit-bound-paper-execution/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_permit_bound_paper_execution_preview(
+    permit_id: str = Query(min_length=36, max_length=36),
+    decision_result_id: str = Query(min_length=36, max_length=36),
+    side: str = Query(pattern="^(BUY|SELL)$"),
+    market_price_sol: float = Query(gt=0, le=1000000000),
+    idempotency_token: str = Query(min_length=8, max_length=200),
+    quantity: float | None = Query(default=None, gt=0),
+    slippage_percent: float = Query(default=0.5, ge=0, le=50),
+    fee_percent: float = Query(default=0.25, ge=0, le=20),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_permit_bound_paper_execution(
+            db,
+            permit_id=permit_id,
+            decision_result_id=decision_result_id,
+            side=side,
+            market_price_sol=market_price_sol,
+            idempotency_token=idempotency_token,
+            quantity=quantity,
+            slippage_percent=slippage_percent,
+            fee_percent=fee_percent,
+        )
+    except CanonicalParserPermitBoundPaperExecutionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-permit-bound-paper-execution/execute", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def execute_permit_bound_paper_endpoint(
+    request: CanonicalParserPermitBoundPaperExecutionRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return execute_permit_bound_paper(
+            db,
+            permit_id=request.permit_id,
+            decision_result_id=request.decision_result_id,
+            side=request.side,
+            market_price_sol=request.market_price_sol,
+            idempotency_token=request.idempotency_token,
+            confirmation=request.confirmation,
+            quantity=request.quantity,
+            slippage_percent=request.slippage_percent,
+            fee_percent=request.fee_percent,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserPermitBoundPaperExecutionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-permit-bound-paper-execution/reconcile", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def reconcile_permit_bound_paper_endpoint(
+    request: CanonicalParserPermitBoundPaperReconcileRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return reconcile_permit_bound_paper_execution(
+            db,
+            execution_id=request.execution_id,
+            confirmation=request.confirmation,
+            actor_label=request.actor_label,
+        )
+    except CanonicalParserPermitBoundPaperExecutionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-permit-bound-paper-execution/executions/{execution_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_permit_bound_paper_execution_endpoint(execution_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_permit_bound_paper_execution(db, execution_id)
+    except CanonicalParserPermitBoundPaperExecutionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-permit-bound-paper-execution/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_permit_bound_paper_execution_endpoint(
+    paper_account_id: int | None = Query(default=None, ge=1),
+    db: Session = Depends(get_db),
+):
+    return resolve_permit_bound_paper_execution(db, paper_account_id=paper_account_id)
+# END M32 PERMIT-BOUND PAPER EXECUTION
+
+
+# BEGIN M33 PAPER RELIABILITY & CALIBRATION CAMPAIGN
+@app.get("/integrity/parser-paper-calibration/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_calibration_status(db: Session = Depends(get_db)):
+    return get_paper_calibration_status(db)
+
+
+@app.get("/integrity/parser-paper-calibration/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_calibration_preview(
+    paper_account_id: int = Query(ge=1),
+    permit_id: str | None = Query(default=None, min_length=36, max_length=36),
+    lookback_days: int | None = Query(default=None, ge=1, le=3650),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_paper_calibration_campaign(
+            db,
+            paper_account_id=paper_account_id,
+            permit_id=permit_id,
+            lookback_days=lookback_days,
+        )
+    except CanonicalParserPaperCalibrationError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-paper-calibration/run", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def run_paper_calibration_endpoint(
+    request: CanonicalParserPaperCalibrationRunRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return run_paper_calibration_campaign(
+            db,
+            paper_account_id=request.paper_account_id,
+            permit_id=request.permit_id,
+            lookback_days=request.lookback_days,
+            window_started_at=request.window_started_at,
+            window_ended_at=request.window_ended_at,
+            confirmation=request.confirmation,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserPaperCalibrationError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-paper-calibration/campaigns/{campaign_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_calibration_campaign_endpoint(campaign_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_paper_calibration_campaign(db, campaign_id)
+    except CanonicalParserPaperCalibrationError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-paper-calibration/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_paper_calibration_endpoint(
+    paper_account_id: int | None = Query(default=None, ge=1),
+    db: Session = Depends(get_db),
+):
+    return resolve_paper_calibration_campaign(db, paper_account_id=paper_account_id)
+# END M33 PAPER RELIABILITY & CALIBRATION CAMPAIGN

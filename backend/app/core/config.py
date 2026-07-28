@@ -753,6 +753,47 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # PERMIT-BOUND PAPER EXECUTION
+    # Manual only; disabled by default; never authorizes LIVE.
+    # =========================
+
+    CANONICAL_PARSER_PERMIT_BOUND_PAPER_EXECUTION_ENABLED: bool = False
+    CANONICAL_PARSER_PERMIT_BOUND_PAPER_EXECUTION_RESERVATION_TIMEOUT_MINUTES: int = Field(
+        default=10, ge=1, le=1440
+    )
+    CANONICAL_PARSER_PERMIT_BOUND_PAPER_EXECUTION_MAX_SLIPPAGE_PERCENT: float = Field(
+        default=5.0, ge=0, le=50
+    )
+    CANONICAL_PARSER_PERMIT_BOUND_PAPER_EXECUTION_MAX_FEE_PERCENT: float = Field(
+        default=2.0, ge=0, le=20
+    )
+    CANONICAL_PARSER_PERMIT_BOUND_PAPER_EXECUTION_MAX_DECISION_AGE_MINUTES: int = Field(
+        default=30, ge=1, le=1440
+    )
+
+    # =========================
+    # PAPER RELIABILITY & CALIBRATION CAMPAIGN
+    # Analytics only; disabled by default; never changes policies automatically.
+    # =========================
+
+    CANONICAL_PARSER_PAPER_CALIBRATION_ENABLED: bool = False
+    CANONICAL_PARSER_PAPER_CALIBRATION_DEFAULT_LOOKBACK_DAYS: int = Field(
+        default=30, ge=1, le=3650
+    )
+    CANONICAL_PARSER_PAPER_CALIBRATION_MIN_SETTLED_ATTEMPTS: int = Field(
+        default=20, ge=1, le=1000000
+    )
+    CANONICAL_PARSER_PAPER_CALIBRATION_MIN_CLOSED_OUTCOMES: int = Field(
+        default=10, ge=1, le=1000000
+    )
+    CANONICAL_PARSER_PAPER_CALIBRATION_MAX_CALIBRATION_GAP_PERCENT: float = Field(
+        default=20.0, ge=0, le=100
+    )
+    CANONICAL_PARSER_PAPER_CALIBRATION_MIN_RELIABILITY_SCORE: float = Field(
+        default=98.0, ge=0, le=100
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

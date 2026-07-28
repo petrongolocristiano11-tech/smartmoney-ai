@@ -4666,3 +4666,208 @@ class CanonicalParserUnifiedDecisionWalletEvidence(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class CanonicalParserPermitBoundPaperExecution(Base):
+    __tablename__ = "canonical_parser_permit_bound_paper_executions"
+    __table_args__ = (
+        CheckConstraint(
+            "side IN ('BUY', 'SELL')",
+            name="ck_parser_permit_bound_paper_executions_side",
+        ),
+        CheckConstraint(
+            "status IN ('RESERVED', 'SETTLED', 'RELEASED', 'FAILED', 'RECONCILIATION_REQUIRED')",
+            name="ck_parser_permit_bound_paper_executions_status",
+        ),
+        CheckConstraint(
+            "requested_budget_sol >= 0 AND reserved_budget_sol >= 0 AND settled_budget_sol >= 0",
+            name="ck_parser_permit_bound_paper_executions_budgets",
+        ),
+        CheckConstraint(
+            "quantity >= 0 AND market_price_sol > 0 AND slippage_percent >= 0 AND fee_percent >= 0",
+            name="ck_parser_permit_bound_paper_executions_values",
+        ),
+        CheckConstraint("length(idempotency_key) = 64", name="ck_parser_permit_bound_paper_executions_idempotency"),
+        CheckConstraint("length(decision_hash) = 64", name="ck_parser_permit_bound_paper_executions_decision_hash"),
+        CheckConstraint("length(reservation_hash) = 64", name="ck_parser_permit_bound_paper_executions_reservation_hash"),
+        CheckConstraint(
+            "settlement_hash IS NULL OR length(settlement_hash) = 64",
+            name="ck_parser_permit_bound_paper_executions_settlement_hash",
+        ),
+        UniqueConstraint("execution_id", name="uq_parser_permit_bound_paper_executions_id"),
+        UniqueConstraint("idempotency_key", name="uq_parser_permit_bound_paper_executions_idempotency"),
+        Index("ix_parser_permit_bound_paper_executions_status_created", "status", "created_at"),
+        Index("ix_parser_permit_bound_paper_executions_permit_created", "permit_db_id", "created_at"),
+        Index("ix_parser_permit_bound_paper_executions_account_token", "paper_account_id", "token_mint"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    execution_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    permit_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_paper_execution_permits.id", ondelete="RESTRICT"), nullable=False
+    )
+    permit_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    decision_result_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_unified_decision_results.id", ondelete="RESTRICT"), nullable=False
+    )
+    decision_result_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    decision_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    paper_account_id: Mapped[int] = mapped_column(ForeignKey("paper_accounts.id", ondelete="RESTRICT"), nullable=False)
+    paper_order_id: Mapped[int | None] = mapped_column(ForeignKey("paper_orders.id", ondelete="SET NULL"), nullable=True)
+    paper_position_id: Mapped[int | None] = mapped_column(ForeignKey("paper_positions.id", ondelete="SET NULL"), nullable=True)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    token_mint: Mapped[str] = mapped_column(String(64), nullable=False)
+    requested_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    reserved_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    settled_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(36, 18), nullable=False)
+    market_price_sol: Mapped[Decimal] = mapped_column(Numeric(36, 18), nullable=False)
+    slippage_percent: Mapped[Decimal] = mapped_column(Numeric(9, 6), nullable=False)
+    fee_percent: Mapped[Decimal] = mapped_column(Numeric(9, 6), nullable=False)
+    signal_score: Mapped[Decimal] = mapped_column(Numeric(7, 4), nullable=False)
+    confidence_score: Mapped[Decimal] = mapped_column(Numeric(7, 4), nullable=False)
+    permit_budget_before_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    permit_order_count_before: Mapped[int] = mapped_column(Integer, nullable=False)
+    reservation_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    settlement_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    failure_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    failure_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reserved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    technical_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPermitBoundPaperExecutionEvent(Base):
+    __tablename__ = "canonical_parser_permit_bound_paper_execution_events"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_parser_permit_bound_paper_execution_events_sequence"),
+        CheckConstraint(
+            "event_type IN ('RESERVED', 'SETTLED', 'RELEASED', 'FAILED', 'RECONCILIATION_REQUIRED')",
+            name="ck_parser_permit_bound_paper_execution_events_type",
+        ),
+        CheckConstraint("length(event_hash) = 64", name="ck_parser_permit_bound_paper_execution_events_hash"),
+        CheckConstraint(
+            "previous_event_hash IS NULL OR length(previous_event_hash) = 64",
+            name="ck_parser_permit_bound_paper_execution_events_previous_hash",
+        ),
+        UniqueConstraint("event_id", name="uq_parser_permit_bound_paper_execution_events_id"),
+        UniqueConstraint("execution_db_id", "sequence", name="uq_parser_permit_bound_paper_execution_events_sequence"),
+        Index("ix_parser_permit_bound_paper_execution_events_execution", "execution_db_id", "occurred_at"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    execution_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_permit_bound_paper_executions.id", ondelete="CASCADE"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPaperCalibrationCampaign(Base):
+    __tablename__ = "canonical_parser_paper_calibration_campaigns"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('READY', 'REVIEW', 'BLOCKED', 'INSUFFICIENT_DATA')",
+            name="ck_parser_paper_calibration_campaigns_status",
+        ),
+        CheckConstraint(
+            "scope = 'PAPER_ANALYTICS_ONLY'",
+            name="ck_parser_paper_calibration_campaigns_scope",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0 AND settled_count >= 0 AND released_count >= 0 AND failed_count >= 0",
+            name="ck_parser_paper_calibration_campaigns_attempt_counts",
+        ),
+        CheckConstraint(
+            "buy_count >= 0 AND sell_count >= 0 AND closed_outcome_count >= 0 AND winning_outcome_count >= 0",
+            name="ck_parser_paper_calibration_campaigns_outcome_counts",
+        ),
+        CheckConstraint("length(campaign_key) = 64", name="ck_parser_paper_calibration_campaigns_key"),
+        CheckConstraint("length(policy_hash) = 64", name="ck_parser_paper_calibration_campaigns_policy_hash"),
+        CheckConstraint("length(evidence_hash) = 64", name="ck_parser_paper_calibration_campaigns_evidence_hash"),
+        UniqueConstraint("campaign_id", name="uq_parser_paper_calibration_campaigns_id"),
+        UniqueConstraint("campaign_key", name="uq_parser_paper_calibration_campaigns_key"),
+        Index("ix_parser_paper_calibration_campaigns_account_completed", "paper_account_id", "completed_at"),
+        Index("ix_parser_paper_calibration_campaigns_status_completed", "status", "completed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    campaign_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    campaign_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    paper_account_id: Mapped[int] = mapped_column(ForeignKey("paper_accounts.id", ondelete="RESTRICT"), nullable=False)
+    permit_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    settled_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    released_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    failed_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    reconciliation_required_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    buy_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    sell_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    closed_outcome_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    winning_outcome_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    realized_pnl_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    total_fee_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    estimated_slippage_cost_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    win_rate_percent: Mapped[Decimal] = mapped_column(Numeric(7, 4), nullable=False)
+    profit_factor: Mapped[Decimal | None] = mapped_column(Numeric(20, 9), nullable=True)
+    brier_score: Mapped[Decimal | None] = mapped_column(Numeric(12, 9), nullable=True)
+    calibration_gap_percent: Mapped[Decimal | None] = mapped_column(Numeric(7, 4), nullable=True)
+    reliability_score: Mapped[Decimal] = mapped_column(Numeric(7, 4), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    summary: Mapped[dict] = mapped_column(JSON, nullable=False)
+    segments: Mapped[dict] = mapped_column(JSON, nullable=False)
+    recommendations: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    window_ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPaperCalibrationEvidence(Base):
+    __tablename__ = "canonical_parser_paper_calibration_evidence"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_parser_paper_calibration_evidence_sequence"),
+        CheckConstraint("length(evidence_hash) = 64", name="ck_parser_paper_calibration_evidence_hash"),
+        UniqueConstraint("campaign_db_id", "sequence", name="uq_parser_paper_calibration_evidence_sequence"),
+        UniqueConstraint("campaign_db_id", "execution_db_id", name="uq_parser_paper_calibration_evidence_execution"),
+        Index("ix_parser_paper_calibration_evidence_campaign_status", "campaign_db_id", "execution_status"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    campaign_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_paper_calibration_campaigns.id", ondelete="CASCADE"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    execution_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_permit_bound_paper_executions.id", ondelete="RESTRICT"), nullable=False
+    )
+    execution_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    execution_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    token_mint: Mapped[str] = mapped_column(String(64), nullable=False)
+    signal_score: Mapped[Decimal] = mapped_column(Numeric(7, 4), nullable=False)
+    confidence_score: Mapped[Decimal] = mapped_column(Numeric(7, 4), nullable=False)
+    realized_pnl_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    evidence_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
