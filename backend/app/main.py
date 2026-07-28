@@ -112,6 +112,7 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserPaperCanaryReadinessAssessmentRequest,
     CanonicalParserPaperExecutionPermitIssueRequest,
     CanonicalParserPaperExecutionPermitRevokeRequest,
+    CanonicalParserUnifiedDecisionRunRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -333,6 +334,14 @@ from backend.app.services.blockchain_parser_paper_execution_permit_service impor
     preview_paper_execution_permit,
     resolve_paper_execution_permit,
     revoke_paper_execution_permit,
+)
+from backend.app.services.blockchain_parser_unified_decision_service import (
+    CanonicalParserUnifiedDecisionError,
+    get_unified_decision_run,
+    get_unified_decision_status,
+    preview_unified_decision,
+    resolve_unified_decision,
+    run_unified_decision_shadow_validation,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -2857,3 +2866,63 @@ def read_paper_execution_permit_endpoint(permit_id: str, db: Session = Depends(g
 def resolve_paper_execution_permit_endpoint(db: Session = Depends(get_db)):
     return resolve_paper_execution_permit(db)
 # END M30 PAPER EXECUTION PERMIT GOVERNANCE
+
+# BEGIN M31 UNIFIED DECISION INTELLIGENCE & SHADOW VALIDATION
+@app.get("/integrity/parser-unified-decision/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_unified_decision_status(db: Session = Depends(get_db)):
+    return get_unified_decision_status(db)
+
+
+@app.get("/integrity/parser-unified-decision/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_unified_decision_preview(
+    lookback_minutes: int | None = Query(default=None, ge=1, le=10080),
+    max_results: int | None = Query(default=None, ge=1, le=1000),
+    db: Session = Depends(get_db),
+):
+    return preview_unified_decision(
+        db,
+        lookback_minutes=lookback_minutes,
+        max_results=max_results,
+    )
+
+
+@app.post("/integrity/parser-unified-decision/run", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def run_unified_decision_endpoint(
+    request: CanonicalParserUnifiedDecisionRunRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return run_unified_decision_shadow_validation(
+            db,
+            confirmation=request.confirmation,
+            lookback_minutes=request.lookback_minutes,
+            max_results=request.max_results,
+            source_trade_ids=request.source_trade_ids,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserUnifiedDecisionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-unified-decision/runs/{run_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_unified_decision_run_endpoint(run_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_unified_decision_run(db, run_id)
+    except CanonicalParserUnifiedDecisionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-unified-decision/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_unified_decision_endpoint(
+    token_mint: str | None = Query(default=None, min_length=32, max_length=64),
+    db: Session = Depends(get_db),
+):
+    return resolve_unified_decision(db, token_mint=token_mint)
+# END M31 UNIFIED DECISION INTELLIGENCE & SHADOW VALIDATION

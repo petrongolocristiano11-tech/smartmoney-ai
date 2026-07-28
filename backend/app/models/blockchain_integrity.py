@@ -4474,3 +4474,195 @@ class CanonicalParserPaperExecutionPermitEvent(Base):
     event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserUnifiedDecisionRun(Base):
+    __tablename__ = "canonical_parser_unified_decision_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('COMPLETED', 'PARTIAL', 'FAILED')",
+            name="ck_parser_unified_decision_runs_status",
+        ),
+        CheckConstraint(
+            "scope = 'SHADOW_DECISION_ONLY'",
+            name="ck_parser_unified_decision_runs_scope",
+        ),
+        CheckConstraint(
+            "source_trade_count >= 0 AND source_token_count >= 0 "
+            "AND source_wallet_count >= 0 AND qualified_wallet_count >= 0",
+            name="ck_parser_unified_decision_runs_source_counts",
+        ),
+        CheckConstraint(
+            "result_count >= 0 AND approve_count >= 0 AND review_count >= 0 "
+            "AND reject_count >= 0 AND insufficient_data_count >= 0",
+            name="ck_parser_unified_decision_runs_decision_counts",
+        ),
+        CheckConstraint(
+            "result_count = approve_count + review_count + reject_count + insufficient_data_count",
+            name="ck_parser_unified_decision_runs_decision_breakdown",
+        ),
+        CheckConstraint("length(run_key) = 64", name="ck_parser_unified_decision_runs_key"),
+        CheckConstraint("length(policy_hash) = 64", name="ck_parser_unified_decision_runs_policy_hash"),
+        CheckConstraint("length(evidence_hash) = 64", name="ck_parser_unified_decision_runs_evidence_hash"),
+        UniqueConstraint("run_id", name="uq_parser_unified_decision_runs_id"),
+        UniqueConstraint("run_key", name="uq_parser_unified_decision_runs_key"),
+        Index("ix_parser_unified_decision_runs_status_completed", "status", "completed_at"),
+        Index("ix_parser_unified_decision_runs_valid_until", "valid_until"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    run_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    source_trade_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_token_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_wallet_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    qualified_wallet_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    result_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    approve_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    review_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    reject_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    insufficient_data_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    parameters: Mapped[dict] = mapped_column(JSON, nullable=False)
+    summary: Mapped[dict] = mapped_column(JSON, nullable=False)
+    safety: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    data_start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    data_end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    technical_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CanonicalParserUnifiedDecisionResult(Base):
+    __tablename__ = "canonical_parser_unified_decision_results"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('APPROVE', 'REVIEW', 'REJECT', 'INSUFFICIENT_DATA')",
+            name="ck_parser_unified_decision_results_decision",
+        ),
+        CheckConstraint(
+            "token_safety_status IN ('SAFE', 'REVIEW', 'UNSAFE', 'INSUFFICIENT_DATA')",
+            name="ck_parser_unified_decision_results_token_status",
+        ),
+        CheckConstraint(
+            "timing_status IN ('COPYABLE', 'LATE', 'STALE', 'INSUFFICIENT_DATA')",
+            name="ck_parser_unified_decision_results_timing_status",
+        ),
+        CheckConstraint(
+            "raw_wallet_count >= 0 AND qualified_wallet_count >= 0 "
+            "AND independent_cluster_count >= 0 AND follower_wallet_count >= 0",
+            name="ck_parser_unified_decision_results_counts",
+        ),
+        CheckConstraint(
+            "signal_score >= 0 AND signal_score <= 100 "
+            "AND confidence_score >= 0 AND confidence_score <= 100 "
+            "AND uncertainty_score >= 0 AND uncertainty_score <= 100",
+            name="ck_parser_unified_decision_results_scores",
+        ),
+        CheckConstraint(
+            "requested_size_sol >= 0 AND approved_size_sol >= 0 "
+            "AND approved_size_sol <= requested_size_sol",
+            name="ck_parser_unified_decision_results_sizes",
+        ),
+        CheckConstraint("sequence >= 1", name="ck_parser_unified_decision_results_sequence"),
+        CheckConstraint("length(decision_hash) = 64", name="ck_parser_unified_decision_results_hash"),
+        UniqueConstraint("result_id", name="uq_parser_unified_decision_results_id"),
+        UniqueConstraint("run_db_id", "sequence", name="uq_parser_unified_decision_results_sequence"),
+        UniqueConstraint("run_db_id", "token_mint", name="uq_parser_unified_decision_results_token"),
+        Index("ix_parser_unified_decision_results_run_decision", "run_db_id", "decision"),
+        Index("ix_parser_unified_decision_results_token_created", "token_mint", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    result_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    run_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_unified_decision_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    decision: Mapped[str] = mapped_column(String(24), nullable=False)
+    token_mint: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_trade_ids: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    source_signatures: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    source_event_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    raw_wallet_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    qualified_wallet_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    independent_cluster_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    follower_wallet_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    leader_wallet: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    signal_score: Mapped[Decimal] = mapped_column(Numeric(7, 4), nullable=False)
+    confidence_score: Mapped[Decimal] = mapped_column(Numeric(7, 4), nullable=False)
+    uncertainty_score: Mapped[Decimal] = mapped_column(Numeric(7, 4), nullable=False)
+    requested_size_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    approved_size_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    token_safety_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    timing_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    market_regime: Mapped[str] = mapped_column(String(24), nullable=False)
+    confidence_calibration_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    positive_factors: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    evidence_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    exit_plan: Mapped[dict] = mapped_column(JSON, nullable=False)
+    counterfactuals: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    decision_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CanonicalParserUnifiedDecisionWalletEvidence(Base):
+    __tablename__ = "canonical_parser_unified_decision_wallet_evidence"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_parser_unified_decision_wallet_evidence_sequence"),
+        CheckConstraint(
+            "qualification_status IN ('QUALIFIED', 'REVIEW', 'REJECTED', 'INSUFFICIENT_DATA', 'EXPIRED')",
+            name="ck_parser_unified_decision_wallet_evidence_status",
+        ),
+        CheckConstraint(
+            "role IN ('EARLY_LEADER', 'CONFIRMING_LEADER', 'FOLLOWER', 'LATE_FOLLOWER', 'UNQUALIFIED')",
+            name="ck_parser_unified_decision_wallet_evidence_role",
+        ),
+        CheckConstraint(
+            "final_score >= 0 AND final_score <= 100 "
+            "AND confidence_score >= 0 AND confidence_score <= 100",
+            name="ck_parser_unified_decision_wallet_evidence_scores",
+        ),
+        CheckConstraint("length(cluster_key) = 64", name="ck_parser_unified_decision_wallet_evidence_cluster"),
+        CheckConstraint("length(evidence_hash) = 64", name="ck_parser_unified_decision_wallet_evidence_hash"),
+        UniqueConstraint("evidence_id", name="uq_parser_unified_decision_wallet_evidence_id"),
+        UniqueConstraint("result_db_id", "wallet_address", name="uq_parser_unified_decision_wallet_evidence_wallet"),
+        UniqueConstraint("result_db_id", "sequence", name="uq_parser_unified_decision_wallet_evidence_sequence"),
+        Index("ix_parser_unified_decision_wallet_evidence_result_status", "result_db_id", "qualification_status"),
+        Index("ix_parser_unified_decision_wallet_evidence_wallet_created", "wallet_address", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    evidence_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    result_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_unified_decision_results.id", ondelete="CASCADE"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    wallet_address: Mapped[str] = mapped_column(String(64), nullable=False)
+    cluster_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    role: Mapped[str] = mapped_column(String(24), nullable=False)
+    qualification_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    final_score: Mapped[Decimal] = mapped_column(Numeric(7, 4), nullable=False)
+    confidence_score: Mapped[Decimal] = mapped_column(Numeric(7, 4), nullable=False)
+    freshness_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    positive_factors: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    evidence_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

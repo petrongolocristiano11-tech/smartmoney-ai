@@ -683,6 +683,76 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # UNIFIED DECISION INTELLIGENCE & SHADOW VALIDATION
+    # Read-only decision replay; disabled by default and disconnected from execution.
+    # =========================
+
+    CANONICAL_PARSER_UNIFIED_DECISION_ENABLED: bool = False
+    CANONICAL_PARSER_UNIFIED_DECISION_LOOKBACK_MINUTES: int = Field(
+        default=1440, ge=1, le=10080
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_MAX_SOURCE_TRADES: int = Field(
+        default=1000, ge=1, le=100000
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_MAX_RESULTS: int = Field(
+        default=100, ge=1, le=1000
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_VALIDITY_MINUTES: int = Field(
+        default=30, ge=1, le=1440
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_WALLET_FRESHNESS_MINUTES: int = Field(
+        default=1440, ge=1, le=10080
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_TOKEN_FRESHNESS_MINUTES: int = Field(
+        default=30, ge=1, le=1440
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_MIN_QUALIFIED_WALLETS: int = Field(
+        default=2, ge=1, le=100
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_MIN_INDEPENDENT_CLUSTERS: int = Field(
+        default=2, ge=1, le=100
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_MIN_APPROVE_SCORE: float = Field(
+        default=72.0, ge=0, le=100
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_MIN_REVIEW_SCORE: float = Field(
+        default=55.0, ge=0, le=100
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_MAX_COPY_LATENCY_SECONDS: int = Field(
+        default=180, ge=1, le=86400
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_MAX_STALE_SECONDS: int = Field(
+        default=900, ge=1, le=86400
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_MIN_TOKEN_LIQUIDITY_USD: float = Field(
+        default=25000.0, ge=0, le=1000000000
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_MAX_TOKEN_RISK_SCORE: int = Field(
+        default=35, ge=0, le=100
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_MAX_TOP_HOLDER_PERCENT: float = Field(
+        default=25.0, ge=0, le=100
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_MIN_EDGE_STRENGTH: float = Field(
+        default=60.0, ge=0, le=100
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_FOLLOWER_DELAY_SECONDS: int = Field(
+        default=30, ge=0, le=3600
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_MAX_SIZE_SOL: float = Field(
+        default=0.05, gt=0, le=1000000
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_STOP_LOSS_PERCENT: float = Field(
+        default=15.0, gt=0, le=100
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_TAKE_PROFIT_PERCENT: float = Field(
+        default=30.0, gt=0, le=10000
+    )
+    CANONICAL_PARSER_UNIFIED_DECISION_MAX_HOLD_MINUTES: int = Field(
+        default=240, ge=1, le=10080
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

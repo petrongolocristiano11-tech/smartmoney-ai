@@ -384,3 +384,12 @@ class CanonicalParserPaperExecutionPermitRevokeRequest(BaseModel):
     confirmation: str = Field(default="", max_length=320)
     reason: str = Field(min_length=3, max_length=500)
     actor_label: str | None = Field(default=None, max_length=80)
+
+
+class CanonicalParserUnifiedDecisionRunRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=320)
+    lookback_minutes: int | None = Field(default=None, ge=1, le=10080)
+    max_results: int | None = Field(default=None, ge=1, le=1000)
+    source_trade_ids: list[int] | None = Field(default=None, max_length=1000)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
