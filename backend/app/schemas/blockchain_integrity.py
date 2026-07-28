@@ -426,3 +426,65 @@ class CanonicalParserPaperCalibrationRunRequest(BaseModel):
     confirmation: str = Field(default="", max_length=500)
     actor_label: str | None = Field(default=None, max_length=80)
     note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserPaperCampaignItemRequest(BaseModel):
+    decision_result_id: str = Field(min_length=36, max_length=36)
+    side: Literal["BUY", "SELL"] = "BUY"
+    market_price_sol: float = Field(gt=0, le=1_000_000_000)
+    quantity: float | None = Field(default=None, gt=0)
+    slippage_percent: float = Field(default=0.5, ge=0, le=50)
+    fee_percent: float = Field(default=0.25, ge=0, le=20)
+    idempotency_token: str = Field(min_length=8, max_length=200)
+
+
+class CanonicalParserPaperCampaignRunRequest(BaseModel):
+    permit_id: str = Field(min_length=36, max_length=36)
+    items: list[CanonicalParserPaperCampaignItemRequest] = Field(min_length=1, max_length=100)
+    confirmation: str = Field(default="", max_length=260)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserPaperCampaignRecoveryRequest(BaseModel):
+    campaign_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=260)
+    actor_label: str | None = Field(default=None, max_length=80)
+
+
+class CanonicalParserPaperOperationalAssessmentRequest(BaseModel):
+    paper_account_id: int = Field(ge=1)
+    calibration_campaign_id: str | None = Field(default=None, min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=260)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserMicroLiveCanaryPermitIssueRequest(BaseModel):
+    operational_assessment_id: str = Field(min_length=36, max_length=36)
+    validity_minutes: int = Field(default=10, ge=1, le=60)
+    total_budget_sol: float = Field(default=0.03, gt=0, le=10)
+    max_order_budget_sol: float = Field(default=0.01, gt=0, le=1)
+    max_order_count: int = Field(default=3, ge=1, le=20)
+    confirmation: str = Field(default="", max_length=300)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserMicroLiveCanaryPermitRevokeRequest(BaseModel):
+    permit_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=300)
+    reason: str = Field(min_length=3, max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+
+
+class CanonicalParserMicroLiveCanarySimulationRequest(BaseModel):
+    permit_id: str = Field(min_length=36, max_length=36)
+    decision_result_id: str = Field(min_length=36, max_length=36)
+    side: Literal["BUY", "SELL"] = "BUY"
+    market_price_sol: float = Field(gt=0, le=1_000_000_000)
+    requested_budget_sol: float = Field(default=0.01, ge=0, le=10)
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    confirmation: str = Field(default="", max_length=320)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)

@@ -794,6 +794,65 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # M34 PAPER CAMPAIGN ORCHESTRATION & OPERATIONAL HARDENING
+    # Manual only; disabled by default; no worker/scheduler/stream.
+    # =========================
+
+    CANONICAL_PARSER_PAPER_CAMPAIGN_ORCHESTRATION_ENABLED: bool = False
+    CANONICAL_PARSER_PAPER_CAMPAIGN_MAX_ITEMS: int = Field(
+        default=10, ge=1, le=100
+    )
+    CANONICAL_PARSER_PAPER_CAMPAIGN_RECOVERY_LIMIT: int = Field(
+        default=25, ge=1, le=500
+    )
+    CANONICAL_PARSER_PAPER_OPERATIONAL_LOOKBACK_HOURS: int = Field(
+        default=24, ge=1, le=8760
+    )
+    CANONICAL_PARSER_PAPER_OPERATIONAL_MIN_SETTLED: int = Field(
+        default=20, ge=1, le=1000000
+    )
+    CANONICAL_PARSER_PAPER_OPERATIONAL_MAX_RECONCILIATION_REQUIRED: int = Field(
+        default=0, ge=0, le=1000000
+    )
+    CANONICAL_PARSER_PAPER_OPERATIONAL_MIN_RELIABILITY_SCORE: float = Field(
+        default=98.0, ge=0, le=100
+    )
+    CANONICAL_PARSER_PAPER_OPERATIONAL_MAX_CALIBRATION_GAP_PERCENT: float = Field(
+        default=20.0, ge=0, le=100
+    )
+    CANONICAL_PARSER_PAPER_OPERATIONAL_MAX_CALIBRATION_AGE_MINUTES: int = Field(
+        default=120, ge=1, le=10080
+    )
+    CANONICAL_PARSER_PAPER_OPERATIONAL_VALIDITY_MINUTES: int = Field(
+        default=30, ge=1, le=1440
+    )
+
+    # =========================
+    # M35 MICRO-LIVE CANARY GOVERNANCE & SIMULATION
+    # Metadata/simulation only; disabled by default; never arms or executes LIVE.
+    # =========================
+
+    CANONICAL_PARSER_MICRO_LIVE_CANARY_ENABLED: bool = False
+    CANONICAL_PARSER_MICRO_LIVE_CANARY_MAX_VALIDITY_MINUTES: int = Field(
+        default=15, ge=1, le=60
+    )
+    CANONICAL_PARSER_MICRO_LIVE_CANARY_MAX_TOTAL_BUDGET_SOL: float = Field(
+        default=0.05, gt=0, le=10
+    )
+    CANONICAL_PARSER_MICRO_LIVE_CANARY_MAX_ORDER_BUDGET_SOL: float = Field(
+        default=0.01, gt=0, le=1
+    )
+    CANONICAL_PARSER_MICRO_LIVE_CANARY_MAX_ORDER_COUNT: int = Field(
+        default=3, ge=1, le=20
+    )
+    CANONICAL_PARSER_MICRO_LIVE_CANARY_MIN_ASSESSMENT_REMAINING_MINUTES: int = Field(
+        default=2, ge=1, le=30
+    )
+    CANONICAL_PARSER_MICRO_LIVE_CANARY_MAX_DECISION_AGE_MINUTES: int = Field(
+        default=15, ge=1, le=1440
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

@@ -4871,3 +4871,216 @@ class CanonicalParserPaperCalibrationEvidence(Base):
     evidence_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
     evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPaperCampaignRun(Base):
+    __tablename__ = "canonical_parser_paper_campaign_runs"
+    __table_args__ = (
+        CheckConstraint("scope = 'PAPER_MANUAL_ORCHESTRATION'", name="ck_m34_campaign_scope"),
+        CheckConstraint("status IN ('COMPLETED','PARTIAL','BLOCKED','FAILED','NOOP','RECONCILIATION_REQUIRED')", name="ck_m34_campaign_status"),
+        CheckConstraint("requested_count >= 0 AND selected_count >= 0 AND settled_count >= 0 AND released_count >= 0 AND failed_count >= 0 AND reconciliation_required_count >= 0 AND skipped_count >= 0", name="ck_m34_campaign_counts"),
+        CheckConstraint("requested_budget_sol >= 0 AND settled_budget_sol >= 0", name="ck_m34_campaign_budget"),
+        CheckConstraint("length(campaign_key) = 64 AND length(policy_hash) = 64 AND length(evidence_hash) = 64", name="ck_m34_campaign_hashes"),
+        UniqueConstraint("campaign_id", name="uq_m34_campaign_id"),
+        UniqueConstraint("campaign_key", name="uq_m34_campaign_key"),
+        Index("ix_m34_campaign_account_created", "paper_account_id", "created_at"),
+        Index("ix_m34_campaign_status_created", "status", "created_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    campaign_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    campaign_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    paper_account_id: Mapped[int] = mapped_column(ForeignKey("paper_accounts.id", ondelete="RESTRICT"), nullable=False)
+    permit_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    requested_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    selected_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    settled_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    released_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    failed_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    reconciliation_required_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    skipped_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    requested_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    settled_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    parameters: Mapped[dict] = mapped_column(JSON, nullable=False)
+    summary: Mapped[dict] = mapped_column(JSON, nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    safety: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPaperCampaignItem(Base):
+    __tablename__ = "canonical_parser_paper_campaign_items"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_m34_item_sequence"),
+        CheckConstraint("side IN ('BUY','SELL')", name="ck_m34_item_side"),
+        CheckConstraint("status IN ('SETTLED','RELEASED','FAILED','RECONCILIATION_REQUIRED','SKIPPED')", name="ck_m34_item_status"),
+        CheckConstraint("market_price_sol > 0 AND requested_budget_sol >= 0 AND settled_budget_sol >= 0", name="ck_m34_item_values"),
+        CheckConstraint("length(idempotency_key) = 64 AND length(item_hash) = 64", name="ck_m34_item_hashes"),
+        UniqueConstraint("campaign_db_id", "sequence", name="uq_m34_item_sequence"),
+        UniqueConstraint("campaign_db_id", "decision_result_id", "side", name="uq_m34_item_decision_side"),
+        Index("ix_m34_item_campaign_status", "campaign_db_id", "status"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    campaign_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_paper_campaign_runs.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    decision_result_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    execution_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    token_mint: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    market_price_sol: Mapped[Decimal] = mapped_column(Numeric(36, 18), nullable=False)
+    requested_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    settled_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    item_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    item_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPaperOperationalAssessment(Base):
+    __tablename__ = "canonical_parser_paper_operational_assessments"
+    __table_args__ = (
+        CheckConstraint("status IN ('READY','REVIEW','BLOCKED','INSUFFICIENT_DATA')", name="ck_m34_assessment_status"),
+        CheckConstraint("scope = 'PAPER_OPERATIONAL_READINESS'", name="ck_m34_assessment_scope"),
+        CheckConstraint("settled_count >= 0 AND reconciliation_required_count >= 0 AND stale_reservation_count >= 0 AND budget_drift_count >= 0", name="ck_m34_assessment_counts"),
+        CheckConstraint("length(assessment_key) = 64 AND length(policy_hash) = 64 AND length(evidence_hash) = 64", name="ck_m34_assessment_hashes"),
+        UniqueConstraint("assessment_id", name="uq_m34_assessment_id"),
+        UniqueConstraint("assessment_key", name="uq_m34_assessment_key"),
+        Index("ix_m34_assessment_account_completed", "paper_account_id", "completed_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    assessment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    assessment_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    paper_account_id: Mapped[int] = mapped_column(ForeignKey("paper_accounts.id", ondelete="RESTRICT"), nullable=False)
+    calibration_campaign_db_id: Mapped[int | None] = mapped_column(ForeignKey("canonical_parser_paper_calibration_campaigns.id", ondelete="SET NULL"), nullable=True)
+    calibration_campaign_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    settled_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    reconciliation_required_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    stale_reservation_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    budget_drift_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    reliability_score: Mapped[Decimal | None] = mapped_column(Numeric(7, 4), nullable=True)
+    calibration_gap_percent: Mapped[Decimal | None] = mapped_column(Numeric(7, 4), nullable=True)
+    policy_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    summary: Mapped[dict] = mapped_column(JSON, nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    window_ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserMicroLiveCanaryPermit(Base):
+    __tablename__ = "canonical_parser_micro_live_canary_permits"
+    __table_args__ = (
+        CheckConstraint("scope = 'MICRO_LIVE_GOVERNANCE_SIMULATION_ONLY'", name="ck_m35_permit_scope"),
+        CheckConstraint("status IN ('ACTIVE','REVOKED','EXPIRED','EXHAUSTED')", name="ck_m35_permit_status"),
+        CheckConstraint("total_budget_sol > 0 AND max_order_budget_sol > 0 AND max_order_budget_sol <= total_budget_sol", name="ck_m35_permit_budgets"),
+        CheckConstraint("max_order_count >= 1 AND simulated_order_count >= 0 AND simulated_budget_sol >= 0", name="ck_m35_permit_counts"),
+        CheckConstraint("length(permit_key) = 64 AND length(assessment_evidence_hash) = 64 AND length(policy_hash) = 64", name="ck_m35_permit_hashes"),
+        UniqueConstraint("permit_id", name="uq_m35_permit_id"),
+        UniqueConstraint("permit_key", name="uq_m35_permit_key"),
+        Index("ix_m35_permit_status_expiry", "status", "expires_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    permit_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    permit_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    operational_assessment_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_paper_operational_assessments.id", ondelete="RESTRICT"), nullable=False)
+    operational_assessment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    assessment_evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(48), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    requested_validity_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    max_order_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    max_order_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    simulated_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    simulated_order_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    live_policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    live_platform_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revocation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latest_event_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    latest_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    technical_metadata: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserMicroLiveCanaryPermitEvent(Base):
+    __tablename__ = "canonical_parser_micro_live_canary_permit_events"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_m35_event_sequence"),
+        CheckConstraint("event_type IN ('ISSUED','SIMULATED','REVOKED','EXPIRED','EXHAUSTED')", name="ck_m35_event_type"),
+        CheckConstraint("length(event_hash) = 64", name="ck_m35_event_hash"),
+        UniqueConstraint("event_id", name="uq_m35_event_id"),
+        UniqueConstraint("permit_db_id", "sequence", name="uq_m35_event_sequence"),
+        Index("ix_m35_event_permit_time", "permit_db_id", "occurred_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    permit_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_micro_live_canary_permits.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserMicroLiveCanarySimulation(Base):
+    __tablename__ = "canonical_parser_micro_live_canary_simulations"
+    __table_args__ = (
+        CheckConstraint("side IN ('BUY','SELL')", name="ck_m35_sim_side"),
+        CheckConstraint("status IN ('READY','REVIEW','BLOCKED','INSUFFICIENT_DATA')", name="ck_m35_sim_status"),
+        CheckConstraint("requested_budget_sol >= 0 AND simulated_budget_sol >= 0 AND market_price_sol > 0", name="ck_m35_sim_values"),
+        CheckConstraint("length(simulation_key) = 64 AND length(decision_hash) = 64 AND length(evidence_hash) = 64", name="ck_m35_sim_hashes"),
+        UniqueConstraint("simulation_id", name="uq_m35_sim_id"),
+        UniqueConstraint("simulation_key", name="uq_m35_sim_key"),
+        Index("ix_m35_sim_permit_created", "permit_db_id", "created_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    simulation_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    simulation_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    permit_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_micro_live_canary_permits.id", ondelete="RESTRICT"), nullable=False)
+    permit_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    decision_result_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_unified_decision_results.id", ondelete="RESTRICT"), nullable=False)
+    decision_result_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    decision_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    token_mint: Mapped[str] = mapped_column(String(64), nullable=False)
+    requested_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    simulated_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    market_price_sol: Mapped[Decimal] = mapped_column(Numeric(36, 18), nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    evidence_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    simulated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

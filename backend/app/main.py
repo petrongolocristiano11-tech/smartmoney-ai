@@ -116,6 +116,12 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserPermitBoundPaperExecutionRequest,
     CanonicalParserPermitBoundPaperReconcileRequest,
     CanonicalParserPaperCalibrationRunRequest,
+    CanonicalParserPaperCampaignRunRequest,
+    CanonicalParserPaperCampaignRecoveryRequest,
+    CanonicalParserPaperOperationalAssessmentRequest,
+    CanonicalParserMicroLiveCanaryPermitIssueRequest,
+    CanonicalParserMicroLiveCanaryPermitRevokeRequest,
+    CanonicalParserMicroLiveCanarySimulationRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -362,6 +368,30 @@ from backend.app.services.blockchain_parser_paper_calibration_service import (
     preview_paper_calibration_campaign,
     resolve_paper_calibration_campaign,
     run_paper_calibration_campaign,
+)
+from backend.app.services.blockchain_parser_paper_campaign_orchestration_service import (
+    CanonicalParserPaperCampaignError,
+    assess_paper_operations,
+    get_paper_campaign,
+    get_paper_campaign_status,
+    get_paper_operational_assessment,
+    preview_paper_campaign,
+    preview_paper_operational_assessment,
+    recover_paper_campaign,
+    resolve_paper_campaign,
+    run_paper_campaign,
+)
+from backend.app.services.blockchain_parser_micro_live_canary_service import (
+    CanonicalParserMicroLiveCanaryError,
+    get_micro_live_canary_permit,
+    get_micro_live_canary_simulation,
+    get_micro_live_canary_status,
+    issue_micro_live_canary_permit,
+    preview_micro_live_canary_permit,
+    preview_micro_live_canary_simulation,
+    resolve_micro_live_canary,
+    revoke_micro_live_canary_permit,
+    simulate_micro_live_canary,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -3119,3 +3149,292 @@ def resolve_paper_calibration_endpoint(
 ):
     return resolve_paper_calibration_campaign(db, paper_account_id=paper_account_id)
 # END M33 PAPER RELIABILITY & CALIBRATION CAMPAIGN
+
+# BEGIN M34 PAPER CAMPAIGN ORCHESTRATION & OPERATIONAL HARDENING
+@app.get("/integrity/parser-paper-campaign/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_campaign_status(db: Session = Depends(get_db)):
+    return get_paper_campaign_status(db)
+
+
+@app.post("/integrity/parser-paper-campaign/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_paper_campaign_endpoint(
+    request: CanonicalParserPaperCampaignRunRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_paper_campaign(
+            db,
+            permit_id=request.permit_id,
+            items=[item.model_dump() for item in request.items],
+        )
+    except CanonicalParserPaperCampaignError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-paper-campaign/run", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def run_paper_campaign_endpoint(
+    request: CanonicalParserPaperCampaignRunRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return run_paper_campaign(
+            db,
+            permit_id=request.permit_id,
+            items=[item.model_dump() for item in request.items],
+            confirmation=request.confirmation,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserPaperCampaignError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-paper-campaign/recover", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def recover_paper_campaign_endpoint(
+    request: CanonicalParserPaperCampaignRecoveryRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return recover_paper_campaign(
+            db,
+            campaign_id=request.campaign_id,
+            confirmation=request.confirmation,
+            actor_label=request.actor_label,
+        )
+    except CanonicalParserPaperCampaignError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-paper-campaign/campaigns/{campaign_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_campaign_endpoint(campaign_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_paper_campaign(db, campaign_id)
+    except CanonicalParserPaperCampaignError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-paper-campaign/operational-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_paper_operational_endpoint(
+    paper_account_id: int = Query(ge=1),
+    calibration_campaign_id: str | None = Query(default=None, min_length=36, max_length=36),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_paper_operational_assessment(
+            db,
+            paper_account_id=paper_account_id,
+            calibration_campaign_id=calibration_campaign_id,
+        )
+    except CanonicalParserPaperCampaignError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-paper-campaign/operational-assess", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def assess_paper_operations_endpoint(
+    request: CanonicalParserPaperOperationalAssessmentRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return assess_paper_operations(
+            db,
+            paper_account_id=request.paper_account_id,
+            calibration_campaign_id=request.calibration_campaign_id,
+            confirmation=request.confirmation,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserPaperCampaignError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-paper-campaign/assessments/{assessment_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_paper_operational_assessment_endpoint(assessment_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_paper_operational_assessment(db, assessment_id)
+    except CanonicalParserPaperCampaignError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-paper-campaign/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_paper_campaign_endpoint(
+    paper_account_id: int | None = Query(default=None, ge=1),
+    db: Session = Depends(get_db),
+):
+    return resolve_paper_campaign(db, paper_account_id=paper_account_id)
+# END M34 PAPER CAMPAIGN ORCHESTRATION & OPERATIONAL HARDENING
+
+
+# BEGIN M35 MICRO-LIVE CANARY GOVERNANCE & SIMULATION
+@app.get("/integrity/parser-micro-live-canary/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_micro_live_canary_status(db: Session = Depends(get_db)):
+    return get_micro_live_canary_status(db)
+
+
+@app.get("/integrity/parser-micro-live-canary/permit-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_micro_live_canary_permit_endpoint(
+    operational_assessment_id: str = Query(min_length=36, max_length=36),
+    validity_minutes: int = Query(default=10, ge=1, le=60),
+    total_budget_sol: float = Query(default=0.03, gt=0, le=10),
+    max_order_budget_sol: float = Query(default=0.01, gt=0, le=1),
+    max_order_count: int = Query(default=3, ge=1, le=20),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_micro_live_canary_permit(
+            db,
+            operational_assessment_id=operational_assessment_id,
+            validity_minutes=validity_minutes,
+            total_budget_sol=total_budget_sol,
+            max_order_budget_sol=max_order_budget_sol,
+            max_order_count=max_order_count,
+        )
+    except CanonicalParserMicroLiveCanaryError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-micro-live-canary/issue", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def issue_micro_live_canary_endpoint(
+    request: CanonicalParserMicroLiveCanaryPermitIssueRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return issue_micro_live_canary_permit(
+            db,
+            operational_assessment_id=request.operational_assessment_id,
+            validity_minutes=request.validity_minutes,
+            total_budget_sol=request.total_budget_sol,
+            max_order_budget_sol=request.max_order_budget_sol,
+            max_order_count=request.max_order_count,
+            confirmation=request.confirmation,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserMicroLiveCanaryError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-micro-live-canary/revoke", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def revoke_micro_live_canary_endpoint(
+    request: CanonicalParserMicroLiveCanaryPermitRevokeRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return revoke_micro_live_canary_permit(
+            db,
+            permit_id=request.permit_id,
+            confirmation=request.confirmation,
+            reason=request.reason,
+            actor_label=request.actor_label,
+        )
+    except CanonicalParserMicroLiveCanaryError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-micro-live-canary/simulation-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_micro_live_canary_simulation_endpoint(
+    permit_id: str = Query(min_length=36, max_length=36),
+    decision_result_id: str = Query(min_length=36, max_length=36),
+    side: str = Query(pattern="^(BUY|SELL)$"),
+    market_price_sol: float = Query(gt=0, le=1_000_000_000),
+    requested_budget_sol: float = Query(default=0.01, ge=0, le=10),
+    idempotency_token: str = Query(min_length=8, max_length=200),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_micro_live_canary_simulation(
+            db,
+            permit_id=permit_id,
+            decision_result_id=decision_result_id,
+            side=side,
+            market_price_sol=market_price_sol,
+            requested_budget_sol=requested_budget_sol,
+            idempotency_token=idempotency_token,
+        )
+    except CanonicalParserMicroLiveCanaryError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-micro-live-canary/simulate", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def simulate_micro_live_canary_endpoint(
+    request: CanonicalParserMicroLiveCanarySimulationRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return simulate_micro_live_canary(
+            db,
+            permit_id=request.permit_id,
+            decision_result_id=request.decision_result_id,
+            side=request.side,
+            market_price_sol=request.market_price_sol,
+            requested_budget_sol=request.requested_budget_sol,
+            idempotency_token=request.idempotency_token,
+            confirmation=request.confirmation,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserMicroLiveCanaryError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-micro-live-canary/permits/{permit_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_micro_live_canary_permit_endpoint(permit_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_micro_live_canary_permit(db, permit_id)
+    except CanonicalParserMicroLiveCanaryError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-micro-live-canary/simulations/{simulation_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_micro_live_canary_simulation_endpoint(simulation_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_micro_live_canary_simulation(db, simulation_id)
+    except CanonicalParserMicroLiveCanaryError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-micro-live-canary/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_micro_live_canary_endpoint(db: Session = Depends(get_db)):
+    return resolve_micro_live_canary(db)
+# END M35 MICRO-LIVE CANARY GOVERNANCE & SIMULATION
