@@ -122,6 +122,10 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserMicroLiveCanaryPermitIssueRequest,
     CanonicalParserMicroLiveCanaryPermitRevokeRequest,
     CanonicalParserMicroLiveCanarySimulationRequest,
+    CanonicalParserIsolatedSignerProfileIssueRequest,
+    CanonicalParserIsolatedSignerProfileRevokeRequest,
+    CanonicalParserLiveTransactionBuildPreviewRequest,
+    CanonicalParserLiveTransactionDryRunRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -392,6 +396,19 @@ from backend.app.services.blockchain_parser_micro_live_canary_service import (
     resolve_micro_live_canary,
     revoke_micro_live_canary_permit,
     simulate_micro_live_canary,
+)
+from backend.app.services.blockchain_parser_live_transaction_dry_run_service import (
+    CanonicalParserLiveTransactionDryRunError,
+    get_isolated_signer_profile,
+    get_live_transaction_dry_run,
+    get_live_transaction_dry_run_status,
+    issue_isolated_signer_profile,
+    preview_isolated_signer_profile,
+    preview_jupiter_transaction_build,
+    preview_live_transaction_dry_run,
+    resolve_live_transaction_dry_run,
+    revoke_isolated_signer_profile,
+    run_live_transaction_dry_run,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -3438,3 +3455,190 @@ def read_micro_live_canary_simulation_endpoint(simulation_id: str, db: Session =
 def resolve_micro_live_canary_endpoint(db: Session = Depends(get_db)):
     return resolve_micro_live_canary(db)
 # END M35 MICRO-LIVE CANARY GOVERNANCE & SIMULATION
+
+
+# BEGIN M36 ISOLATED SIGNER & LIVE TRANSACTION DRY-RUN
+@app.get("/integrity/parser-live-transaction-dry-run/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_live_transaction_dry_run_status_endpoint(db: Session = Depends(get_db)):
+    return get_live_transaction_dry_run_status(db)
+
+
+@app.get("/integrity/parser-live-transaction-dry-run/signer-profile-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_isolated_signer_profile_endpoint(
+    wallet_address: str = Query(min_length=32, max_length=64),
+    validity_minutes: int = Query(default=30, ge=1, le=1440),
+    allowed_program_ids: list[str] = Query(min_length=1),
+    max_transaction_bytes: int = Query(default=1232, ge=1, le=4096),
+    max_required_signers: int = Query(default=1, ge=1, le=16),
+    allow_address_lookup_tables: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_isolated_signer_profile(
+            db,
+            wallet_address=wallet_address,
+            validity_minutes=validity_minutes,
+            allowed_program_ids=allowed_program_ids,
+            max_transaction_bytes=max_transaction_bytes,
+            max_required_signers=max_required_signers,
+            allow_address_lookup_tables=allow_address_lookup_tables,
+        )
+    except CanonicalParserLiveTransactionDryRunError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-live-transaction-dry-run/signer-profile/issue", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def issue_isolated_signer_profile_endpoint(
+    request: CanonicalParserIsolatedSignerProfileIssueRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return issue_isolated_signer_profile(
+            db,
+            wallet_address=request.wallet_address,
+            validity_minutes=request.validity_minutes,
+            allowed_program_ids=request.allowed_program_ids,
+            max_transaction_bytes=request.max_transaction_bytes,
+            max_required_signers=request.max_required_signers,
+            allow_address_lookup_tables=request.allow_address_lookup_tables,
+            confirmation=request.confirmation,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserLiveTransactionDryRunError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-live-transaction-dry-run/signer-profile/revoke", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def revoke_isolated_signer_profile_endpoint(
+    request: CanonicalParserIsolatedSignerProfileRevokeRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return revoke_isolated_signer_profile(
+            db,
+            profile_id=request.profile_id,
+            confirmation=request.confirmation,
+            reason=request.reason,
+            actor_label=request.actor_label,
+        )
+    except CanonicalParserLiveTransactionDryRunError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-live-transaction-dry-run/build-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_jupiter_transaction_build_endpoint(
+    request: CanonicalParserLiveTransactionBuildPreviewRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_jupiter_transaction_build(
+            db,
+            signer_profile_id=request.signer_profile_id,
+            micro_live_simulation_id=request.micro_live_simulation_id,
+            amount_raw=request.amount_raw,
+            slippage_bps=request.slippage_bps,
+            idempotency_token=request.idempotency_token,
+        )
+    except CanonicalParserLiveTransactionDryRunError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-live-transaction-dry-run/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_live_transaction_dry_run_endpoint(
+    request: CanonicalParserLiveTransactionDryRunRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_live_transaction_dry_run(
+            db,
+            signer_profile_id=request.signer_profile_id,
+            micro_live_simulation_id=request.micro_live_simulation_id,
+            transaction_source=request.transaction_source,
+            unsigned_transaction_base64=request.unsigned_transaction_base64,
+            input_mint=request.input_mint,
+            output_mint=request.output_mint,
+            amount_raw=request.amount_raw,
+            jupiter_request_id=request.jupiter_request_id,
+            jupiter_router=request.jupiter_router,
+            jupiter_price_impact_percent=request.jupiter_price_impact_percent,
+            jupiter_slippage_bps=request.jupiter_slippage_bps,
+            idempotency_token=request.idempotency_token,
+        )
+    except CanonicalParserLiveTransactionDryRunError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-live-transaction-dry-run/run", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def run_live_transaction_dry_run_endpoint(
+    request: CanonicalParserLiveTransactionDryRunRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return run_live_transaction_dry_run(
+            db,
+            signer_profile_id=request.signer_profile_id,
+            micro_live_simulation_id=request.micro_live_simulation_id,
+            transaction_source=request.transaction_source,
+            unsigned_transaction_base64=request.unsigned_transaction_base64,
+            input_mint=request.input_mint,
+            output_mint=request.output_mint,
+            amount_raw=request.amount_raw,
+            jupiter_request_id=request.jupiter_request_id,
+            jupiter_router=request.jupiter_router,
+            jupiter_price_impact_percent=request.jupiter_price_impact_percent,
+            jupiter_slippage_bps=request.jupiter_slippage_bps,
+            idempotency_token=request.idempotency_token,
+            run_rpc_simulation=request.run_rpc_simulation,
+            confirmation=request.confirmation,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserLiveTransactionDryRunError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-live-transaction-dry-run/signer-profiles/{profile_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_isolated_signer_profile_endpoint(profile_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_isolated_signer_profile(db, profile_id)
+    except CanonicalParserLiveTransactionDryRunError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-live-transaction-dry-run/runs/{dry_run_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_live_transaction_dry_run_endpoint(dry_run_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_live_transaction_dry_run(db, dry_run_id)
+    except CanonicalParserLiveTransactionDryRunError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-live-transaction-dry-run/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_live_transaction_dry_run_endpoint(db: Session = Depends(get_db)):
+    return resolve_live_transaction_dry_run(db)
+# END M36 ISOLATED SIGNER & LIVE TRANSACTION DRY-RUN

@@ -281,6 +281,44 @@ class SolanaRpcClient:
             "slot": value.get("slot"),
         }
 
+    def simulate_unsigned_transaction_base64(
+        self,
+        transaction_base64: str,
+    ) -> dict:
+        result = self.call(
+            "simulateTransaction",
+            [
+                transaction_base64,
+                {
+                    "encoding": "base64",
+                    "commitment": "confirmed",
+                    "sigVerify": False,
+                    "replaceRecentBlockhash": True,
+                },
+            ],
+        )
+
+        value = (
+            result.get("value")
+            if isinstance(result, dict)
+            else None
+        )
+
+        if not isinstance(value, dict):
+            raise SolanaRpcError(
+                "Risposta di simulazione unsigned Solana non valida.",
+                code="SOLANA_UNSIGNED_SIMULATION_INVALID_RESPONSE",
+                status_code=502,
+            )
+
+        return {
+            "success": value.get("err") is None,
+            "error": value.get("err"),
+            "units_consumed": value.get("unitsConsumed"),
+            "logs": (value.get("logs") or [])[-100:],
+        }
+
+
     def simulate_transaction_base64(
         self,
         transaction_base64: str,

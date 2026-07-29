@@ -488,3 +488,49 @@ class CanonicalParserMicroLiveCanarySimulationRequest(BaseModel):
     confirmation: str = Field(default="", max_length=320)
     actor_label: str | None = Field(default=None, max_length=80)
     note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserIsolatedSignerProfileIssueRequest(BaseModel):
+    wallet_address: str = Field(min_length=32, max_length=64)
+    validity_minutes: int = Field(default=30, ge=1, le=1440)
+    allowed_program_ids: list[str] = Field(min_length=1, max_length=64)
+    max_transaction_bytes: int = Field(default=1232, ge=1, le=4096)
+    max_required_signers: int = Field(default=1, ge=1, le=16)
+    allow_address_lookup_tables: bool = False
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserIsolatedSignerProfileRevokeRequest(BaseModel):
+    profile_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=500)
+    reason: str = Field(min_length=3, max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+
+
+class CanonicalParserLiveTransactionBuildPreviewRequest(BaseModel):
+    signer_profile_id: str = Field(min_length=36, max_length=36)
+    micro_live_simulation_id: str = Field(min_length=36, max_length=36)
+    amount_raw: int | None = Field(default=None, ge=1)
+    slippage_bps: int | None = Field(default=None, ge=1, le=5000)
+    idempotency_token: str = Field(min_length=8, max_length=200)
+
+
+class CanonicalParserLiveTransactionDryRunRequest(BaseModel):
+    signer_profile_id: str = Field(min_length=36, max_length=36)
+    micro_live_simulation_id: str = Field(min_length=36, max_length=36)
+    transaction_source: Literal["JUPITER_ORDER", "PROVIDED_TRANSACTION"] = "JUPITER_ORDER"
+    unsigned_transaction_base64: str = Field(min_length=8, max_length=10000)
+    input_mint: str = Field(min_length=32, max_length=64)
+    output_mint: str = Field(min_length=32, max_length=64)
+    amount_raw: int = Field(ge=1)
+    jupiter_request_id: str | None = Field(default=None, max_length=160)
+    jupiter_router: str | None = Field(default=None, max_length=160)
+    jupiter_price_impact_percent: float | None = Field(default=None, ge=0, le=100)
+    jupiter_slippage_bps: int | None = Field(default=None, ge=0, le=5000)
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    run_rpc_simulation: bool = True
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)

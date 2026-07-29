@@ -853,6 +853,34 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # M36 ISOLATED SIGNER & LIVE TRANSACTION DRY-RUN
+    # Pre-sign inspection/simulation only; disabled by default; never signs or sends.
+    # =========================
+
+    CANONICAL_PARSER_LIVE_TRANSACTION_DRY_RUN_ENABLED: bool = False
+    CANONICAL_PARSER_LIVE_TRANSACTION_DRY_RUN_JUPITER_BUILD_ENABLED: bool = False
+    CANONICAL_PARSER_LIVE_TRANSACTION_DRY_RUN_RPC_ENABLED: bool = False
+    CANONICAL_PARSER_LIVE_TRANSACTION_DRY_RUN_MAX_PROFILE_VALIDITY_MINUTES: int = Field(
+        default=60, ge=1, le=1440
+    )
+    CANONICAL_PARSER_LIVE_TRANSACTION_DRY_RUN_MAX_TRANSACTION_BYTES: int = Field(
+        default=1232, ge=1, le=4096
+    )
+    CANONICAL_PARSER_LIVE_TRANSACTION_DRY_RUN_MAX_REQUIRED_SIGNERS: int = Field(
+        default=1, ge=1, le=16
+    )
+    CANONICAL_PARSER_LIVE_TRANSACTION_DRY_RUN_MAX_PROGRAMS: int = Field(
+        default=24, ge=1, le=128
+    )
+    CANONICAL_PARSER_LIVE_TRANSACTION_DRY_RUN_MAX_SIMULATION_LOGS: int = Field(
+        default=20, ge=0, le=100
+    )
+    CANONICAL_PARSER_LIVE_TRANSACTION_DRY_RUN_ENVELOPE_TTL_SECONDS: int = Field(
+        default=60, ge=5, le=600
+    )
+    CANONICAL_PARSER_LIVE_TRANSACTION_DRY_RUN_ALLOW_ADDRESS_LOOKUP_TABLES: bool = False
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

@@ -5084,3 +5084,210 @@ class CanonicalParserMicroLiveCanarySimulation(Base):
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     simulated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserIsolatedSignerProfile(Base):
+    __tablename__ = "canonical_parser_isolated_signer_profiles"
+    __table_args__ = (
+        CheckConstraint(
+            "scope = 'M36_ISOLATED_SIGNER_DRY_RUN_ONLY'",
+            name="ck_m36_signer_profile_scope",
+        ),
+        CheckConstraint(
+            "status IN ('ACTIVE','REVOKED','EXPIRED')",
+            name="ck_m36_signer_profile_status",
+        ),
+        CheckConstraint(
+            "network = 'mainnet-beta'",
+            name="ck_m36_signer_profile_network",
+        ),
+        CheckConstraint(
+            "validity_minutes >= 1 AND max_transaction_bytes >= 1 "
+            "AND max_required_signers >= 1",
+            name="ck_m36_signer_profile_limits",
+        ),
+        CheckConstraint(
+            "latest_event_sequence >= 1",
+            name="ck_m36_signer_profile_event_sequence",
+        ),
+        CheckConstraint(
+            "length(profile_key) = 64 AND length(policy_hash) = 64 "
+            "AND length(latest_event_hash) = 64",
+            name="ck_m36_signer_profile_hashes",
+        ),
+        UniqueConstraint("profile_id", name="uq_m36_signer_profile_id"),
+        UniqueConstraint("profile_key", name="uq_m36_signer_profile_key"),
+        Index("ix_m36_signer_profile_status_expiry", "status", "expires_at"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    profile_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    profile_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(48), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    wallet_address: Mapped[str] = mapped_column(String(64), nullable=False)
+    network: Mapped[str] = mapped_column(String(24), nullable=False)
+    allowed_program_ids: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    max_transaction_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_required_signers: Mapped[int] = mapped_column(Integer, nullable=False)
+    allow_address_lookup_tables: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    validity_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revocation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latest_event_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    latest_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    technical_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CanonicalParserIsolatedSignerProfileEvent(Base):
+    __tablename__ = "canonical_parser_isolated_signer_profile_events"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_m36_signer_event_sequence"),
+        CheckConstraint(
+            "event_type IN ('ISSUED','REVOKED','EXPIRED')",
+            name="ck_m36_signer_event_type",
+        ),
+        CheckConstraint("length(event_hash) = 64", name="ck_m36_signer_event_hash"),
+        UniqueConstraint("event_id", name="uq_m36_signer_event_id"),
+        UniqueConstraint(
+            "profile_db_id", "sequence", name="uq_m36_signer_event_sequence"
+        ),
+        Index("ix_m36_signer_event_profile_time", "profile_db_id", "occurred_at"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    profile_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_isolated_signer_profiles.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CanonicalParserLiveTransactionDryRun(Base):
+    __tablename__ = "canonical_parser_live_transaction_dry_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "scope = 'M36_PRE_SIGN_DRY_RUN_ONLY'",
+            name="ck_m36_dry_run_scope",
+        ),
+        CheckConstraint(
+            "status IN ('READY','REVIEW','BLOCKED','INSUFFICIENT_DATA')",
+            name="ck_m36_dry_run_status",
+        ),
+        CheckConstraint(
+            "transaction_source IN ('JUPITER_ORDER','PROVIDED_TRANSACTION')",
+            name="ck_m36_dry_run_source",
+        ),
+        CheckConstraint(
+            "transaction_format IN ('LEGACY','V0')",
+            name="ck_m36_dry_run_format",
+        ),
+        CheckConstraint("side IN ('BUY','SELL')", name="ck_m36_dry_run_side"),
+        CheckConstraint(
+            "rpc_simulation_status IN ('PASSED','FAILED','SKIPPED','UNAVAILABLE')",
+            name="ck_m36_dry_run_rpc_status",
+        ),
+        CheckConstraint(
+            "transaction_size_bytes > 0 AND signature_slot_count >= 0 "
+            "AND required_signer_count >= 1 AND static_account_count >= 1 "
+            "AND instruction_count >= 1 AND address_lookup_count >= 0",
+            name="ck_m36_dry_run_counts",
+        ),
+        CheckConstraint(
+            "amount_raw > 0 AND requested_budget_sol >= 0",
+            name="ck_m36_dry_run_values",
+        ),
+        CheckConstraint(
+            "jupiter_slippage_bps IS NULL OR jupiter_slippage_bps >= 0",
+            name="ck_m36_dry_run_slippage",
+        ),
+        CheckConstraint(
+            "length(dry_run_key) = 64 AND length(transaction_hash) = 64 "
+            "AND length(message_hash) = 64 AND length(account_keys_hash) = 64 "
+            "AND length(signing_envelope_hash) = 64 AND length(evidence_hash) = 64",
+            name="ck_m36_dry_run_hashes",
+        ),
+        UniqueConstraint("dry_run_id", name="uq_m36_dry_run_id"),
+        UniqueConstraint("dry_run_key", name="uq_m36_dry_run_key"),
+        Index("ix_m36_dry_run_status_prepared", "status", "prepared_at"),
+        Index("ix_m36_dry_run_profile_prepared", "signer_profile_db_id", "prepared_at"),
+        Index("ix_m36_dry_run_simulation", "micro_live_simulation_db_id"),
+    )
+
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    dry_run_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    dry_run_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(40), nullable=False)
+    signer_profile_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_isolated_signer_profiles.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    signer_profile_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    micro_live_simulation_db_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_parser_micro_live_canary_simulations.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    micro_live_simulation_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    micro_live_permit_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    decision_result_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    transaction_source: Mapped[str] = mapped_column(String(32), nullable=False)
+    transaction_format: Mapped[str] = mapped_column(String(12), nullable=False)
+    token_mint: Mapped[str] = mapped_column(String(64), nullable=False)
+    input_mint: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_mint: Mapped[str] = mapped_column(String(64), nullable=False)
+    amount_raw: Mapped[Decimal] = mapped_column(Numeric(40, 0), nullable=False)
+    requested_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    transaction_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    signature_slot_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    required_signer_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    static_account_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    instruction_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    address_lookup_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    required_signers: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    program_ids: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    writable_accounts: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    transaction_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    message_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    account_keys_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    jupiter_request_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    jupiter_router: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    jupiter_price_impact_percent: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 6), nullable=True
+    )
+    jupiter_slippage_bps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rpc_simulation_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    units_consumed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    inspection_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    rpc_simulation_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    signing_envelope: Mapped[dict] = mapped_column(JSON, nullable=False)
+    signing_envelope_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prepared_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    envelope_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
