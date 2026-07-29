@@ -281,6 +281,35 @@ class SolanaRpcClient:
             "slot": value.get("slot"),
         }
 
+    def get_transaction_details(
+        self,
+        signature: str,
+    ) -> dict | None:
+        result = self.call(
+            "getTransaction",
+            [
+                signature,
+                {
+                    "commitment": "finalized",
+                    "encoding": "json",
+                    "maxSupportedTransactionVersion": 0,
+                },
+            ],
+        )
+
+        if result is None:
+            return None
+
+        if not isinstance(result, dict):
+            raise SolanaRpcError(
+                "Transazione Solana non interpretabile.",
+                code="SOLANA_TRANSACTION_INVALID_RESPONSE",
+                status_code=502,
+            )
+
+        return result
+
+
     def simulate_unsigned_transaction_base64(
         self,
         transaction_base64: str,
@@ -557,4 +586,4 @@ def classify_transaction(
         "slot": tx_detail["slot"],
         "block_time":
             tx_detail["blockTime"],
-    } 
+    }

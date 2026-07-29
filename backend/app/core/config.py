@@ -905,6 +905,52 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # M39 AUTHORITATIVE ON-CHAIN SETTLEMENT
+    # Manual read-only reconciliation and governed position attribution.
+    # =========================
+
+    CANONICAL_PARSER_LIVE_ONCHAIN_SETTLEMENT_ENABLED: bool = False
+    CANONICAL_PARSER_LIVE_ONCHAIN_SETTLEMENT_RPC_ENABLED: bool = False
+    CANONICAL_PARSER_LIVE_ONCHAIN_SETTLEMENT_REQUIRE_FINALIZED: bool = True
+    CANONICAL_PARSER_LIVE_ONCHAIN_SETTLEMENT_MAX_TRANSACTION_AGE_SECONDS: int = Field(
+        default=900, ge=30, le=86400
+    )
+    CANONICAL_PARSER_LIVE_ONCHAIN_SETTLEMENT_MAX_BUY_INPUT_DEVIATION_BPS: int = Field(
+        default=3000, ge=0, le=10000
+    )
+
+    # =========================
+    # M40 GOVERNED LIVE POSITION LIFECYCLE & EXIT INTENT
+    # Manual assessment and exit authorization only.
+    # =========================
+
+    CANONICAL_PARSER_GOVERNED_LIVE_POSITION_ENABLED: bool = False
+    CANONICAL_PARSER_GOVERNED_LIVE_POSITION_MAX_QUOTE_AGE_SECONDS: int = Field(
+        default=30, ge=1, le=3600
+    )
+    CANONICAL_PARSER_GOVERNED_LIVE_POSITION_ASSESSMENT_TTL_SECONDS: int = Field(
+        default=30, ge=5, le=3600
+    )
+    CANONICAL_PARSER_GOVERNED_LIVE_POSITION_MAX_INTENT_VALIDITY_MINUTES: int = Field(
+        default=10, ge=1, le=1440
+    )
+    CANONICAL_PARSER_GOVERNED_LIVE_POSITION_STOP_LOSS_PERCENT: float = Field(
+        default=10.0, ge=0.1, le=100.0
+    )
+    CANONICAL_PARSER_GOVERNED_LIVE_POSITION_TAKE_PROFIT_PERCENT: float = Field(
+        default=25.0, ge=0.1, le=10000.0
+    )
+    CANONICAL_PARSER_GOVERNED_LIVE_POSITION_TRAILING_STOP_PERCENT: float = Field(
+        default=8.0, ge=0.1, le=100.0
+    )
+    CANONICAL_PARSER_GOVERNED_LIVE_POSITION_MAX_AGE_MINUTES: int = Field(
+        default=1440, ge=1, le=525600
+    )
+    CANONICAL_PARSER_GOVERNED_LIVE_POSITION_MAX_EXIT_PRICE_IMPACT_PERCENT: float = Field(
+        default=10.0, ge=0.0, le=100.0
+    )
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

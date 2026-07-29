@@ -481,6 +481,7 @@ class CanonicalParserMicroLiveCanaryPermitRevokeRequest(BaseModel):
 class CanonicalParserMicroLiveCanarySimulationRequest(BaseModel):
     permit_id: str = Field(min_length=36, max_length=36)
     decision_result_id: str = Field(min_length=36, max_length=36)
+    governed_exit_intent_id: str | None = Field(default=None, min_length=36, max_length=36)
     side: Literal["BUY", "SELL"] = "BUY"
     market_price_sol: float = Field(gt=0, le=1_000_000_000)
     requested_budget_sol: float = Field(default=0.01, ge=0, le=10)
@@ -564,4 +565,42 @@ class CanonicalParserControlledLiveSubmissionRequest(BaseModel):
 class CanonicalParserControlledLiveReconcileRequest(BaseModel):
     submission_id: str = Field(min_length=36, max_length=36)
     confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+
+class CanonicalParserLiveOnchainSettlementRequest(BaseModel):
+    submission_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserGovernedLivePositionAssessmentRequest(BaseModel):
+    position_id: str = Field(min_length=36, max_length=36)
+    quoted_output_sol: float = Field(gt=0, le=1_000_000_000)
+    price_impact_percent: float = Field(default=0, ge=0, le=100)
+    sell_route_available: bool = True
+    token_safety_status: Literal["SAFE", "REVIEW", "UNSAFE", "UNKNOWN"] = "SAFE"
+    source_wallet_sell_detected: bool = False
+    emergency_exit_requested: bool = False
+    quote_observed_at: datetime
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserGovernedLiveExitIntentIssueRequest(BaseModel):
+    assessment_id: str = Field(min_length=36, max_length=36)
+    percentage: float = Field(default=100, gt=0, le=100)
+    validity_minutes: int = Field(default=5, ge=1, le=1440)
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserGovernedLiveExitIntentRevokeRequest(BaseModel):
+    intent_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=500)
+    reason: str = Field(min_length=3, max_length=500)
     actor_label: str | None = Field(default=None, max_length=80)

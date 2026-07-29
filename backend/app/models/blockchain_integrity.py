@@ -5428,3 +5428,224 @@ class CanonicalParserControlledLiveSubmissionEvent(Base):
     event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+class CanonicalParserLiveOnchainSettlement(Base):
+    __tablename__ = "canonical_parser_live_onchain_settlements"
+    __table_args__ = (
+        CheckConstraint("scope = 'M39_AUTHORITATIVE_ONCHAIN_SETTLEMENT'", name="ck_m39_settlement_scope"),
+        CheckConstraint("status IN ('SETTLED','REVIEW','BLOCKED','INSUFFICIENT_DATA')", name="ck_m39_settlement_status"),
+        CheckConstraint("side IN ('BUY','SELL')", name="ck_m39_settlement_side"),
+        CheckConstraint("fee_lamports >= 0 AND actual_input_amount_raw >= 0 AND actual_output_amount_raw >= 0", name="ck_m39_settlement_amounts"),
+        CheckConstraint("length(settlement_key) = 64 AND length(evidence_hash) = 64", name="ck_m39_settlement_hashes"),
+        UniqueConstraint("settlement_id", name="uq_m39_settlement_id"),
+        UniqueConstraint("settlement_key", name="uq_m39_settlement_key"),
+        UniqueConstraint("submission_db_id", name="uq_m39_settlement_submission"),
+        Index("ix_m39_settlement_status_time", "status", "settled_at"),
+        Index("ix_m39_settlement_wallet_token", "wallet_address", "token_mint"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    settlement_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    settlement_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(48), nullable=False)
+    submission_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_controlled_live_submissions.id", ondelete="RESTRICT"), nullable=False)
+    submission_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    dry_run_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    micro_live_permit_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    decision_result_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    position_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    token_mint: Mapped[str] = mapped_column(String(64), nullable=False)
+    wallet_address: Mapped[str] = mapped_column(String(64), nullable=False)
+    rpc_signature: Mapped[str] = mapped_column(String(96), nullable=False)
+    confirmation_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    slot: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    block_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fee_lamports: Mapped[Decimal] = mapped_column(Numeric(20, 0), nullable=False)
+    wallet_sol_delta_lamports: Mapped[Decimal] = mapped_column(Numeric(38, 0), nullable=False)
+    token_delta_raw: Mapped[Decimal] = mapped_column(Numeric(38, 0), nullable=False)
+    actual_input_amount_raw: Mapped[Decimal] = mapped_column(Numeric(38, 0), nullable=False)
+    actual_output_amount_raw: Mapped[Decimal] = mapped_column(Numeric(38, 0), nullable=False)
+    actual_input_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    actual_output_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    transaction_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    attribution_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    settled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserLiveOnchainSettlementEvent(Base):
+    __tablename__ = "canonical_parser_live_onchain_settlement_events"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_m39_settlement_event_sequence"),
+        CheckConstraint("event_type IN ('SETTLED','REVIEW','BLOCKED','INSUFFICIENT_DATA','POSITION_OPENED','POSITION_REDUCED','POSITION_CLOSED')", name="ck_m39_settlement_event_type"),
+        CheckConstraint("length(event_hash) = 64", name="ck_m39_settlement_event_hash"),
+        UniqueConstraint("event_id", name="uq_m39_settlement_event_id"),
+        UniqueConstraint("settlement_db_id", "sequence", name="uq_m39_settlement_event_sequence"),
+        Index("ix_m39_settlement_event_time", "settlement_db_id", "occurred_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    settlement_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_live_onchain_settlements.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserGovernedLivePosition(Base):
+    __tablename__ = "canonical_parser_governed_live_positions"
+    __table_args__ = (
+        CheckConstraint("scope = 'M39_GOVERNED_LIVE_POSITION_LEDGER'", name="ck_m39_position_scope"),
+        CheckConstraint("status IN ('OPEN','CLOSED','REVIEW')", name="ck_m39_position_status"),
+        CheckConstraint("quantity_raw >= 0 AND cost_basis_sol >= 0 AND realized_proceeds_sol >= 0", name="ck_m39_position_values"),
+        CheckConstraint("position_version >= 1", name="ck_m39_position_version"),
+        CheckConstraint("length(position_key) = 64 AND length(evidence_hash) = 64", name="ck_m39_position_hashes"),
+        UniqueConstraint("position_id", name="uq_m39_position_id"),
+        UniqueConstraint("position_key", name="uq_m39_position_key"),
+        UniqueConstraint("entry_settlement_db_id", name="uq_m39_position_entry_settlement"),
+        Index("ix_m39_position_status_token", "status", "token_mint"),
+        Index("ix_m39_position_wallet_opened", "wallet_address", "opened_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    position_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    position_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(48), nullable=False)
+    entry_settlement_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_live_onchain_settlements.id", ondelete="RESTRICT"), nullable=False)
+    entry_settlement_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    last_settlement_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    micro_live_permit_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    decision_result_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    wallet_address: Mapped[str] = mapped_column(String(64), nullable=False)
+    token_mint: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    quantity_raw: Mapped[Decimal] = mapped_column(Numeric(38, 0), nullable=False)
+    cost_basis_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    realized_proceeds_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    realized_pnl_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    high_watermark_value_sol: Mapped[Decimal | None] = mapped_column(Numeric(20, 9), nullable=True)
+    high_watermark_roi_percent: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    exit_plan: Mapped[dict] = mapped_column(JSON, nullable=False)
+    position_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    position_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_assessed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class CanonicalParserGovernedLivePositionAssessment(Base):
+    __tablename__ = "canonical_parser_governed_live_position_assessments"
+    __table_args__ = (
+        CheckConstraint("scope = 'M40_GOVERNED_LIVE_POSITION_ASSESSMENT'", name="ck_m40_assessment_scope"),
+        CheckConstraint("status IN ('HOLD','EXIT_READY','REVIEW','BLOCKED','INSUFFICIENT_DATA')", name="ck_m40_assessment_status"),
+        CheckConstraint("quoted_output_sol >= 0 AND current_value_sol >= 0", name="ck_m40_assessment_values"),
+        CheckConstraint("price_impact_percent >= 0", name="ck_m40_assessment_price_impact"),
+        CheckConstraint("token_safety_status IN ('SAFE','REVIEW','UNSAFE','UNKNOWN')", name="ck_m40_assessment_token_safety"),
+        CheckConstraint("length(assessment_key) = 64 AND length(evidence_hash) = 64", name="ck_m40_assessment_hashes"),
+        UniqueConstraint("assessment_id", name="uq_m40_assessment_id"),
+        UniqueConstraint("assessment_key", name="uq_m40_assessment_key"),
+        Index("ix_m40_assessment_position_time", "position_db_id", "assessed_at"),
+        Index("ix_m40_assessment_status_expiry", "status", "expires_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    assessment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    assessment_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(52), nullable=False)
+    position_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_governed_live_positions.id", ondelete="RESTRICT"), nullable=False)
+    position_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    quoted_output_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    current_value_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    unrealized_pnl_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    unrealized_roi_percent: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    high_watermark_value_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    high_watermark_roi_percent: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    trailing_drawdown_percent: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    price_impact_percent: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    sell_route_available: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    token_safety_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    source_wallet_sell_detected: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    emergency_exit_requested: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    assessment_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    quote_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    assessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserGovernedLiveExitIntent(Base):
+    __tablename__ = "canonical_parser_governed_live_exit_intents"
+    __table_args__ = (
+        CheckConstraint("scope = 'M40_MANUAL_GOVERNED_LIVE_EXIT_INTENT'", name="ck_m40_intent_scope"),
+        CheckConstraint("status IN ('ACTIVE','REVOKED','EXPIRED','CONSUMED')", name="ck_m40_intent_status"),
+        CheckConstraint("quantity_raw > 0 AND percentage > 0 AND percentage <= 100", name="ck_m40_intent_quantity"),
+        CheckConstraint("expected_output_sol >= 0 AND minimum_output_sol >= 0", name="ck_m40_intent_output"),
+        CheckConstraint("latest_event_sequence >= 1", name="ck_m40_intent_event_sequence"),
+        CheckConstraint("length(intent_key) = 64 AND length(evidence_hash) = 64 AND length(latest_event_hash) = 64", name="ck_m40_intent_hashes"),
+        UniqueConstraint("intent_id", name="uq_m40_intent_id"),
+        UniqueConstraint("intent_key", name="uq_m40_intent_key"),
+        Index("ix_m40_intent_position_status", "position_db_id", "status"),
+        Index("ix_m40_intent_status_expiry", "status", "expires_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    intent_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    intent_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(52), nullable=False)
+    position_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_governed_live_positions.id", ondelete="RESTRICT"), nullable=False)
+    position_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    assessment_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_governed_live_position_assessments.id", ondelete="RESTRICT"), nullable=False)
+    assessment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    micro_live_permit_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    decision_result_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    quantity_raw: Mapped[Decimal] = mapped_column(Numeric(38, 0), nullable=False)
+    percentage: Mapped[Decimal] = mapped_column(Numeric(7, 4), nullable=False)
+    expected_output_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    minimum_output_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    intent_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    latest_event_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    latest_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserGovernedLiveExitIntentEvent(Base):
+    __tablename__ = "canonical_parser_governed_live_exit_intent_events"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_m40_intent_event_sequence"),
+        CheckConstraint("event_type IN ('ISSUED','REVOKED','EXPIRED','CONSUMED')", name="ck_m40_intent_event_type"),
+        CheckConstraint("length(event_hash) = 64", name="ck_m40_intent_event_hash"),
+        UniqueConstraint("event_id", name="uq_m40_intent_event_id"),
+        UniqueConstraint("intent_db_id", "sequence", name="uq_m40_intent_event_sequence"),
+        Index("ix_m40_intent_event_time", "intent_db_id", "occurred_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    intent_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_governed_live_exit_intents.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

@@ -130,6 +130,10 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserExternalSigningApprovalRevokeRequest,
     CanonicalParserControlledLiveSubmissionRequest,
     CanonicalParserControlledLiveReconcileRequest,
+    CanonicalParserLiveOnchainSettlementRequest,
+    CanonicalParserGovernedLivePositionAssessmentRequest,
+    CanonicalParserGovernedLiveExitIntentIssueRequest,
+    CanonicalParserGovernedLiveExitIntentRevokeRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -431,6 +435,27 @@ from backend.app.services.blockchain_parser_controlled_live_submission_service i
     reconcile_controlled_live_submission,
     resolve_controlled_live_submission,
     submit_controlled_live_transaction,
+)
+from backend.app.services.blockchain_parser_live_onchain_settlement_service import (
+    CanonicalParserLiveOnchainSettlementError,
+    get_governed_live_position,
+    get_live_onchain_settlement,
+    get_live_onchain_settlement_status,
+    preview_live_onchain_settlement,
+    resolve_live_onchain_settlement,
+    settle_live_onchain_submission,
+)
+from backend.app.services.blockchain_parser_governed_live_position_service import (
+    CanonicalParserGovernedLivePositionError,
+    assess_governed_live_position,
+    get_governed_live_exit_intent,
+    get_governed_live_position_assessment,
+    get_governed_live_position_status,
+    issue_governed_live_exit_intent,
+    preview_governed_live_exit_intent,
+    preview_governed_live_position_assessment,
+    resolve_governed_live_position,
+    revoke_governed_live_exit_intent,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -3066,6 +3091,7 @@ def execute_permit_bound_paper_endpoint(
             side=request.side,
             market_price_sol=request.market_price_sol,
             idempotency_token=request.idempotency_token,
+            governed_exit_intent_id=request.governed_exit_intent_id,
             confirmation=request.confirmation,
             quantity=request.quantity,
             slippage_percent=request.slippage_percent,
@@ -3836,3 +3862,114 @@ def read_controlled_live_submission_endpoint(
 def resolve_controlled_live_submission_endpoint(db: Session = Depends(get_db)):
     return resolve_controlled_live_submission(db)
 # END M38 CONTROLLED LIVE SUBMISSION & ON-CHAIN RECONCILIATION
+
+# BEGIN M39 AUTHORITATIVE ON-CHAIN SETTLEMENT & POSITION ATTRIBUTION
+@app.get("/integrity/parser-live-onchain-settlement/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_live_onchain_settlement_status_endpoint(db: Session = Depends(get_db)):
+    return get_live_onchain_settlement_status(db)
+
+
+@app.post("/integrity/parser-live-onchain-settlement/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_live_onchain_settlement_endpoint(request: CanonicalParserLiveOnchainSettlementRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_live_onchain_settlement(db, submission_id=request.submission_id)
+    except CanonicalParserLiveOnchainSettlementError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-live-onchain-settlement/settle", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def settle_live_onchain_submission_endpoint(request: CanonicalParserLiveOnchainSettlementRequest, db: Session = Depends(get_db)):
+    try:
+        return settle_live_onchain_submission(db, submission_id=request.submission_id, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserLiveOnchainSettlementError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-live-onchain-settlement/settlements/{settlement_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_live_onchain_settlement_endpoint(settlement_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_live_onchain_settlement(db, settlement_id)
+    except CanonicalParserLiveOnchainSettlementError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-live-onchain-settlement/positions/{position_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_governed_live_position_endpoint(position_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_governed_live_position(db, position_id)
+    except CanonicalParserLiveOnchainSettlementError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-live-onchain-settlement/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_live_onchain_settlement_endpoint(db: Session = Depends(get_db)):
+    return resolve_live_onchain_settlement(db)
+# END M39 AUTHORITATIVE ON-CHAIN SETTLEMENT & POSITION ATTRIBUTION
+
+
+# BEGIN M40 GOVERNED LIVE POSITION LIFECYCLE & EXIT INTENT
+@app.get("/integrity/parser-governed-live-position/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_governed_live_position_status_endpoint(db: Session = Depends(get_db)):
+    return get_governed_live_position_status(db)
+
+
+@app.post("/integrity/parser-governed-live-position/assessment-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_governed_live_position_assessment_endpoint(request: CanonicalParserGovernedLivePositionAssessmentRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_governed_live_position_assessment(db, position_id=request.position_id, quoted_output_sol=request.quoted_output_sol, price_impact_percent=request.price_impact_percent, sell_route_available=request.sell_route_available, token_safety_status=request.token_safety_status, source_wallet_sell_detected=request.source_wallet_sell_detected, emergency_exit_requested=request.emergency_exit_requested, quote_observed_at=request.quote_observed_at, idempotency_token=request.idempotency_token)
+    except CanonicalParserGovernedLivePositionError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-governed-live-position/assess", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def assess_governed_live_position_endpoint(request: CanonicalParserGovernedLivePositionAssessmentRequest, db: Session = Depends(get_db)):
+    try:
+        return assess_governed_live_position(db, position_id=request.position_id, quoted_output_sol=request.quoted_output_sol, price_impact_percent=request.price_impact_percent, sell_route_available=request.sell_route_available, token_safety_status=request.token_safety_status, source_wallet_sell_detected=request.source_wallet_sell_detected, emergency_exit_requested=request.emergency_exit_requested, quote_observed_at=request.quote_observed_at, idempotency_token=request.idempotency_token, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserGovernedLivePositionError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-governed-live-position/exit-intent-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_governed_live_exit_intent_endpoint(request: CanonicalParserGovernedLiveExitIntentIssueRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_governed_live_exit_intent(db, assessment_id=request.assessment_id, percentage=request.percentage, validity_minutes=request.validity_minutes, idempotency_token=request.idempotency_token)
+    except CanonicalParserGovernedLivePositionError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-governed-live-position/exit-intent/issue", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def issue_governed_live_exit_intent_endpoint(request: CanonicalParserGovernedLiveExitIntentIssueRequest, db: Session = Depends(get_db)):
+    try:
+        return issue_governed_live_exit_intent(db, assessment_id=request.assessment_id, percentage=request.percentage, validity_minutes=request.validity_minutes, idempotency_token=request.idempotency_token, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserGovernedLivePositionError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-governed-live-position/exit-intent/revoke", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def revoke_governed_live_exit_intent_endpoint(request: CanonicalParserGovernedLiveExitIntentRevokeRequest, db: Session = Depends(get_db)):
+    try:
+        return revoke_governed_live_exit_intent(db, intent_id=request.intent_id, confirmation=request.confirmation, reason=request.reason, actor_label=request.actor_label)
+    except CanonicalParserGovernedLivePositionError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-governed-live-position/assessments/{assessment_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_governed_live_position_assessment_endpoint(assessment_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_governed_live_position_assessment(db, assessment_id)
+    except CanonicalParserGovernedLivePositionError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-governed-live-position/exit-intents/{intent_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_governed_live_exit_intent_endpoint(intent_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_governed_live_exit_intent(db, intent_id)
+    except CanonicalParserGovernedLivePositionError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-governed-live-position/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_governed_live_position_endpoint(db: Session = Depends(get_db)):
+    return resolve_governed_live_position(db)
+# END M40 GOVERNED LIVE POSITION LIFECYCLE & EXIT INTENT

@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import settings
 from backend.app.models.blockchain_integrity import (
+    CanonicalParserGovernedLiveExitIntent,
+    CanonicalParserGovernedLivePosition,
     CanonicalParserMicroLiveCanaryPermit,
     CanonicalParserMicroLiveCanaryPermitEvent,
     CanonicalParserMicroLiveCanarySimulation,
@@ -27,8 +29,11 @@ from backend.app.services.blockchain_integrity_service import (
 from backend.app.services.blockchain_parser_permit_bound_paper_execution_service import (
     _calculate_decision_hash,
 )
+from backend.app.services.blockchain_parser_governed_live_position_service import (
+    consume_governed_live_exit_intent,
+)
 
-MICRO_LIVE_CANARY_POLICY_VERSION = "canonical-parser-micro-live-canary-governance/1"
+MICRO_LIVE_CANARY_POLICY_VERSION = "canonical-parser-micro-live-canary-governance/2"
 MICRO_LIVE_PERMIT_PREFIX = "ISSUE_M35_MICRO_LIVE_CANARY"
 MICRO_LIVE_REVOKE_PREFIX = "REVOKE_M35_MICRO_LIVE_CANARY"
 MICRO_LIVE_SIMULATION_PREFIX = "SIMULATE_M35_MICRO_LIVE_CANARY"
@@ -558,6 +563,7 @@ def preview_micro_live_canary_simulation(
     market_price_sol: Any,
     requested_budget_sol: Any,
     idempotency_token: str,
+    governed_exit_intent_id: str | None = None,
     settings_object: Any = settings,
     evaluated_at: datetime | None = None,
 ) -> dict[str, Any]:
@@ -587,6 +593,33 @@ def preview_micro_live_canary_simulation(
     current_live_snapshot = _live_policy_snapshot(live_policy)
     current_platform_snapshot = _platform_snapshot(platform)
     reasons: list[str] = []
+    exit_intent = None
+    exit_position = None
+    if governed_exit_intent_id is not None:
+        if normalized_side != "SELL":
+            reasons.append("EXIT_INTENT_REQUIRES_SELL")
+        exit_intent = db.scalar(
+            select(CanonicalParserGovernedLiveExitIntent).where(
+                CanonicalParserGovernedLiveExitIntent.intent_id == governed_exit_intent_id
+            )
+        )
+        if exit_intent is None:
+            reasons.append("EXIT_INTENT_NOT_FOUND")
+        else:
+            if exit_intent.status != "ACTIVE" or _aware(exit_intent.expires_at) <= now:
+                reasons.append("EXIT_INTENT_INACTIVE")
+            if exit_intent.micro_live_permit_id != permit_id:
+                reasons.append("EXIT_INTENT_PERMIT_MISMATCH")
+            if exit_intent.decision_result_id != decision_result_id:
+                reasons.append("EXIT_INTENT_DECISION_MISMATCH")
+            exit_position = db.get(CanonicalParserGovernedLivePosition, exit_intent.position_db_id)
+            if exit_position is None or exit_position.status != "OPEN":
+                reasons.append("EXIT_POSITION_NOT_OPEN")
+            elif _decimal(exit_position.quantity_raw) < _decimal(exit_intent.quantity_raw):
+                reasons.append("EXIT_INTENT_QUANTITY_EXCEEDS_POSITION")
+    governed_exit = exit_intent is not None and not any(
+        reason.startswith("EXIT_") for reason in reasons
+    )
     if calculate_payload_hash(current_live_snapshot) != calculate_payload_hash(permit.live_policy_snapshot):
         reasons.append("LIVE_POLICY_DRIFT")
     if calculate_payload_hash(current_platform_snapshot) != calculate_payload_hash(permit.live_platform_snapshot):
@@ -603,7 +636,7 @@ def preview_micro_live_canary_simulation(
     run = db.get(CanonicalParserUnifiedDecisionRun, decision.run_db_id)
     if run is None:
         reasons.append("DECISION_RUN_MISSING")
-    else:
+    elif not governed_exit:
         if _aware(run.valid_until) <= now:
             reasons.append("DECISION_EXPIRED")
         if now - _aware(run.completed_at) > timedelta(minutes=policy["maximum_decision_age_minutes"]):
@@ -612,12 +645,13 @@ def preview_micro_live_canary_simulation(
         reasons.append("DECISION_NOT_APPROVE")
     if decision.decision_hash != _calculate_decision_hash(decision):
         reasons.append("DECISION_HASH_DRIFT")
-    if decision.token_safety_status != "SAFE":
-        reasons.append("TOKEN_NOT_SAFE")
-    if decision.timing_status != "COPYABLE":
-        reasons.append("TIMING_NOT_COPYABLE")
-    if not decision.exit_plan or decision.exit_plan.get("status") != "PLANNED":
-        reasons.append("EXIT_PLAN_MISSING")
+    if not governed_exit:
+        if decision.token_safety_status != "SAFE":
+            reasons.append("TOKEN_NOT_SAFE")
+        if decision.timing_status != "COPYABLE":
+            reasons.append("TIMING_NOT_COPYABLE")
+        if not decision.exit_plan or decision.exit_plan.get("status") != "PLANNED":
+            reasons.append("EXIT_PLAN_MISSING")
     remaining_budget = _decimal(permit.total_budget_sol) - _decimal(permit.simulated_budget_sol)
     remaining_orders = permit.max_order_count - permit.simulated_order_count
     simulated_budget = Decimal("0") if normalized_side == "SELL" else min(
@@ -635,6 +669,7 @@ def preview_micro_live_canary_simulation(
             "market_price_sol": _price(market_price),
             "requested_budget_sol": _money(requested),
             "idempotency_token": normalized_idempotency_token,
+            "governed_exit_intent_id": governed_exit_intent_id,
         }
     )
     existing = db.scalar(
@@ -651,6 +686,12 @@ def preview_micro_live_canary_simulation(
                 "DECISION_HASH_DRIFT",
                 "TOKEN_NOT_SAFE",
                 "EXIT_PLAN_MISSING",
+                "EXIT_INTENT_NOT_FOUND",
+                "EXIT_INTENT_INACTIVE",
+                "EXIT_INTENT_PERMIT_MISMATCH",
+                "EXIT_INTENT_DECISION_MISMATCH",
+                "EXIT_POSITION_NOT_OPEN",
+                "EXIT_INTENT_QUANTITY_EXCEEDS_POSITION",
             )
         ) else "INSUFFICIENT_DATA"
     else:
@@ -659,6 +700,9 @@ def preview_micro_live_canary_simulation(
         "permit_id": permit_id,
         "decision_result_id": decision_result_id,
         "decision_hash": decision.decision_hash,
+        "governed_exit_intent_id": governed_exit_intent_id,
+        "governed_exit": governed_exit,
+        "governed_exit_quantity_raw": None if exit_intent is None else str(exit_intent.quantity_raw),
         "side": normalized_side,
         "token_mint": decision.token_mint,
         "market_price_sol": _price(market_price),
@@ -689,6 +733,7 @@ def preview_micro_live_canary_simulation(
         "permit_id": permit_id,
         "decision_result_id": decision_result_id,
         "decision_hash": decision.decision_hash,
+        "governed_exit_intent_id": governed_exit_intent_id,
         "side": normalized_side,
         "token_mint": decision.token_mint,
         "requested_budget_sol": _money(requested),
@@ -711,6 +756,7 @@ def simulate_micro_live_canary(
     market_price_sol: Any,
     requested_budget_sol: Any,
     idempotency_token: str,
+    governed_exit_intent_id: str | None = None,
     confirmation: str,
     actor_label: str | None = None,
     note: str | None = None,
@@ -730,6 +776,7 @@ def simulate_micro_live_canary(
         market_price_sol=market_price_sol,
         requested_budget_sol=requested_budget_sol,
         idempotency_token=idempotency_token,
+        governed_exit_intent_id=governed_exit_intent_id,
         settings_object=settings_object,
         evaluated_at=now,
     )
@@ -772,6 +819,10 @@ def simulate_micro_live_canary(
         if row.status == "READY":
             permit.simulated_order_count += 1
             permit.simulated_budget_sol = _decimal(permit.simulated_budget_sol) + _decimal(row.simulated_budget_sol)
+            if governed_exit_intent_id is not None:
+                consume_governed_live_exit_intent(
+                    db, governed_exit_intent_id, consumed_at=now
+                )
         db.flush()
         _append_event(
             db,

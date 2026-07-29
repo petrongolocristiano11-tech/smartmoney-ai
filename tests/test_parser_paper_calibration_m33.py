@@ -316,7 +316,7 @@ def test_m33_migration_is_consecutive_and_head():
     scripts = ScriptDirectory.from_config(config)
     revision = scripts.get_revision("b8e5d0f3a742")
     assert revision.down_revision == "a7d4c9e2f631"
-    assert scripts.get_heads() == ["a3d5e8f1b297"]
+    assert scripts.get_heads() == ["c5f7a0b3d419"]
 
 
 def test_status_is_analytics_only(db):
