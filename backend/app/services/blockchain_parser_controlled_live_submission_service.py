@@ -287,6 +287,7 @@ def _preview(
     signed_transaction_base64: str,
     idempotency_token: str,
     portfolio_risk_permit_id: str | None,
+    preproduction_release_approval_id: str | None,
     settings_object: Any,
     evaluated_at: datetime,
 ) -> dict[str, Any]:
@@ -356,9 +357,11 @@ def _preview(
         reasons.append("BUY_BUDGET_MISSING")
     incident_guard = {"blocked": False, "reason_codes": [], "active_incident_ids": []}
     portfolio_risk = {"required": False, "ready": True, "reason_codes": [], "permit": None, "snapshot": {"enforcement_enabled": False}}
+    preproduction_release = {"required": False, "ready": True, "reason_codes": [], "release": None, "snapshot": {"release_guard_enabled": False}}
     if dry_run is not None:
         from backend.app.services.blockchain_parser_live_incident_response_service import get_live_submission_incident_guard
         from backend.app.services.blockchain_parser_live_portfolio_risk_service import validate_portfolio_risk_permit_for_submission
+        from backend.app.services.blockchain_parser_preproduction_certification_service import validate_preproduction_release_for_submission
         incident_guard = get_live_submission_incident_guard(
             db, side=dry_run.side, settings_object=settings_object, evaluated_at=evaluated_at
         )
@@ -374,6 +377,17 @@ def _preview(
             evaluated_at=evaluated_at,
         )
         reasons.extend(portfolio_risk["reason_codes"])
+        preproduction_release = validate_preproduction_release_for_submission(
+            db,
+            release_id=preproduction_release_approval_id,
+            side=dry_run.side,
+            token_mint=dry_run.token_mint,
+            requested_budget_sol=budget,
+            wallet_address=None if signer_profile is None else signer_profile.wallet_address,
+            settings_object=settings_object,
+            evaluated_at=evaluated_at,
+        )
+        reasons.extend(preproduction_release["reason_codes"])
     used_budget = Decimal("0")
     used_count = 0
     if permit is not None:
@@ -392,6 +406,7 @@ def _preview(
             "signed_transaction_hash": signed["signed_transaction_hash"],
             "idempotency_token": str(idempotency_token).strip(),
             "portfolio_risk_permit_id": portfolio_risk_permit_id,
+            "preproduction_release_approval_id": preproduction_release_approval_id,
             "policy": policy,
         }
     )
@@ -419,6 +434,7 @@ def _preview(
         if permit is None
         else int(permit.max_order_count) - used_count - 1,
         "portfolio_risk": portfolio_risk["snapshot"],
+        "preproduction_release": preproduction_release["snapshot"],
         "incident_guard": incident_guard,
     }
     evidence = {
@@ -430,6 +446,7 @@ def _preview(
         "live_control_snapshot": live_snapshot,
         "incident_guard": incident_guard,
         "portfolio_risk": portfolio_risk["snapshot"],
+        "preproduction_release": preproduction_release["snapshot"],
         "reason_codes": sorted(set(reasons)),
         "policy": policy,
     }
@@ -439,8 +456,10 @@ def _preview(
         "signer_profile": signer_profile,
         "permit": permit,
         "portfolio_risk_permit": portfolio_risk["permit"],
+        "preproduction_release_approval": preproduction_release["release"],
         "incident_guard": incident_guard,
         "portfolio_risk": portfolio_risk,
+        "preproduction_release": preproduction_release,
         "signed": signed,
         "submission_key": submission_key,
         "existing_submission": None if existing is None else _serialize(existing),
@@ -462,6 +481,7 @@ def preview_controlled_live_submission(
     signed_transaction_base64: str,
     idempotency_token: str,
     portfolio_risk_permit_id: str | None = None,
+    preproduction_release_approval_id: str | None = None,
     settings_object: Any = settings,
     evaluated_at: datetime | None = None,
 ) -> dict[str, Any]:
@@ -471,6 +491,7 @@ def preview_controlled_live_submission(
         signed_transaction_base64=signed_transaction_base64,
         idempotency_token=idempotency_token,
         portfolio_risk_permit_id=portfolio_risk_permit_id,
+        preproduction_release_approval_id=preproduction_release_approval_id,
         settings_object=settings_object,
         evaluated_at=_aware(evaluated_at),
     )
@@ -483,6 +504,7 @@ def preview_controlled_live_submission(
         "reservation": preview["reservation"],
         "incident_guard": preview["incident_guard"],
         "portfolio_risk": preview["portfolio_risk"]["snapshot"],
+        "preproduction_release": preview["preproduction_release"]["snapshot"],
         "reason_codes": preview["reason_codes"],
         "evidence_hash": preview["evidence_hash"],
         "confirmation": preview["confirmation"],
@@ -504,6 +526,7 @@ def submit_controlled_live_transaction(
     signed_transaction_base64: str,
     idempotency_token: str,
     portfolio_risk_permit_id: str | None = None,
+    preproduction_release_approval_id: str | None = None,
     confirmation: str = "",
     actor_label: str | None = None,
     note: str | None = None,
@@ -538,6 +561,7 @@ def submit_controlled_live_transaction(
         signed_transaction_base64=signed_transaction_base64,
         idempotency_token=idempotency_token,
         portfolio_risk_permit_id=portfolio_risk_permit_id,
+        preproduction_release_approval_id=preproduction_release_approval_id,
         settings_object=settings_object,
         evaluated_at=now,
     )
@@ -580,7 +604,9 @@ def submit_controlled_live_transaction(
             "automatic_retry": False,
             "raw_signed_transaction_persisted": False,
             "portfolio_risk_permit_id": portfolio_risk_permit_id,
+            "preproduction_release_approval_id": preproduction_release_approval_id,
             "incident_guard": preview["incident_guard"],
+            "preproduction_release": preview["preproduction_release"]["snapshot"],
         },
         evidence_hash=preview["evidence_hash"],
         actor_label=_actor(actor_label),
@@ -605,6 +631,19 @@ def submit_controlled_live_transaction(
         consume_portfolio_risk_permit(
             db,
             permit_id=str(portfolio_risk_permit_id),
+            submission_id=row.submission_id,
+            side=row.side,
+            token_mint=row.token_mint,
+            requested_budget_sol=row.reserved_budget_sol,
+            wallet_address=None if preview["signer_profile"] is None else preview["signer_profile"].wallet_address,
+            settings_object=settings_object,
+            consumed_at=now,
+        )
+    if preview["preproduction_release"]["required"]:
+        from backend.app.services.blockchain_parser_preproduction_certification_service import consume_preproduction_release_approval
+        consume_preproduction_release_approval(
+            db,
+            release_id=str(preproduction_release_approval_id),
             submission_id=row.submission_id,
             side=row.side,
             token_mint=row.token_mint,

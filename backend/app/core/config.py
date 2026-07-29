@@ -993,6 +993,43 @@ class Settings(BaseSettings):
     CANONICAL_PARSER_LIVE_PORTFOLIO_RISK_FAIL_ON_HIGH_INCIDENT: bool = True
 
     # =========================
+    # M43 LIVE OPERATIONAL OBSERVABILITY & ALERT LEDGER
+    # Manual observation and alert lifecycle; no external notification dispatch.
+    # =========================
+
+    CANONICAL_PARSER_LIVE_OBSERVABILITY_ENABLED: bool = False
+    CANONICAL_PARSER_LIVE_ALERT_LEDGER_ENABLED: bool = False
+    CANONICAL_PARSER_LIVE_OBSERVABILITY_SNAPSHOT_TTL_SECONDS: int = Field(
+        default=60, ge=5, le=3600
+    )
+    CANONICAL_PARSER_LIVE_OBSERVABILITY_STALE_SUBMISSION_SECONDS: int = Field(
+        default=300, ge=30, le=86400
+    )
+    CANONICAL_PARSER_LIVE_OBSERVABILITY_CRITICAL_OPEN_ALERT_THRESHOLD: int = Field(
+        default=1, ge=1, le=1000
+    )
+
+    # =========================
+    # M44 PREPRODUCTION CERTIFICATION & SINGLE-USE RELEASE APPROVAL
+    # Manual certification; no deploy, LIVE enablement, signing or sending.
+    # =========================
+
+    CANONICAL_PARSER_PREPRODUCTION_CERTIFICATION_ENABLED: bool = False
+    CANONICAL_PARSER_PREPRODUCTION_RELEASE_GUARD_ENABLED: bool = False
+    CANONICAL_PARSER_PREPRODUCTION_CERTIFICATION_TTL_MINUTES: int = Field(
+        default=30, ge=1, le=1440
+    )
+    CANONICAL_PARSER_PREPRODUCTION_MAX_RELEASE_VALIDITY_MINUTES: int = Field(
+        default=10, ge=1, le=1440
+    )
+    CANONICAL_PARSER_PREPRODUCTION_MIN_FULL_TEST_COUNT: int = Field(
+        default=1137, ge=1, le=1000000
+    )
+    CANONICAL_PARSER_PREPRODUCTION_REQUIRED_FASTAPI_VERSION: str = "0.138.2"
+    CANONICAL_PARSER_PREPRODUCTION_REQUIRE_HEALTHY_OBSERVABILITY: bool = True
+    CANONICAL_PARSER_PREPRODUCTION_REQUIRE_ZERO_OPEN_CRITICAL_ALERTS: bool = True
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

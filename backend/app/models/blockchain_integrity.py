@@ -5848,3 +5848,246 @@ class CanonicalParserLivePortfolioRiskPermitEvent(Base):
     event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserLiveObservabilitySnapshot(Base):
+    __tablename__ = "canonical_parser_live_observability_snapshots"
+    __table_args__ = (
+        CheckConstraint("scope = 'M43_LIVE_OPERATIONAL_OBSERVABILITY'", name="ck_m43_snapshot_scope"),
+        CheckConstraint("status IN ('HEALTHY','DEGRADED','CRITICAL','INSUFFICIENT_DATA')", name="ck_m43_snapshot_status"),
+        CheckConstraint("uncertain_submission_count >= 0 AND stale_submission_count >= 0 AND unsettled_count >= 0 AND review_position_count >= 0 AND active_incident_count >= 0 AND open_alert_count >= 0", name="ck_m43_snapshot_counts"),
+        CheckConstraint("length(snapshot_key) = 64 AND length(evidence_hash) = 64", name="ck_m43_snapshot_hashes"),
+        UniqueConstraint("snapshot_id", name="uq_m43_snapshot_id"),
+        UniqueConstraint("snapshot_key", name="uq_m43_snapshot_key"),
+        Index("ix_m43_snapshot_status_time", "status", "observed_at"),
+        Index("ix_m43_snapshot_expiry", "expires_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    snapshot_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(48), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    uncertain_submission_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    stale_submission_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    unsettled_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    review_position_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    active_incident_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    open_alert_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    metric_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserLiveOperationalAlert(Base):
+    __tablename__ = "canonical_parser_live_operational_alerts"
+    __table_args__ = (
+        CheckConstraint("scope = 'M43_MANUAL_OPERATIONAL_ALERT'", name="ck_m43_alert_scope"),
+        CheckConstraint("severity IN ('LOW','MEDIUM','HIGH','CRITICAL')", name="ck_m43_alert_severity"),
+        CheckConstraint("status IN ('OPEN','ACKNOWLEDGED','RESOLVED')", name="ck_m43_alert_status"),
+        CheckConstraint("latest_event_sequence >= 1", name="ck_m43_alert_event_sequence"),
+        CheckConstraint("length(alert_key) = 64 AND length(fingerprint) = 64 AND length(evidence_hash) = 64 AND length(latest_event_hash) = 64", name="ck_m43_alert_hashes"),
+        UniqueConstraint("alert_id", name="uq_m43_alert_id"),
+        UniqueConstraint("alert_key", name="uq_m43_alert_key"),
+        Index("ix_m43_alert_fingerprint_status", "fingerprint", "status"),
+        Index("ix_m43_alert_severity_status", "severity", "status"),
+        Index("ix_m43_alert_last_seen", "last_seen_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    alert_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    alert_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(48), nullable=False)
+    snapshot_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_live_observability_snapshots.id", ondelete="RESTRICT"), nullable=False)
+    snapshot_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(96), nullable=False)
+    category: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_id: Mapped[str] = mapped_column(String(96), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    alert_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    latest_event_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    latest_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserLiveOperationalAlertEvent(Base):
+    __tablename__ = "canonical_parser_live_operational_alert_events"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_m43_alert_event_sequence"),
+        CheckConstraint("event_type IN ('OPENED','ACKNOWLEDGED','RESOLVED')", name="ck_m43_alert_event_type"),
+        CheckConstraint("length(event_hash) = 64", name="ck_m43_alert_event_hash"),
+        UniqueConstraint("event_id", name="uq_m43_alert_event_id"),
+        UniqueConstraint("alert_db_id", "sequence", name="uq_m43_alert_event_sequence"),
+        Index("ix_m43_alert_event_time", "alert_db_id", "occurred_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    alert_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_live_operational_alerts.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPreproductionCertification(Base):
+    __tablename__ = "canonical_parser_preproduction_certifications"
+    __table_args__ = (
+        CheckConstraint("scope = 'M44_PREPRODUCTION_CERTIFICATION'", name="ck_m44_certification_scope"),
+        CheckConstraint("environment = 'PREPRODUCTION'", name="ck_m44_certification_environment"),
+        CheckConstraint("status IN ('ACTIVE','REVOKED','EXPIRED')", name="ck_m44_certification_status"),
+        CheckConstraint("full_test_count >= 0 AND full_test_failures >= 0", name="ck_m44_certification_test_counts"),
+        CheckConstraint("latest_event_sequence >= 1", name="ck_m44_certification_event_sequence"),
+        CheckConstraint("length(certification_key) = 64 AND length(test_evidence_hash) = 64 AND length(evidence_hash) = 64 AND length(latest_event_hash) = 64", name="ck_m44_certification_hashes"),
+        UniqueConstraint("certification_id", name="uq_m44_certification_id"),
+        UniqueConstraint("certification_key", name="uq_m44_certification_key"),
+        Index("ix_m44_certification_status_expiry", "status", "expires_at"),
+        Index("ix_m44_certification_commit", "git_commit_sha"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    certification_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    certification_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(48), nullable=False)
+    environment: Mapped[str] = mapped_column(String(24), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    observability_snapshot_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_live_observability_snapshots.id", ondelete="RESTRICT"), nullable=False)
+    observability_snapshot_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    git_commit_sha: Mapped[str] = mapped_column(String(40), nullable=False)
+    alembic_head: Mapped[str] = mapped_column(String(12), nullable=False)
+    fastapi_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    clean_worktree_attested: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    full_test_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    full_test_failures: Mapped[int] = mapped_column(Integer, nullable=False)
+    test_evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    check_summary: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    certified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    latest_event_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    latest_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPreproductionCertificationCheck(Base):
+    __tablename__ = "canonical_parser_preproduction_certification_checks"
+    __table_args__ = (
+        CheckConstraint("status IN ('PASS','FAIL')", name="ck_m44_certification_check_status"),
+        CheckConstraint("length(evidence_hash) = 64", name="ck_m44_certification_check_hash"),
+        UniqueConstraint("check_id", name="uq_m44_certification_check_id"),
+        UniqueConstraint("certification_db_id", "check_name", name="uq_m44_certification_check_name"),
+        Index("ix_m44_certification_check_status", "certification_db_id", "status"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    check_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    certification_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_preproduction_certifications.id", ondelete="CASCADE"), nullable=False)
+    check_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(8), nullable=False)
+    check_detail: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPreproductionCertificationEvent(Base):
+    __tablename__ = "canonical_parser_preproduction_certification_events"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_m44_certification_event_sequence"),
+        CheckConstraint("event_type IN ('CERTIFIED','REVOKED','EXPIRED')", name="ck_m44_certification_event_type"),
+        CheckConstraint("length(event_hash) = 64", name="ck_m44_certification_event_hash"),
+        UniqueConstraint("event_id", name="uq_m44_certification_event_id"),
+        UniqueConstraint("certification_db_id", "sequence", name="uq_m44_certification_event_sequence"),
+        Index("ix_m44_certification_event_time", "certification_db_id", "occurred_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    certification_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_preproduction_certifications.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPreproductionReleaseApproval(Base):
+    __tablename__ = "canonical_parser_preproduction_release_approvals"
+    __table_args__ = (
+        CheckConstraint("scope = 'M44_SINGLE_USE_PREPRODUCTION_RELEASE_APPROVAL'", name="ck_m44_release_scope"),
+        CheckConstraint("network = 'mainnet-beta'", name="ck_m44_release_network"),
+        CheckConstraint("side IN ('BUY','SELL')", name="ck_m44_release_side"),
+        CheckConstraint("status IN ('ACTIVE','REVOKED','EXPIRED','CONSUMED')", name="ck_m44_release_status"),
+        CheckConstraint("max_budget_sol >= 0", name="ck_m44_release_budget"),
+        CheckConstraint("latest_event_sequence >= 1", name="ck_m44_release_event_sequence"),
+        CheckConstraint("length(release_key) = 64 AND length(evidence_hash) = 64 AND length(latest_event_hash) = 64", name="ck_m44_release_hashes"),
+        UniqueConstraint("release_id", name="uq_m44_release_id"),
+        UniqueConstraint("release_key", name="uq_m44_release_key"),
+        Index("ix_m44_release_wallet_status", "wallet_address", "status"),
+        Index("ix_m44_release_status_expiry", "status", "expires_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    release_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    release_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(64), nullable=False)
+    certification_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_preproduction_certifications.id", ondelete="RESTRICT"), nullable=False)
+    certification_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    wallet_address: Mapped[str] = mapped_column(String(64), nullable=False)
+    network: Mapped[str] = mapped_column(String(32), nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    token_mint: Mapped[str] = mapped_column(String(64), nullable=False)
+    max_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    approval_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consumed_submission_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    latest_event_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    latest_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserPreproductionReleaseApprovalEvent(Base):
+    __tablename__ = "canonical_parser_preproduction_release_approval_events"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_m44_release_event_sequence"),
+        CheckConstraint("event_type IN ('ISSUED','REVOKED','EXPIRED','CONSUMED')", name="ck_m44_release_event_type"),
+        CheckConstraint("length(event_hash) = 64", name="ck_m44_release_event_hash"),
+        UniqueConstraint("event_id", name="uq_m44_release_event_id"),
+        UniqueConstraint("release_db_id", "sequence", name="uq_m44_release_event_sequence"),
+        Index("ix_m44_release_event_time", "release_db_id", "occurred_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    release_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_preproduction_release_approvals.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

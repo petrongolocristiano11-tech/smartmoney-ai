@@ -558,6 +558,7 @@ class CanonicalParserControlledLiveSubmissionRequest(BaseModel):
     signed_transaction_base64: str = Field(min_length=8, max_length=10000)
     idempotency_token: str = Field(min_length=8, max_length=200)
     portfolio_risk_permit_id: str | None = Field(default=None, min_length=36, max_length=36)
+    preproduction_release_approval_id: str | None = Field(default=None, min_length=36, max_length=36)
     confirmation: str = Field(default="", max_length=500)
     actor_label: str | None = Field(default=None, max_length=80)
     note: str | None = Field(default=None, max_length=500)
@@ -676,4 +677,74 @@ class CanonicalParserLivePortfolioRiskPermitRevokeRequest(BaseModel):
     permit_id: str = Field(min_length=36, max_length=36)
     confirmation: str = Field(default="", max_length=500)
     reason: str = Field(min_length=3, max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+
+class CanonicalParserLiveOperationalObservationRequest(BaseModel):
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserLiveOperationalAlertIssueRequest(BaseModel):
+    snapshot_id: str = Field(min_length=36, max_length=36)
+    reason_code: str = Field(min_length=3, max_length=96)
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserLiveOperationalAlertAcknowledgeRequest(BaseModel):
+    alert_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserLiveOperationalAlertResolveRequest(BaseModel):
+    alert_id: str = Field(min_length=36, max_length=36)
+    resolution_evidence: str = Field(min_length=8, max_length=500)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserPreproductionCertificationRequest(BaseModel):
+    observability_snapshot_id: str = Field(min_length=36, max_length=36)
+    git_commit_sha: str = Field(min_length=40, max_length=40)
+    clean_worktree_attested: bool
+    full_test_count: int = Field(ge=1, le=1_000_000)
+    full_test_failures: int = Field(default=0, ge=0, le=1_000_000)
+    test_evidence_hash: str = Field(min_length=64, max_length=64)
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserPreproductionCertificationRevokeRequest(BaseModel):
+    certification_id: str = Field(min_length=36, max_length=36)
+    reason: str = Field(min_length=3, max_length=500)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+
+
+class CanonicalParserPreproductionReleaseIssueRequest(BaseModel):
+    certification_id: str = Field(min_length=36, max_length=36)
+    wallet_address: str = Field(min_length=32, max_length=64)
+    side: Literal["BUY", "SELL"]
+    token_mint: str = Field(min_length=32, max_length=64)
+    max_budget_sol: float = Field(default=0, ge=0, le=1_000_000)
+    validity_minutes: int = Field(default=5, ge=1, le=1440)
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserPreproductionReleaseRevokeRequest(BaseModel):
+    release_id: str = Field(min_length=36, max_length=36)
+    reason: str = Field(min_length=3, max_length=500)
+    confirmation: str = Field(default="", max_length=500)
     actor_label: str | None = Field(default=None, max_length=80)

@@ -142,6 +142,14 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserLivePortfolioRiskAssessmentRequest,
     CanonicalParserLivePortfolioRiskPermitIssueRequest,
     CanonicalParserLivePortfolioRiskPermitRevokeRequest,
+    CanonicalParserLiveOperationalObservationRequest,
+    CanonicalParserLiveOperationalAlertIssueRequest,
+    CanonicalParserLiveOperationalAlertAcknowledgeRequest,
+    CanonicalParserLiveOperationalAlertResolveRequest,
+    CanonicalParserPreproductionCertificationRequest,
+    CanonicalParserPreproductionCertificationRevokeRequest,
+    CanonicalParserPreproductionReleaseIssueRequest,
+    CanonicalParserPreproductionReleaseRevokeRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -494,6 +502,36 @@ from backend.app.services.blockchain_parser_live_portfolio_risk_service import (
     preview_live_portfolio_risk_permit,
     resolve_live_portfolio_risk,
     revoke_live_portfolio_risk_permit,
+)
+from backend.app.services.blockchain_parser_live_operational_observability_service import (
+    ACK_PREFIX as M43_ACK_PREFIX,
+    RESOLVE_PREFIX as M43_RESOLVE_PREFIX,
+    CanonicalParserLiveOperationalObservabilityError,
+    acknowledge_live_operational_alert,
+    get_live_observability_snapshot,
+    get_live_operational_alert,
+    get_live_operational_observability_status,
+    issue_live_operational_alert,
+    observe_live_operations,
+    preview_live_operational_alert,
+    preview_live_operational_observation,
+    resolve_live_operational_alert,
+    resolve_live_operational_observability,
+)
+from backend.app.services.blockchain_parser_preproduction_certification_service import (
+    REVOKE_CERT_PREFIX as M44_REVOKE_CERT_PREFIX,
+    REVOKE_RELEASE_PREFIX as M44_REVOKE_RELEASE_PREFIX,
+    CanonicalParserPreproductionCertificationError,
+    certify_preproduction_readiness,
+    get_preproduction_certification,
+    get_preproduction_certification_status,
+    get_preproduction_release_approval,
+    issue_preproduction_release_approval,
+    preview_preproduction_certification,
+    preview_preproduction_release_approval,
+    resolve_preproduction_certification,
+    revoke_preproduction_certification,
+    revoke_preproduction_release_approval,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -3835,6 +3873,7 @@ def preview_controlled_live_submission_endpoint(
             signed_transaction_base64=request.signed_transaction_base64,
             idempotency_token=request.idempotency_token,
             portfolio_risk_permit_id=request.portfolio_risk_permit_id,
+            preproduction_release_approval_id=request.preproduction_release_approval_id,
         )
     except CanonicalParserControlledLiveSubmissionError as exception:
         raise HTTPException(
@@ -3855,6 +3894,7 @@ def submit_controlled_live_submission_endpoint(
             signed_transaction_base64=request.signed_transaction_base64,
             idempotency_token=request.idempotency_token,
             portfolio_risk_permit_id=request.portfolio_risk_permit_id,
+            preproduction_release_approval_id=request.preproduction_release_approval_id,
             confirmation=request.confirmation,
             actor_label=request.actor_label,
             note=request.note,
@@ -4166,3 +4206,154 @@ def read_live_portfolio_risk_permit_endpoint(permit_id: str, db: Session = Depen
 def resolve_live_portfolio_risk_endpoint(db: Session = Depends(get_db)):
     return resolve_live_portfolio_risk(db)
 # END M42 AGGREGATED LIVE PORTFOLIO RISK
+
+# BEGIN M43 LIVE OPERATIONAL OBSERVABILITY & ALERT LEDGER
+@app.get("/integrity/parser-live-operational-observability/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_live_operational_observability_status_endpoint(db: Session = Depends(get_db)):
+    return get_live_operational_observability_status(db)
+
+
+@app.post("/integrity/parser-live-operational-observability/snapshot-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_live_operational_observation_endpoint(request: CanonicalParserLiveOperationalObservationRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_live_operational_observation(db, idempotency_token=request.idempotency_token)
+    except CanonicalParserLiveOperationalObservabilityError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-live-operational-observability/observe", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def observe_live_operations_endpoint(request: CanonicalParserLiveOperationalObservationRequest, db: Session = Depends(get_db)):
+    try:
+        return observe_live_operations(db, idempotency_token=request.idempotency_token, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserLiveOperationalObservabilityError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-live-operational-observability/snapshots/{snapshot_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_live_observability_snapshot_endpoint(snapshot_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_live_observability_snapshot(db, snapshot_id)
+    except CanonicalParserLiveOperationalObservabilityError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-live-operational-observability/alert-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_live_operational_alert_endpoint(request: CanonicalParserLiveOperationalAlertIssueRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_live_operational_alert(db, snapshot_id=request.snapshot_id, reason_code=request.reason_code, idempotency_token=request.idempotency_token)
+    except CanonicalParserLiveOperationalObservabilityError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-live-operational-observability/alert/issue", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def issue_live_operational_alert_endpoint(request: CanonicalParserLiveOperationalAlertIssueRequest, db: Session = Depends(get_db)):
+    try:
+        return issue_live_operational_alert(db, snapshot_id=request.snapshot_id, reason_code=request.reason_code, idempotency_token=request.idempotency_token, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserLiveOperationalObservabilityError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-live-operational-observability/alert/acknowledge", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def acknowledge_live_operational_alert_endpoint(request: CanonicalParserLiveOperationalAlertAcknowledgeRequest, db: Session = Depends(get_db)):
+    try:
+        return acknowledge_live_operational_alert(db, alert_id=request.alert_id, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserLiveOperationalObservabilityError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-live-operational-observability/alert/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_live_operational_alert_endpoint(request: CanonicalParserLiveOperationalAlertResolveRequest, db: Session = Depends(get_db)):
+    try:
+        return resolve_live_operational_alert(db, alert_id=request.alert_id, resolution_evidence=request.resolution_evidence, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserLiveOperationalObservabilityError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-live-operational-observability/alerts/{alert_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_live_operational_alert_endpoint(alert_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_live_operational_alert(db, alert_id)
+    except CanonicalParserLiveOperationalObservabilityError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-live-operational-observability/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_live_operational_observability_endpoint(db: Session = Depends(get_db)):
+    return resolve_live_operational_observability(db)
+# END M43 LIVE OPERATIONAL OBSERVABILITY & ALERT LEDGER
+
+
+# BEGIN M44 PREPRODUCTION CERTIFICATION & SINGLE-USE RELEASE APPROVAL
+@app.get("/integrity/parser-preproduction-certification/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_preproduction_certification_status_endpoint(db: Session = Depends(get_db)):
+    return get_preproduction_certification_status(db)
+
+
+@app.post("/integrity/parser-preproduction-certification/certification-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_preproduction_certification_endpoint(request: CanonicalParserPreproductionCertificationRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_preproduction_certification(db, observability_snapshot_id=request.observability_snapshot_id, git_commit_sha=request.git_commit_sha, clean_worktree_attested=request.clean_worktree_attested, full_test_count=request.full_test_count, full_test_failures=request.full_test_failures, test_evidence_hash=request.test_evidence_hash, idempotency_token=request.idempotency_token)
+    except CanonicalParserPreproductionCertificationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-preproduction-certification/certify", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def certify_preproduction_readiness_endpoint(request: CanonicalParserPreproductionCertificationRequest, db: Session = Depends(get_db)):
+    try:
+        return certify_preproduction_readiness(db, observability_snapshot_id=request.observability_snapshot_id, git_commit_sha=request.git_commit_sha, clean_worktree_attested=request.clean_worktree_attested, full_test_count=request.full_test_count, full_test_failures=request.full_test_failures, test_evidence_hash=request.test_evidence_hash, idempotency_token=request.idempotency_token, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserPreproductionCertificationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-preproduction-certification/certification/revoke", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def revoke_preproduction_certification_endpoint(request: CanonicalParserPreproductionCertificationRevokeRequest, db: Session = Depends(get_db)):
+    try:
+        return revoke_preproduction_certification(db, certification_id=request.certification_id, confirmation=request.confirmation, reason=request.reason, actor_label=request.actor_label)
+    except CanonicalParserPreproductionCertificationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-preproduction-certification/certifications/{certification_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_preproduction_certification_endpoint(certification_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_preproduction_certification(db, certification_id)
+    except CanonicalParserPreproductionCertificationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-preproduction-certification/release-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_preproduction_release_approval_endpoint(request: CanonicalParserPreproductionReleaseIssueRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_preproduction_release_approval(db, certification_id=request.certification_id, wallet_address=request.wallet_address, side=request.side, token_mint=request.token_mint, max_budget_sol=request.max_budget_sol, validity_minutes=request.validity_minutes, idempotency_token=request.idempotency_token)
+    except CanonicalParserPreproductionCertificationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-preproduction-certification/release/issue", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def issue_preproduction_release_approval_endpoint(request: CanonicalParserPreproductionReleaseIssueRequest, db: Session = Depends(get_db)):
+    try:
+        return issue_preproduction_release_approval(db, certification_id=request.certification_id, wallet_address=request.wallet_address, side=request.side, token_mint=request.token_mint, max_budget_sol=request.max_budget_sol, validity_minutes=request.validity_minutes, idempotency_token=request.idempotency_token, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserPreproductionCertificationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-preproduction-certification/release/revoke", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def revoke_preproduction_release_approval_endpoint(request: CanonicalParserPreproductionReleaseRevokeRequest, db: Session = Depends(get_db)):
+    try:
+        return revoke_preproduction_release_approval(db, release_id=request.release_id, confirmation=request.confirmation, reason=request.reason, actor_label=request.actor_label)
+    except CanonicalParserPreproductionCertificationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-preproduction-certification/releases/{release_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_preproduction_release_approval_endpoint(release_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_preproduction_release_approval(db, release_id)
+    except CanonicalParserPreproductionCertificationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-preproduction-certification/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_preproduction_certification_endpoint(db: Session = Depends(get_db)):
+    return resolve_preproduction_certification(db)
+# END M44 PREPRODUCTION CERTIFICATION & SINGLE-USE RELEASE APPROVAL

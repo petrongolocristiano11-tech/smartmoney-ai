@@ -73,7 +73,7 @@ def test_m41_migration_is_consecutive():
     config = Config("alembic.ini"); config.set_main_option("script_location", "alembic")
     scripts = ScriptDirectory.from_config(config)
     assert scripts.get_revision("d6a8b1c4e520").down_revision == "c5f7a0b3d419"
-    assert scripts.get_heads() == ["e7b9c2d5f631"]
+    assert scripts.get_heads() == ["a9d1e4f7b853"]
 
 
 def test_manual_incident_is_declared_and_audited(db):
