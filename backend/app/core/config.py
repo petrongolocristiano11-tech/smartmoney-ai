@@ -951,6 +951,48 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # M41 LIVE INCIDENT RESPONSE & RECOVERY
+    # Manual incident governance; no autonomous recovery.
+    # =========================
+
+    CANONICAL_PARSER_LIVE_INCIDENT_RESPONSE_ENABLED: bool = False
+    CANONICAL_PARSER_LIVE_INCIDENT_SUBMISSION_GUARD_ENABLED: bool = False
+    CANONICAL_PARSER_LIVE_INCIDENT_STALE_SUBMISSION_SECONDS: int = Field(
+        default=300, ge=30, le=86400
+    )
+    CANONICAL_PARSER_LIVE_INCIDENT_MAX_RECOVERY_VALIDITY_MINUTES: int = Field(
+        default=15, ge=1, le=1440
+    )
+
+    # =========================
+    # M42 AGGREGATED LIVE PORTFOLIO RISK
+    # Manual portfolio assessment and single-use risk permit.
+    # =========================
+
+    CANONICAL_PARSER_LIVE_PORTFOLIO_RISK_ENABLED: bool = False
+    CANONICAL_PARSER_LIVE_PORTFOLIO_RISK_ENFORCEMENT_ENABLED: bool = False
+    CANONICAL_PARSER_LIVE_PORTFOLIO_RISK_ASSESSMENT_TTL_SECONDS: int = Field(
+        default=60, ge=5, le=3600
+    )
+    CANONICAL_PARSER_LIVE_PORTFOLIO_RISK_MAX_PERMIT_VALIDITY_MINUTES: int = Field(
+        default=10, ge=1, le=1440
+    )
+    CANONICAL_PARSER_LIVE_PORTFOLIO_RISK_MAX_TOTAL_EXPOSURE_SOL: float = Field(
+        default=0.05, ge=0.0, le=1_000_000.0
+    )
+    CANONICAL_PARSER_LIVE_PORTFOLIO_RISK_MAX_PENDING_BUY_SOL: float = Field(
+        default=0.02, ge=0.0, le=1_000_000.0
+    )
+    CANONICAL_PARSER_LIVE_PORTFOLIO_RISK_MAX_OPEN_POSITIONS: int = Field(
+        default=3, ge=0, le=10000
+    )
+    CANONICAL_PARSER_LIVE_PORTFOLIO_RISK_MAX_TOKEN_CONCENTRATION_PERCENT: float = Field(
+        default=50.0, ge=0.0, le=100.0
+    )
+    CANONICAL_PARSER_LIVE_PORTFOLIO_RISK_REQUIRE_FRESH_POSITION_ASSESSMENT: bool = True
+    CANONICAL_PARSER_LIVE_PORTFOLIO_RISK_FAIL_ON_HIGH_INCIDENT: bool = True
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

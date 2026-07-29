@@ -5649,3 +5649,202 @@ class CanonicalParserGovernedLiveExitIntentEvent(Base):
     event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+class CanonicalParserLiveIncident(Base):
+    __tablename__ = "canonical_parser_live_incidents"
+    __table_args__ = (
+        CheckConstraint("scope = 'M41_LIVE_INCIDENT_RESPONSE'", name="ck_m41_incident_scope"),
+        CheckConstraint("source_type IN ('SUBMISSION','SETTLEMENT','POSITION','MANUAL')", name="ck_m41_incident_source_type"),
+        CheckConstraint("severity IN ('LOW','MEDIUM','HIGH','CRITICAL')", name="ck_m41_incident_severity"),
+        CheckConstraint("status IN ('OPEN','ACKNOWLEDGED','RECOVERY_AUTHORIZED','RESOLVED')", name="ck_m41_incident_status"),
+        CheckConstraint("latest_event_sequence >= 1", name="ck_m41_incident_event_sequence"),
+        CheckConstraint("length(incident_key) = 64 AND length(evidence_hash) = 64 AND length(latest_event_hash) = 64", name="ck_m41_incident_hashes"),
+        UniqueConstraint("incident_id", name="uq_m41_incident_id"),
+        UniqueConstraint("incident_key", name="uq_m41_incident_key"),
+        Index("ix_m41_incident_status_severity", "status", "severity"),
+        Index("ix_m41_incident_source", "source_type", "source_id"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    incident_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    incident_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    source_id: Mapped[str] = mapped_column(String(96), nullable=False)
+    category: Mapped[str] = mapped_column(String(80), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    freeze_new_submissions: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    incident_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    latest_event_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    latest_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserLiveIncidentEvent(Base):
+    __tablename__ = "canonical_parser_live_incident_events"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_m41_incident_event_sequence"),
+        CheckConstraint("event_type IN ('DECLARED','ACKNOWLEDGED','RECOVERY_AUTHORIZED','RECOVERY_REVOKED','RECOVERY_CONSUMED','RESOLVED')", name="ck_m41_incident_event_type"),
+        CheckConstraint("length(event_hash) = 64", name="ck_m41_incident_event_hash"),
+        UniqueConstraint("event_id", name="uq_m41_incident_event_id"),
+        UniqueConstraint("incident_db_id", "sequence", name="uq_m41_incident_event_sequence"),
+        Index("ix_m41_incident_event_time", "incident_db_id", "occurred_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    incident_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_live_incidents.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserLiveRecoveryAuthorization(Base):
+    __tablename__ = "canonical_parser_live_recovery_authorizations"
+    __table_args__ = (
+        CheckConstraint("scope = 'M41_MANUAL_LIVE_RECOVERY_AUTHORIZATION'", name="ck_m41_recovery_scope"),
+        CheckConstraint("action IN ('RECONCILE_SUBMISSION','RETRY_SETTLEMENT_READ','MANUAL_POSITION_REVIEW','FREEZE_NEW_SUBMISSIONS','UNFREEZE_NEW_SUBMISSIONS')", name="ck_m41_recovery_action"),
+        CheckConstraint("status IN ('ACTIVE','REVOKED','EXPIRED','CONSUMED')", name="ck_m41_recovery_status"),
+        CheckConstraint("length(recovery_key) = 64 AND length(evidence_hash) = 64", name="ck_m41_recovery_hashes"),
+        UniqueConstraint("recovery_id", name="uq_m41_recovery_id"),
+        UniqueConstraint("recovery_key", name="uq_m41_recovery_key"),
+        Index("ix_m41_recovery_incident_status", "incident_db_id", "status"),
+        Index("ix_m41_recovery_status_expiry", "status", "expires_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    recovery_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    recovery_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(48), nullable=False)
+    incident_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_live_incidents.id", ondelete="RESTRICT"), nullable=False)
+    incident_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    action: Mapped[str] = mapped_column(String(40), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(96), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    recovery_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserLivePortfolioRiskAssessment(Base):
+    __tablename__ = "canonical_parser_live_portfolio_risk_assessments"
+    __table_args__ = (
+        CheckConstraint("scope = 'M42_AGGREGATED_LIVE_PORTFOLIO_RISK'", name="ck_m42_assessment_scope"),
+        CheckConstraint("status IN ('READY','REVIEW','BLOCKED','INSUFFICIENT_DATA')", name="ck_m42_assessment_status"),
+        CheckConstraint("side IN ('BUY','SELL')", name="ck_m42_assessment_side"),
+        CheckConstraint("open_position_count >= 0 AND stale_position_count >= 0 AND active_incident_count >= 0", name="ck_m42_assessment_counts"),
+        CheckConstraint("total_cost_basis_sol >= 0 AND current_value_sol >= 0 AND pending_buy_sol >= 0 AND gross_exposure_sol >= 0 AND requested_budget_sol >= 0", name="ck_m42_assessment_values"),
+        CheckConstraint("max_token_concentration_percent >= 0 AND max_token_concentration_percent <= 100", name="ck_m42_assessment_concentration"),
+        CheckConstraint("length(assessment_key) = 64 AND length(evidence_hash) = 64", name="ck_m42_assessment_hashes"),
+        UniqueConstraint("assessment_id", name="uq_m42_assessment_id"),
+        UniqueConstraint("assessment_key", name="uq_m42_assessment_key"),
+        Index("ix_m42_assessment_wallet_time", "wallet_address", "assessed_at"),
+        Index("ix_m42_assessment_status_expiry", "status", "expires_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    assessment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    assessment_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(48), nullable=False)
+    wallet_address: Mapped[str] = mapped_column(String(64), nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    requested_token_mint: Mapped[str] = mapped_column(String(64), nullable=False)
+    requested_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    open_position_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    stale_position_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    active_incident_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_cost_basis_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    current_value_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    unrealized_pnl_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    pending_buy_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    gross_exposure_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    max_token_concentration_percent: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    largest_token_mint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    position_breakdown: Mapped[list] = mapped_column(JSON, nullable=False)
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    assessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserLivePortfolioRiskPermit(Base):
+    __tablename__ = "canonical_parser_live_portfolio_risk_permits"
+    __table_args__ = (
+        CheckConstraint("scope = 'M42_MANUAL_PORTFOLIO_RISK_PERMIT'", name="ck_m42_permit_scope"),
+        CheckConstraint("side IN ('BUY','SELL')", name="ck_m42_permit_side"),
+        CheckConstraint("status IN ('ACTIVE','REVOKED','EXPIRED','CONSUMED')", name="ck_m42_permit_status"),
+        CheckConstraint("requested_budget_sol >= 0 AND max_additional_exposure_sol >= 0", name="ck_m42_permit_values"),
+        CheckConstraint("latest_event_sequence >= 1", name="ck_m42_permit_event_sequence"),
+        CheckConstraint("length(permit_key) = 64 AND length(evidence_hash) = 64 AND length(latest_event_hash) = 64", name="ck_m42_permit_hashes"),
+        UniqueConstraint("permit_id", name="uq_m42_permit_id"),
+        UniqueConstraint("permit_key", name="uq_m42_permit_key"),
+        Index("ix_m42_permit_wallet_status", "wallet_address", "status"),
+        Index("ix_m42_permit_status_expiry", "status", "expires_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    permit_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    permit_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(48), nullable=False)
+    assessment_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_live_portfolio_risk_assessments.id", ondelete="RESTRICT"), nullable=False)
+    assessment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    wallet_address: Mapped[str] = mapped_column(String(64), nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    token_mint: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    requested_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    max_additional_exposure_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    permit_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consumed_submission_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    latest_event_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    latest_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserLivePortfolioRiskPermitEvent(Base):
+    __tablename__ = "canonical_parser_live_portfolio_risk_permit_events"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_m42_permit_event_sequence"),
+        CheckConstraint("event_type IN ('ISSUED','REVOKED','EXPIRED','CONSUMED')", name="ck_m42_permit_event_type"),
+        CheckConstraint("length(event_hash) = 64", name="ck_m42_permit_event_hash"),
+        UniqueConstraint("event_id", name="uq_m42_permit_event_id"),
+        UniqueConstraint("permit_db_id", "sequence", name="uq_m42_permit_event_sequence"),
+        Index("ix_m42_permit_event_time", "permit_db_id", "occurred_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    permit_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_live_portfolio_risk_permits.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

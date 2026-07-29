@@ -557,6 +557,7 @@ class CanonicalParserControlledLiveSubmissionRequest(BaseModel):
     approval_id: str = Field(min_length=36, max_length=36)
     signed_transaction_base64: str = Field(min_length=8, max_length=10000)
     idempotency_token: str = Field(min_length=8, max_length=200)
+    portfolio_risk_permit_id: str | None = Field(default=None, min_length=36, max_length=36)
     confirmation: str = Field(default="", max_length=500)
     actor_label: str | None = Field(default=None, max_length=80)
     note: str | None = Field(default=None, max_length=500)
@@ -601,6 +602,78 @@ class CanonicalParserGovernedLiveExitIntentIssueRequest(BaseModel):
 
 class CanonicalParserGovernedLiveExitIntentRevokeRequest(BaseModel):
     intent_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=500)
+    reason: str = Field(min_length=3, max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+
+class CanonicalParserLiveIncidentDeclareRequest(BaseModel):
+    source_type: Literal["SUBMISSION", "SETTLEMENT", "POSITION", "MANUAL"]
+    source_id: str = Field(min_length=1, max_length=96)
+    category: str | None = Field(default=None, max_length=80)
+    severity: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"] | None = None
+    freeze_new_submissions: bool | None = None
+    reason_codes: list[str] = Field(default_factory=list, max_length=20)
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserLiveIncidentAcknowledgeRequest(BaseModel):
+    incident_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserLiveRecoveryAuthorizationRequest(BaseModel):
+    incident_id: str = Field(min_length=36, max_length=36)
+    action: Literal["RECONCILE_SUBMISSION", "RETRY_SETTLEMENT_READ", "MANUAL_POSITION_REVIEW", "FREEZE_NEW_SUBMISSIONS", "UNFREEZE_NEW_SUBMISSIONS"]
+    validity_minutes: int = Field(default=10, ge=1, le=1440)
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserLiveRecoveryRevokeRequest(BaseModel):
+    recovery_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=500)
+    reason: str = Field(min_length=3, max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+
+
+class CanonicalParserLiveIncidentResolveRequest(BaseModel):
+    incident_id: str = Field(min_length=36, max_length=36)
+    resolution_evidence: str = Field(min_length=8, max_length=500)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserLivePortfolioRiskAssessmentRequest(BaseModel):
+    wallet_address: str = Field(min_length=32, max_length=64)
+    side: Literal["BUY", "SELL"]
+    requested_token_mint: str = Field(min_length=32, max_length=64)
+    requested_budget_sol: float = Field(default=0, ge=0, le=1_000_000)
+    as_of: datetime
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserLivePortfolioRiskPermitIssueRequest(BaseModel):
+    assessment_id: str = Field(min_length=36, max_length=36)
+    validity_minutes: int = Field(default=5, ge=1, le=1440)
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserLivePortfolioRiskPermitRevokeRequest(BaseModel):
+    permit_id: str = Field(min_length=36, max_length=36)
     confirmation: str = Field(default="", max_length=500)
     reason: str = Field(min_length=3, max_length=500)
     actor_label: str | None = Field(default=None, max_length=80)

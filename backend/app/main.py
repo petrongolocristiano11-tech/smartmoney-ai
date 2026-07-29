@@ -134,6 +134,14 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserGovernedLivePositionAssessmentRequest,
     CanonicalParserGovernedLiveExitIntentIssueRequest,
     CanonicalParserGovernedLiveExitIntentRevokeRequest,
+    CanonicalParserLiveIncidentDeclareRequest,
+    CanonicalParserLiveIncidentAcknowledgeRequest,
+    CanonicalParserLiveRecoveryAuthorizationRequest,
+    CanonicalParserLiveRecoveryRevokeRequest,
+    CanonicalParserLiveIncidentResolveRequest,
+    CanonicalParserLivePortfolioRiskAssessmentRequest,
+    CanonicalParserLivePortfolioRiskPermitIssueRequest,
+    CanonicalParserLivePortfolioRiskPermitRevokeRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -456,6 +464,36 @@ from backend.app.services.blockchain_parser_governed_live_position_service impor
     preview_governed_live_position_assessment,
     resolve_governed_live_position,
     revoke_governed_live_exit_intent,
+)
+from backend.app.services.blockchain_parser_live_incident_response_service import (
+    ACK_PREFIX as M41_ACK_PREFIX,
+    RESOLVE_PREFIX as M41_RESOLVE_PREFIX,
+    REVOKE_PREFIX as M41_REVOKE_PREFIX,
+    CanonicalParserLiveIncidentResponseError,
+    acknowledge_live_incident,
+    authorize_live_recovery,
+    declare_live_incident,
+    get_live_incident,
+    get_live_incident_response_status,
+    get_live_recovery,
+    preview_live_incident_declaration,
+    preview_live_recovery_authorization,
+    resolve_live_incident,
+    resolve_live_incident_response,
+    revoke_live_recovery,
+)
+from backend.app.services.blockchain_parser_live_portfolio_risk_service import (
+    REVOKE_PREFIX as M42_REVOKE_PREFIX,
+    CanonicalParserLivePortfolioRiskError,
+    assess_live_portfolio_risk,
+    get_live_portfolio_risk_assessment,
+    get_live_portfolio_risk_permit,
+    get_live_portfolio_risk_status,
+    issue_live_portfolio_risk_permit,
+    preview_live_portfolio_risk_assessment,
+    preview_live_portfolio_risk_permit,
+    resolve_live_portfolio_risk,
+    revoke_live_portfolio_risk_permit,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -3796,6 +3834,7 @@ def preview_controlled_live_submission_endpoint(
             approval_id=request.approval_id,
             signed_transaction_base64=request.signed_transaction_base64,
             idempotency_token=request.idempotency_token,
+            portfolio_risk_permit_id=request.portfolio_risk_permit_id,
         )
     except CanonicalParserControlledLiveSubmissionError as exception:
         raise HTTPException(
@@ -3815,6 +3854,7 @@ def submit_controlled_live_submission_endpoint(
             approval_id=request.approval_id,
             signed_transaction_base64=request.signed_transaction_base64,
             idempotency_token=request.idempotency_token,
+            portfolio_risk_permit_id=request.portfolio_risk_permit_id,
             confirmation=request.confirmation,
             actor_label=request.actor_label,
             note=request.note,
@@ -3973,3 +4013,156 @@ def read_governed_live_exit_intent_endpoint(intent_id: str, db: Session = Depend
 def resolve_governed_live_position_endpoint(db: Session = Depends(get_db)):
     return resolve_governed_live_position(db)
 # END M40 GOVERNED LIVE POSITION LIFECYCLE & EXIT INTENT
+
+
+# BEGIN M41 LIVE INCIDENT RESPONSE & RECOVERY
+@app.get("/integrity/parser-live-incident-response/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_live_incident_response_status_endpoint(db: Session = Depends(get_db)):
+    return get_live_incident_response_status(db)
+
+
+@app.post("/integrity/parser-live-incident-response/declaration-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_live_incident_declaration_endpoint(request: CanonicalParserLiveIncidentDeclareRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_live_incident_declaration(db, source_type=request.source_type, source_id=request.source_id, category=request.category, severity=request.severity, freeze_new_submissions=request.freeze_new_submissions, reason_codes=request.reason_codes, idempotency_token=request.idempotency_token)
+    except CanonicalParserLiveIncidentResponseError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-live-incident-response/declare", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def declare_live_incident_endpoint(request: CanonicalParserLiveIncidentDeclareRequest, db: Session = Depends(get_db)):
+    try:
+        return declare_live_incident(db, source_type=request.source_type, source_id=request.source_id, category=request.category, severity=request.severity, freeze_new_submissions=request.freeze_new_submissions, reason_codes=request.reason_codes, idempotency_token=request.idempotency_token, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserLiveIncidentResponseError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-live-incident-response/acknowledge", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def acknowledge_live_incident_endpoint(request: CanonicalParserLiveIncidentAcknowledgeRequest, db: Session = Depends(get_db)):
+    try:
+        incident = get_live_incident(db, request.incident_id)
+        return acknowledge_live_incident(db, incident_id=request.incident_id, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserLiveIncidentResponseError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-live-incident-response/recovery-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_live_recovery_endpoint(request: CanonicalParserLiveRecoveryAuthorizationRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_live_recovery_authorization(db, incident_id=request.incident_id, action=request.action, validity_minutes=request.validity_minutes, idempotency_token=request.idempotency_token)
+    except CanonicalParserLiveIncidentResponseError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-live-incident-response/recovery/authorize", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def authorize_live_recovery_endpoint(request: CanonicalParserLiveRecoveryAuthorizationRequest, db: Session = Depends(get_db)):
+    try:
+        return authorize_live_recovery(db, incident_id=request.incident_id, action=request.action, validity_minutes=request.validity_minutes, idempotency_token=request.idempotency_token, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserLiveIncidentResponseError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-live-incident-response/recovery/revoke", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def revoke_live_recovery_endpoint(request: CanonicalParserLiveRecoveryRevokeRequest, db: Session = Depends(get_db)):
+    try:
+        return revoke_live_recovery(db, recovery_id=request.recovery_id, confirmation=request.confirmation, reason=request.reason, actor_label=request.actor_label)
+    except CanonicalParserLiveIncidentResponseError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-live-incident-response/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_live_incident_endpoint(request: CanonicalParserLiveIncidentResolveRequest, db: Session = Depends(get_db)):
+    try:
+        return resolve_live_incident(db, incident_id=request.incident_id, resolution_evidence=request.resolution_evidence, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserLiveIncidentResponseError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-live-incident-response/incidents/{incident_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_live_incident_endpoint(incident_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_live_incident(db, incident_id)
+    except CanonicalParserLiveIncidentResponseError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-live-incident-response/recoveries/{recovery_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_live_recovery_endpoint(recovery_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_live_recovery(db, recovery_id)
+    except CanonicalParserLiveIncidentResponseError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-live-incident-response/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_live_incident_response_endpoint(db: Session = Depends(get_db)):
+    return resolve_live_incident_response(db)
+# END M41 LIVE INCIDENT RESPONSE & RECOVERY
+
+
+# BEGIN M42 AGGREGATED LIVE PORTFOLIO RISK
+@app.get("/integrity/parser-live-portfolio-risk/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_live_portfolio_risk_status_endpoint(db: Session = Depends(get_db)):
+    return get_live_portfolio_risk_status(db)
+
+
+@app.post("/integrity/parser-live-portfolio-risk/assessment-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_live_portfolio_risk_assessment_endpoint(request: CanonicalParserLivePortfolioRiskAssessmentRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_live_portfolio_risk_assessment(db, wallet_address=request.wallet_address, side=request.side, requested_token_mint=request.requested_token_mint, requested_budget_sol=request.requested_budget_sol, as_of=request.as_of, idempotency_token=request.idempotency_token)
+    except CanonicalParserLivePortfolioRiskError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-live-portfolio-risk/assess", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def assess_live_portfolio_risk_endpoint(request: CanonicalParserLivePortfolioRiskAssessmentRequest, db: Session = Depends(get_db)):
+    try:
+        return assess_live_portfolio_risk(db, wallet_address=request.wallet_address, side=request.side, requested_token_mint=request.requested_token_mint, requested_budget_sol=request.requested_budget_sol, as_of=request.as_of, idempotency_token=request.idempotency_token, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserLivePortfolioRiskError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-live-portfolio-risk/permit-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_live_portfolio_risk_permit_endpoint(request: CanonicalParserLivePortfolioRiskPermitIssueRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_live_portfolio_risk_permit(db, assessment_id=request.assessment_id, validity_minutes=request.validity_minutes, idempotency_token=request.idempotency_token)
+    except CanonicalParserLivePortfolioRiskError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-live-portfolio-risk/permit/issue", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def issue_live_portfolio_risk_permit_endpoint(request: CanonicalParserLivePortfolioRiskPermitIssueRequest, db: Session = Depends(get_db)):
+    try:
+        return issue_live_portfolio_risk_permit(db, assessment_id=request.assessment_id, validity_minutes=request.validity_minutes, idempotency_token=request.idempotency_token, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserLivePortfolioRiskError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-live-portfolio-risk/permit/revoke", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def revoke_live_portfolio_risk_permit_endpoint(request: CanonicalParserLivePortfolioRiskPermitRevokeRequest, db: Session = Depends(get_db)):
+    try:
+        return revoke_live_portfolio_risk_permit(db, permit_id=request.permit_id, confirmation=request.confirmation, reason=request.reason, actor_label=request.actor_label)
+    except CanonicalParserLivePortfolioRiskError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-live-portfolio-risk/assessments/{assessment_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_live_portfolio_risk_assessment_endpoint(assessment_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_live_portfolio_risk_assessment(db, assessment_id)
+    except CanonicalParserLivePortfolioRiskError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-live-portfolio-risk/permits/{permit_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_live_portfolio_risk_permit_endpoint(permit_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_live_portfolio_risk_permit(db, permit_id)
+    except CanonicalParserLivePortfolioRiskError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-live-portfolio-risk/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_live_portfolio_risk_endpoint(db: Session = Depends(get_db)):
+    return resolve_live_portfolio_risk(db)
+# END M42 AGGREGATED LIVE PORTFOLIO RISK

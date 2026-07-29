@@ -14,6 +14,7 @@ from backend.app.models.blockchain_integrity import (
     CanonicalParserControlledLiveSubmission,
     CanonicalParserControlledLiveSubmissionEvent,
     CanonicalParserExternalSigningApproval,
+    CanonicalParserIsolatedSignerProfile,
     CanonicalParserLiveTransactionDryRun,
     CanonicalParserMicroLiveCanaryPermit,
 )
@@ -285,6 +286,7 @@ def _preview(
     approval_id: str,
     signed_transaction_base64: str,
     idempotency_token: str,
+    portfolio_risk_permit_id: str | None,
     settings_object: Any,
     evaluated_at: datetime,
 ) -> dict[str, Any]:
@@ -306,6 +308,13 @@ def _preview(
             CanonicalParserLiveTransactionDryRun.id == approval.dry_run_db_id
         )
     )
+    signer_profile = None
+    if dry_run is not None:
+        signer_profile = db.scalar(
+            select(CanonicalParserIsolatedSignerProfile).where(
+                CanonicalParserIsolatedSignerProfile.id == dry_run.signer_profile_db_id
+            )
+        )
     permit = db.scalar(
         select(CanonicalParserMicroLiveCanaryPermit)
         .where(
@@ -345,6 +354,26 @@ def _preview(
     budget = Decimal("0") if dry_run is None else _decimal(dry_run.requested_budget_sol)
     if dry_run is not None and dry_run.side == "BUY" and budget <= 0:
         reasons.append("BUY_BUDGET_MISSING")
+    incident_guard = {"blocked": False, "reason_codes": [], "active_incident_ids": []}
+    portfolio_risk = {"required": False, "ready": True, "reason_codes": [], "permit": None, "snapshot": {"enforcement_enabled": False}}
+    if dry_run is not None:
+        from backend.app.services.blockchain_parser_live_incident_response_service import get_live_submission_incident_guard
+        from backend.app.services.blockchain_parser_live_portfolio_risk_service import validate_portfolio_risk_permit_for_submission
+        incident_guard = get_live_submission_incident_guard(
+            db, side=dry_run.side, settings_object=settings_object, evaluated_at=evaluated_at
+        )
+        reasons.extend(incident_guard["reason_codes"])
+        portfolio_risk = validate_portfolio_risk_permit_for_submission(
+            db,
+            permit_id=portfolio_risk_permit_id,
+            side=dry_run.side,
+            token_mint=dry_run.token_mint,
+            requested_budget_sol=budget,
+            wallet_address=None if signer_profile is None else signer_profile.wallet_address,
+            settings_object=settings_object,
+            evaluated_at=evaluated_at,
+        )
+        reasons.extend(portfolio_risk["reason_codes"])
     used_budget = Decimal("0")
     used_count = 0
     if permit is not None:
@@ -362,6 +391,7 @@ def _preview(
             "approval_envelope_hash": approval.approval_envelope_hash,
             "signed_transaction_hash": signed["signed_transaction_hash"],
             "idempotency_token": str(idempotency_token).strip(),
+            "portfolio_risk_permit_id": portfolio_risk_permit_id,
             "policy": policy,
         }
     )
@@ -388,6 +418,8 @@ def _preview(
         "remaining_order_count_after": None
         if permit is None
         else int(permit.max_order_count) - used_count - 1,
+        "portfolio_risk": portfolio_risk["snapshot"],
+        "incident_guard": incident_guard,
     }
     evidence = {
         "approval_id": approval.approval_id,
@@ -396,13 +428,19 @@ def _preview(
         "expected_signature": signed["expected_signature"],
         "reservation": reservation,
         "live_control_snapshot": live_snapshot,
+        "incident_guard": incident_guard,
+        "portfolio_risk": portfolio_risk["snapshot"],
         "reason_codes": sorted(set(reasons)),
         "policy": policy,
     }
     return {
         "approval": approval,
         "dry_run": dry_run,
+        "signer_profile": signer_profile,
         "permit": permit,
+        "portfolio_risk_permit": portfolio_risk["permit"],
+        "incident_guard": incident_guard,
+        "portfolio_risk": portfolio_risk,
         "signed": signed,
         "submission_key": submission_key,
         "existing_submission": None if existing is None else _serialize(existing),
@@ -423,6 +461,7 @@ def preview_controlled_live_submission(
     approval_id: str,
     signed_transaction_base64: str,
     idempotency_token: str,
+    portfolio_risk_permit_id: str | None = None,
     settings_object: Any = settings,
     evaluated_at: datetime | None = None,
 ) -> dict[str, Any]:
@@ -431,6 +470,7 @@ def preview_controlled_live_submission(
         approval_id=approval_id,
         signed_transaction_base64=signed_transaction_base64,
         idempotency_token=idempotency_token,
+        portfolio_risk_permit_id=portfolio_risk_permit_id,
         settings_object=settings_object,
         evaluated_at=_aware(evaluated_at),
     )
@@ -441,6 +481,8 @@ def preview_controlled_live_submission(
         "existing_submission": preview["existing_submission"],
         "expected_signature": preview["signed"]["expected_signature"],
         "reservation": preview["reservation"],
+        "incident_guard": preview["incident_guard"],
+        "portfolio_risk": preview["portfolio_risk"]["snapshot"],
         "reason_codes": preview["reason_codes"],
         "evidence_hash": preview["evidence_hash"],
         "confirmation": preview["confirmation"],
@@ -461,7 +503,8 @@ def submit_controlled_live_transaction(
     approval_id: str,
     signed_transaction_base64: str,
     idempotency_token: str,
-    confirmation: str,
+    portfolio_risk_permit_id: str | None = None,
+    confirmation: str = "",
     actor_label: str | None = None,
     note: str | None = None,
     settings_object: Any = settings,
@@ -494,6 +537,7 @@ def submit_controlled_live_transaction(
         approval_id=approval_id,
         signed_transaction_base64=signed_transaction_base64,
         idempotency_token=idempotency_token,
+        portfolio_risk_permit_id=portfolio_risk_permit_id,
         settings_object=settings_object,
         evaluated_at=now,
     )
@@ -535,6 +579,8 @@ def submit_controlled_live_transaction(
             "rpc_send_enabled": True,
             "automatic_retry": False,
             "raw_signed_transaction_persisted": False,
+            "portfolio_risk_permit_id": portfolio_risk_permit_id,
+            "incident_guard": preview["incident_guard"],
         },
         evidence_hash=preview["evidence_hash"],
         actor_label=_actor(actor_label),
@@ -554,6 +600,19 @@ def submit_controlled_live_transaction(
         payload={"reservation": preview["reservation"]},
         occurred_at=now,
     )
+    if preview["portfolio_risk"]["required"]:
+        from backend.app.services.blockchain_parser_live_portfolio_risk_service import consume_portfolio_risk_permit
+        consume_portfolio_risk_permit(
+            db,
+            permit_id=str(portfolio_risk_permit_id),
+            submission_id=row.submission_id,
+            side=row.side,
+            token_mint=row.token_mint,
+            requested_budget_sol=row.reserved_budget_sol,
+            wallet_address=None if preview["signer_profile"] is None else preview["signer_profile"].wallet_address,
+            settings_object=settings_object,
+            consumed_at=now,
+        )
     try:
         db.commit()
     except IntegrityError as exc:
