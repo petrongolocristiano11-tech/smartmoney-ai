@@ -126,6 +126,10 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserIsolatedSignerProfileRevokeRequest,
     CanonicalParserLiveTransactionBuildPreviewRequest,
     CanonicalParserLiveTransactionDryRunRequest,
+    CanonicalParserExternalSigningApprovalRequest,
+    CanonicalParserExternalSigningApprovalRevokeRequest,
+    CanonicalParserControlledLiveSubmissionRequest,
+    CanonicalParserControlledLiveReconcileRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -409,6 +413,24 @@ from backend.app.services.blockchain_parser_live_transaction_dry_run_service imp
     resolve_live_transaction_dry_run,
     revoke_isolated_signer_profile,
     run_live_transaction_dry_run,
+)
+from backend.app.services.blockchain_parser_external_signing_approval_service import (
+    CanonicalParserExternalSigningApprovalError,
+    approve_external_signed_transaction,
+    get_external_signing_approval,
+    get_external_signing_approval_status,
+    preview_external_signing_approval,
+    resolve_external_signing_approval,
+    revoke_external_signing_approval,
+)
+from backend.app.services.blockchain_parser_controlled_live_submission_service import (
+    CanonicalParserControlledLiveSubmissionError,
+    get_controlled_live_submission,
+    get_controlled_live_submission_status,
+    preview_controlled_live_submission,
+    reconcile_controlled_live_submission,
+    resolve_controlled_live_submission,
+    submit_controlled_live_transaction,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -3642,3 +3664,175 @@ def read_live_transaction_dry_run_endpoint(dry_run_id: str, db: Session = Depend
 def resolve_live_transaction_dry_run_endpoint(db: Session = Depends(get_db)):
     return resolve_live_transaction_dry_run(db)
 # END M36 ISOLATED SIGNER & LIVE TRANSACTION DRY-RUN
+
+
+# BEGIN M37 EXTERNAL SIGNING APPROVAL & SIGNED TRANSACTION VERIFICATION
+@app.get("/integrity/parser-external-signing-approval/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_external_signing_approval_status_endpoint(db: Session = Depends(get_db)):
+    return get_external_signing_approval_status(db)
+
+
+@app.post("/integrity/parser-external-signing-approval/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_external_signing_approval_endpoint(
+    request: CanonicalParserExternalSigningApprovalRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_external_signing_approval(
+            db,
+            dry_run_id=request.dry_run_id,
+            signed_transaction_base64=request.signed_transaction_base64,
+            idempotency_token=request.idempotency_token,
+        )
+    except CanonicalParserExternalSigningApprovalError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-external-signing-approval/approve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def approve_external_signing_approval_endpoint(
+    request: CanonicalParserExternalSigningApprovalRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return approve_external_signed_transaction(
+            db,
+            dry_run_id=request.dry_run_id,
+            signed_transaction_base64=request.signed_transaction_base64,
+            idempotency_token=request.idempotency_token,
+            run_rpc_simulation=request.run_rpc_simulation,
+            confirmation=request.confirmation,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserExternalSigningApprovalError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-external-signing-approval/revoke", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def revoke_external_signing_approval_endpoint(
+    request: CanonicalParserExternalSigningApprovalRevokeRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return revoke_external_signing_approval(
+            db,
+            approval_id=request.approval_id,
+            confirmation=request.confirmation,
+            reason=request.reason,
+            actor_label=request.actor_label,
+        )
+    except CanonicalParserExternalSigningApprovalError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-external-signing-approval/approvals/{approval_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_external_signing_approval_endpoint(
+    approval_id: str, db: Session = Depends(get_db)
+):
+    try:
+        return get_external_signing_approval(db, approval_id)
+    except CanonicalParserExternalSigningApprovalError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-external-signing-approval/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_external_signing_approval_endpoint(db: Session = Depends(get_db)):
+    return resolve_external_signing_approval(db)
+# END M37 EXTERNAL SIGNING APPROVAL & SIGNED TRANSACTION VERIFICATION
+
+
+# BEGIN M38 CONTROLLED LIVE SUBMISSION & ON-CHAIN RECONCILIATION
+@app.get("/integrity/parser-controlled-live-submission/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_controlled_live_submission_status_endpoint(db: Session = Depends(get_db)):
+    return get_controlled_live_submission_status(db)
+
+
+@app.post("/integrity/parser-controlled-live-submission/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_controlled_live_submission_endpoint(
+    request: CanonicalParserControlledLiveSubmissionRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return preview_controlled_live_submission(
+            db,
+            approval_id=request.approval_id,
+            signed_transaction_base64=request.signed_transaction_base64,
+            idempotency_token=request.idempotency_token,
+        )
+    except CanonicalParserControlledLiveSubmissionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-controlled-live-submission/submit", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def submit_controlled_live_submission_endpoint(
+    request: CanonicalParserControlledLiveSubmissionRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return submit_controlled_live_transaction(
+            db,
+            approval_id=request.approval_id,
+            signed_transaction_base64=request.signed_transaction_base64,
+            idempotency_token=request.idempotency_token,
+            confirmation=request.confirmation,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserControlledLiveSubmissionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-controlled-live-submission/reconcile", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def reconcile_controlled_live_submission_endpoint(
+    request: CanonicalParserControlledLiveReconcileRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return reconcile_controlled_live_submission(
+            db,
+            submission_id=request.submission_id,
+            confirmation=request.confirmation,
+            actor_label=request.actor_label,
+        )
+    except CanonicalParserControlledLiveSubmissionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-controlled-live-submission/submissions/{submission_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_controlled_live_submission_endpoint(
+    submission_id: str, db: Session = Depends(get_db)
+):
+    try:
+        return get_controlled_live_submission(db, submission_id)
+    except CanonicalParserControlledLiveSubmissionError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-controlled-live-submission/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_controlled_live_submission_endpoint(db: Session = Depends(get_db)):
+    return resolve_controlled_live_submission(db)
+# END M38 CONTROLLED LIVE SUBMISSION & ON-CHAIN RECONCILIATION

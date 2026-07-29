@@ -366,6 +366,33 @@ class SolanaRpcClient:
         }
 
 
+    def send_signed_transaction_base64(
+        self,
+        transaction_base64: str,
+    ) -> str:
+        result = self.call(
+            "sendTransaction",
+            [
+                transaction_base64,
+                {
+                    "encoding": "base64",
+                    "skipPreflight": False,
+                    "preflightCommitment": "confirmed",
+                    "maxRetries": 0,
+                },
+            ],
+        )
+
+        if not isinstance(result, str) or not result.strip():
+            raise SolanaRpcError(
+                "Firma restituita da sendTransaction non valida.",
+                code="SOLANA_SEND_TRANSACTION_INVALID_RESPONSE",
+                status_code=502,
+            )
+
+        return result.strip()
+
+
 def solana_rpc_call(
     method: str,
     params: list | None = None,

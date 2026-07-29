@@ -534,3 +534,34 @@ class CanonicalParserLiveTransactionDryRunRequest(BaseModel):
     confirmation: str = Field(default="", max_length=500)
     actor_label: str | None = Field(default=None, max_length=80)
     note: str | None = Field(default=None, max_length=500)
+
+class CanonicalParserExternalSigningApprovalRequest(BaseModel):
+    dry_run_id: str = Field(min_length=36, max_length=36)
+    signed_transaction_base64: str = Field(min_length=8, max_length=10000)
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    run_rpc_simulation: bool = True
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserExternalSigningApprovalRevokeRequest(BaseModel):
+    approval_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=500)
+    reason: str = Field(min_length=3, max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+
+
+class CanonicalParserControlledLiveSubmissionRequest(BaseModel):
+    approval_id: str = Field(min_length=36, max_length=36)
+    signed_transaction_base64: str = Field(min_length=8, max_length=10000)
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserControlledLiveReconcileRequest(BaseModel):
+    submission_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)

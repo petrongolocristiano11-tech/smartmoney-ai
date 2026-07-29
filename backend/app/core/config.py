@@ -880,6 +880,30 @@ class Settings(BaseSettings):
     )
     CANONICAL_PARSER_LIVE_TRANSACTION_DRY_RUN_ALLOW_ADDRESS_LOOKUP_TABLES: bool = False
 
+
+    # =========================
+    # M37 EXTERNAL SIGNING APPROVAL
+    # Signed transaction verification only; disabled by default.
+    # =========================
+
+    CANONICAL_PARSER_EXTERNAL_SIGNING_APPROVAL_ENABLED: bool = False
+    CANONICAL_PARSER_EXTERNAL_SIGNING_RPC_ENABLED: bool = False
+    CANONICAL_PARSER_EXTERNAL_SIGNING_APPROVAL_TTL_SECONDS: int = Field(
+        default=60, ge=5, le=600
+    )
+
+    # =========================
+    # M38 CONTROLLED LIVE SUBMISSION
+    # Manual one-shot RPC submission only; disabled by default.
+    # =========================
+
+    CANONICAL_PARSER_CONTROLLED_LIVE_SUBMISSION_ENABLED: bool = False
+    CANONICAL_PARSER_CONTROLLED_LIVE_SEND_RPC_ENABLED: bool = False
+    CANONICAL_PARSER_CONTROLLED_LIVE_RECONCILIATION_ENABLED: bool = False
+    CANONICAL_PARSER_CONTROLLED_LIVE_MAX_PENDING_SECONDS: int = Field(
+        default=180, ge=30, le=3600
+    )
+
     # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================

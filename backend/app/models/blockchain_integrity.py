@@ -5291,3 +5291,140 @@ class CanonicalParserLiveTransactionDryRun(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+class CanonicalParserExternalSigningApproval(Base):
+    __tablename__ = "canonical_parser_external_signing_approvals"
+    __table_args__ = (
+        CheckConstraint("scope = 'M37_EXTERNAL_SIGNING_APPROVAL_ONLY'", name="ck_m37_approval_scope"),
+        CheckConstraint("status IN ('READY','REVIEW','BLOCKED','INSUFFICIENT_DATA','REVOKED','EXPIRED')", name="ck_m37_approval_status"),
+        CheckConstraint("signature_verification_status IN ('PASSED','FAILED')", name="ck_m37_signature_status"),
+        CheckConstraint("rpc_simulation_status IN ('PASSED','FAILED','SKIPPED','UNAVAILABLE')", name="ck_m37_rpc_status"),
+        CheckConstraint("signature_count >= 1", name="ck_m37_signature_count"),
+        CheckConstraint("length(approval_key) = 64 AND length(signed_transaction_hash) = 64 AND length(message_hash) = 64 AND length(approval_envelope_hash) = 64 AND length(evidence_hash) = 64", name="ck_m37_hashes"),
+        UniqueConstraint("approval_id", name="uq_m37_approval_id"),
+        UniqueConstraint("approval_key", name="uq_m37_approval_key"),
+        Index("ix_m37_approval_status_expiry", "status", "expires_at"),
+        Index("ix_m37_approval_dry_run", "dry_run_db_id"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    approval_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    approval_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(48), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    dry_run_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_live_transaction_dry_runs.id", ondelete="RESTRICT"), nullable=False)
+    dry_run_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    signer_profile_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    micro_live_permit_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    signed_transaction_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    message_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expected_signature: Mapped[str] = mapped_column(String(96), nullable=False)
+    verified_signers: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    signature_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    signature_verification_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    rpc_simulation_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    units_consumed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    verification_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    rpc_simulation_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    approval_envelope: Mapped[dict] = mapped_column(JSON, nullable=False)
+    approval_envelope_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revocation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserExternalSigningApprovalEvent(Base):
+    __tablename__ = "canonical_parser_external_signing_approval_events"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_m37_event_sequence"),
+        CheckConstraint("event_type IN ('APPROVED','REVOKED','EXPIRED')", name="ck_m37_event_type"),
+        CheckConstraint("length(event_hash) = 64", name="ck_m37_event_hash"),
+        UniqueConstraint("event_id", name="uq_m37_event_id"),
+        UniqueConstraint("approval_db_id", "sequence", name="uq_m37_event_sequence"),
+        Index("ix_m37_event_approval_time", "approval_db_id", "occurred_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    approval_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_external_signing_approvals.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserControlledLiveSubmission(Base):
+    __tablename__ = "canonical_parser_controlled_live_submissions"
+    __table_args__ = (
+        CheckConstraint("scope = 'M38_MANUAL_CONTROLLED_LIVE_SUBMISSION'", name="ck_m38_submission_scope"),
+        CheckConstraint("status IN ('RESERVED','SUBMITTED','PROCESSED','CONFIRMED','FINALIZED','FAILED','RECONCILIATION_REQUIRED')", name="ck_m38_submission_status"),
+        CheckConstraint("side IN ('BUY','SELL')", name="ck_m38_submission_side"),
+        CheckConstraint("reserved_budget_sol >= 0", name="ck_m38_submission_budget"),
+        CheckConstraint("length(submission_key) = 64 AND length(signed_transaction_hash) = 64 AND length(evidence_hash) = 64", name="ck_m38_submission_hashes"),
+        UniqueConstraint("submission_id", name="uq_m38_submission_id"),
+        UniqueConstraint("submission_key", name="uq_m38_submission_key"),
+        UniqueConstraint("approval_db_id", name="uq_m38_submission_approval"),
+        UniqueConstraint("rpc_signature", name="uq_m38_rpc_signature"),
+        Index("ix_m38_submission_permit_status", "micro_live_permit_id", "status"),
+        Index("ix_m38_submission_status_created", "status", "created_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    submission_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    submission_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(56), nullable=False)
+    approval_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_external_signing_approvals.id", ondelete="RESTRICT"), nullable=False)
+    approval_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    dry_run_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    micro_live_permit_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    token_mint: Mapped[str] = mapped_column(String(64), nullable=False)
+    reserved_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    signed_transaction_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expected_signature: Mapped[str] = mapped_column(String(96), nullable=False)
+    rpc_signature: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    send_attempted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    confirmation_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    confirmation_slot: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    chain_error: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    reservation_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    submission_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reserved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserControlledLiveSubmissionEvent(Base):
+    __tablename__ = "canonical_parser_controlled_live_submission_events"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_m38_event_sequence"),
+        CheckConstraint("event_type IN ('RESERVED','SUBMITTED','RECONCILED','CONFIRMED','FINALIZED','FAILED','UNCERTAIN')", name="ck_m38_event_type"),
+        CheckConstraint("length(event_hash) = 64", name="ck_m38_event_hash"),
+        UniqueConstraint("event_id", name="uq_m38_event_id"),
+        UniqueConstraint("submission_db_id", "sequence", name="uq_m38_event_sequence"),
+        Index("ix_m38_event_submission_time", "submission_db_id", "occurred_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    submission_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_controlled_live_submissions.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
