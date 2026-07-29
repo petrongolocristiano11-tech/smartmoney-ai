@@ -559,6 +559,7 @@ class CanonicalParserControlledLiveSubmissionRequest(BaseModel):
     idempotency_token: str = Field(min_length=8, max_length=200)
     portfolio_risk_permit_id: str | None = Field(default=None, min_length=36, max_length=36)
     preproduction_release_approval_id: str | None = Field(default=None, min_length=36, max_length=36)
+    assisted_micro_live_pilot_id: str | None = Field(default=None, min_length=36, max_length=36)
     confirmation: str = Field(default="", max_length=500)
     actor_label: str | None = Field(default=None, max_length=80)
     note: str | None = Field(default=None, max_length=500)
@@ -745,6 +746,67 @@ class CanonicalParserPreproductionReleaseIssueRequest(BaseModel):
 
 class CanonicalParserPreproductionReleaseRevokeRequest(BaseModel):
     release_id: str = Field(min_length=36, max_length=36)
+    reason: str = Field(min_length=3, max_length=500)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+
+
+class CanonicalParserAssistedMicroLivePilotIssueRequest(BaseModel):
+    certification_id: str = Field(min_length=36, max_length=36)
+    wallet_address: str = Field(min_length=32, max_length=64)
+    token_mint: str = Field(min_length=32, max_length=64)
+    max_entry_budget_sol: float = Field(gt=0, le=1)
+    max_total_fee_sol: float = Field(default=0.001, ge=0, le=1)
+    max_position_duration_minutes: int = Field(default=30, ge=1, le=1440)
+    validity_minutes: int = Field(default=60, ge=5, le=1440)
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserAssistedMicroLiveChecklistAttestRequest(BaseModel):
+    pilot_id: str = Field(min_length=36, max_length=36)
+    item_code: str = Field(min_length=3, max_length=80)
+    status: Literal["PASS", "FAIL"]
+    evidence: str = Field(min_length=8, max_length=500)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+
+
+class CanonicalParserAssistedMicroLivePilotArmRequest(BaseModel):
+    pilot_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserAssistedMicroLivePilotCheckpointRequest(BaseModel):
+    pilot_id: str = Field(min_length=36, max_length=36)
+    checkpoint_type: Literal[
+        "ENTRY_RECONCILED",
+        "ENTRY_SETTLED",
+        "EXIT_INTENT_VERIFIED",
+        "EXIT_RECONCILED",
+        "EXIT_SETTLED",
+        "POST_PILOT_HEALTH",
+    ]
+    source_id: str = Field(min_length=1, max_length=96)
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserAssistedMicroLivePilotCompleteRequest(BaseModel):
+    pilot_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserAssistedMicroLivePilotAbortRequest(BaseModel):
+    pilot_id: str = Field(min_length=36, max_length=36)
     reason: str = Field(min_length=3, max_length=500)
     confirmation: str = Field(default="", max_length=500)
     actor_label: str | None = Field(default=None, max_length=80)

@@ -6091,3 +6091,129 @@ class CanonicalParserPreproductionReleaseApprovalEvent(Base):
     event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+class CanonicalParserAssistedMicroLivePilot(Base):
+    __tablename__ = "canonical_parser_assisted_micro_live_pilots"
+    __table_args__ = (
+        CheckConstraint("scope = 'M45_ASSISTED_MICRO_LIVE_PILOT'", name="ck_m45_pilot_scope"),
+        CheckConstraint("network = 'mainnet-beta'", name="ck_m45_pilot_network"),
+        CheckConstraint("status IN ('PLANNED','ARMED','ENTRY_SUBMITTED','ENTRY_RECONCILED','ENTRY_SETTLED','EXIT_READY','EXIT_SUBMITTED','EXIT_RECONCILED','EXIT_SETTLED','COMPLETED','ABORTED','EXPIRED')", name="ck_m45_pilot_status"),
+        CheckConstraint("max_entry_budget_sol > 0 AND max_total_fee_sol >= 0", name="ck_m45_pilot_budgets"),
+        CheckConstraint("max_position_duration_minutes >= 1", name="ck_m45_pilot_duration"),
+        CheckConstraint("required_checklist_count >= 1 AND passed_checklist_count >= 0 AND passed_checklist_count <= required_checklist_count", name="ck_m45_pilot_checklist_counts"),
+        CheckConstraint("latest_event_sequence >= 1", name="ck_m45_pilot_event_sequence"),
+        CheckConstraint("length(pilot_key) = 64 AND length(evidence_hash) = 64 AND length(latest_event_hash) = 64", name="ck_m45_pilot_hashes"),
+        UniqueConstraint("pilot_id", name="uq_m45_pilot_id"),
+        UniqueConstraint("pilot_key", name="uq_m45_pilot_key"),
+        Index("ix_m45_pilot_wallet_status", "wallet_address", "status"),
+        Index("ix_m45_pilot_token_status", "token_mint", "status"),
+        Index("ix_m45_pilot_status_expiry", "status", "expires_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    pilot_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    pilot_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(48), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    certification_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_preproduction_certifications.id", ondelete="RESTRICT"), nullable=False)
+    certification_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    wallet_address: Mapped[str] = mapped_column(String(64), nullable=False)
+    network: Mapped[str] = mapped_column(String(32), nullable=False)
+    token_mint: Mapped[str] = mapped_column(String(64), nullable=False)
+    max_entry_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    max_total_fee_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    max_position_duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    required_checklist_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    passed_checklist_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    entry_submission_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    entry_settlement_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    position_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    exit_intent_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    exit_submission_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    exit_settlement_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    post_observability_snapshot_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    pilot_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    completion_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    armed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    aborted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    latest_event_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    latest_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserAssistedMicroLivePilotChecklist(Base):
+    __tablename__ = "canonical_parser_assisted_micro_live_pilot_checklist"
+    __table_args__ = (
+        CheckConstraint("status IN ('PASS','FAIL')", name="ck_m45_checklist_status"),
+        CheckConstraint("length(evidence_hash) = 64", name="ck_m45_checklist_hash"),
+        UniqueConstraint("item_id", name="uq_m45_checklist_item_id"),
+        UniqueConstraint("pilot_db_id", "item_code", name="uq_m45_checklist_item_code"),
+        Index("ix_m45_checklist_pilot_status", "pilot_db_id", "status"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    pilot_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_assisted_micro_live_pilots.id", ondelete="CASCADE"), nullable=False)
+    pilot_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    item_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(8), nullable=False)
+    attestation_detail: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    attested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserAssistedMicroLivePilotCheckpoint(Base):
+    __tablename__ = "canonical_parser_assisted_micro_live_pilot_checkpoints"
+    __table_args__ = (
+        CheckConstraint("checkpoint_type IN ('ENTRY_RECONCILED','ENTRY_SETTLED','EXIT_INTENT_VERIFIED','EXIT_RECONCILED','EXIT_SETTLED','POST_PILOT_HEALTH')", name="ck_m45_checkpoint_type"),
+        CheckConstraint("status IN ('VERIFIED','BLOCKED')", name="ck_m45_checkpoint_status"),
+        CheckConstraint("length(checkpoint_key) = 64 AND length(evidence_hash) = 64", name="ck_m45_checkpoint_hashes"),
+        UniqueConstraint("checkpoint_id", name="uq_m45_checkpoint_id"),
+        UniqueConstraint("checkpoint_key", name="uq_m45_checkpoint_key"),
+        Index("ix_m45_checkpoint_pilot_type", "pilot_db_id", "checkpoint_type"),
+        Index("ix_m45_checkpoint_status_time", "status", "checked_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    checkpoint_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    checkpoint_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    pilot_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_assisted_micro_live_pilots.id", ondelete="CASCADE"), nullable=False)
+    pilot_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    checkpoint_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_id: Mapped[str] = mapped_column(String(96), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    checkpoint_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserAssistedMicroLivePilotEvent(Base):
+    __tablename__ = "canonical_parser_assisted_micro_live_pilot_events"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_m45_pilot_event_sequence"),
+        CheckConstraint("event_type IN ('ISSUED','CHECK_ATTESTED','ARMED','ENTRY_SUBMITTED','CHECKPOINT_VERIFIED','EXIT_SUBMITTED','COMPLETED','ABORTED','EXPIRED')", name="ck_m45_pilot_event_type"),
+        CheckConstraint("length(event_hash) = 64", name="ck_m45_pilot_event_hash"),
+        UniqueConstraint("event_id", name="uq_m45_pilot_event_id"),
+        UniqueConstraint("pilot_db_id", "sequence", name="uq_m45_pilot_event_sequence"),
+        Index("ix_m45_pilot_event_time", "pilot_db_id", "occurred_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    pilot_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_assisted_micro_live_pilots.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

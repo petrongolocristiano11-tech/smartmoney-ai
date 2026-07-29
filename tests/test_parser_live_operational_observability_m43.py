@@ -134,7 +134,7 @@ def test_m43_models_and_migration_are_registered():
     config.set_main_option("script_location", "alembic")
     scripts = ScriptDirectory.from_config(config)
     assert scripts.get_revision("f8c0d3e6a742").down_revision == "e7b9c2d5f631"
-    assert scripts.get_heads() == ["a9d1e4f7b853"]
+    assert scripts.get_heads() == ["b0e2f5a8c964"]
 
 
 def test_healthy_snapshot_is_persisted_and_idempotent(db):

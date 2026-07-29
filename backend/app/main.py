@@ -150,6 +150,12 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserPreproductionCertificationRevokeRequest,
     CanonicalParserPreproductionReleaseIssueRequest,
     CanonicalParserPreproductionReleaseRevokeRequest,
+    CanonicalParserAssistedMicroLivePilotIssueRequest,
+    CanonicalParserAssistedMicroLiveChecklistAttestRequest,
+    CanonicalParserAssistedMicroLivePilotArmRequest,
+    CanonicalParserAssistedMicroLivePilotCheckpointRequest,
+    CanonicalParserAssistedMicroLivePilotCompleteRequest,
+    CanonicalParserAssistedMicroLivePilotAbortRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -532,6 +538,23 @@ from backend.app.services.blockchain_parser_preproduction_certification_service 
     resolve_preproduction_certification,
     revoke_preproduction_certification,
     revoke_preproduction_release_approval,
+)
+from backend.app.services.blockchain_parser_assisted_micro_live_pilot_service import (
+    CanonicalParserAssistedMicroLivePilotError,
+    abort_assisted_micro_live_pilot,
+    arm_assisted_micro_live_pilot,
+    attest_assisted_micro_live_checklist,
+    complete_assisted_micro_live_pilot,
+    get_assisted_micro_live_pilot,
+    get_assisted_micro_live_pilot_status,
+    issue_assisted_micro_live_pilot,
+    preview_arm_assisted_micro_live_pilot,
+    preview_assisted_micro_live_checklist_attestation,
+    preview_assisted_micro_live_pilot,
+    preview_assisted_micro_live_pilot_checkpoint,
+    preview_complete_assisted_micro_live_pilot,
+    record_assisted_micro_live_pilot_checkpoint,
+    resolve_assisted_micro_live_pilots,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -3874,6 +3897,7 @@ def preview_controlled_live_submission_endpoint(
             idempotency_token=request.idempotency_token,
             portfolio_risk_permit_id=request.portfolio_risk_permit_id,
             preproduction_release_approval_id=request.preproduction_release_approval_id,
+            assisted_micro_live_pilot_id=request.assisted_micro_live_pilot_id,
         )
     except CanonicalParserControlledLiveSubmissionError as exception:
         raise HTTPException(
@@ -3895,6 +3919,7 @@ def submit_controlled_live_submission_endpoint(
             idempotency_token=request.idempotency_token,
             portfolio_risk_permit_id=request.portfolio_risk_permit_id,
             preproduction_release_approval_id=request.preproduction_release_approval_id,
+            assisted_micro_live_pilot_id=request.assisted_micro_live_pilot_id,
             confirmation=request.confirmation,
             actor_label=request.actor_label,
             note=request.note,
@@ -4357,3 +4382,138 @@ def read_preproduction_release_approval_endpoint(release_id: str, db: Session = 
 def resolve_preproduction_certification_endpoint(db: Session = Depends(get_db)):
     return resolve_preproduction_certification(db)
 # END M44 PREPRODUCTION CERTIFICATION & SINGLE-USE RELEASE APPROVAL
+
+
+# BEGIN M45 ASSISTED MICRO-LIVE PILOT & RUNBOOK
+@app.get("/integrity/parser-assisted-micro-live-pilot/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_assisted_micro_live_pilot_status_endpoint(db: Session = Depends(get_db)):
+    return get_assisted_micro_live_pilot_status(db)
+
+
+@app.post("/integrity/parser-assisted-micro-live-pilot/pilot-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_assisted_micro_live_pilot_endpoint(request: CanonicalParserAssistedMicroLivePilotIssueRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_assisted_micro_live_pilot(
+            db,
+            certification_id=request.certification_id,
+            wallet_address=request.wallet_address,
+            token_mint=request.token_mint,
+            max_entry_budget_sol=request.max_entry_budget_sol,
+            max_total_fee_sol=request.max_total_fee_sol,
+            max_position_duration_minutes=request.max_position_duration_minutes,
+            validity_minutes=request.validity_minutes,
+            idempotency_token=request.idempotency_token,
+        )
+    except CanonicalParserAssistedMicroLivePilotError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-assisted-micro-live-pilot/pilot/issue", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def issue_assisted_micro_live_pilot_endpoint(request: CanonicalParserAssistedMicroLivePilotIssueRequest, db: Session = Depends(get_db)):
+    try:
+        return issue_assisted_micro_live_pilot(
+            db,
+            certification_id=request.certification_id,
+            wallet_address=request.wallet_address,
+            token_mint=request.token_mint,
+            max_entry_budget_sol=request.max_entry_budget_sol,
+            max_total_fee_sol=request.max_total_fee_sol,
+            max_position_duration_minutes=request.max_position_duration_minutes,
+            validity_minutes=request.validity_minutes,
+            idempotency_token=request.idempotency_token,
+            confirmation=request.confirmation,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserAssistedMicroLivePilotError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-assisted-micro-live-pilot/checklist-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_assisted_micro_live_checklist_endpoint(request: CanonicalParserAssistedMicroLiveChecklistAttestRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_assisted_micro_live_checklist_attestation(
+            db, pilot_id=request.pilot_id, item_code=request.item_code, status=request.status, evidence=request.evidence
+        )
+    except CanonicalParserAssistedMicroLivePilotError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-assisted-micro-live-pilot/checklist/attest", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def attest_assisted_micro_live_checklist_endpoint(request: CanonicalParserAssistedMicroLiveChecklistAttestRequest, db: Session = Depends(get_db)):
+    try:
+        return attest_assisted_micro_live_checklist(
+            db, pilot_id=request.pilot_id, item_code=request.item_code, status=request.status, evidence=request.evidence, confirmation=request.confirmation, actor_label=request.actor_label
+        )
+    except CanonicalParserAssistedMicroLivePilotError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-assisted-micro-live-pilot/arm-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_arm_assisted_micro_live_pilot_endpoint(request: CanonicalParserAssistedMicroLivePilotArmRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_arm_assisted_micro_live_pilot(db, pilot_id=request.pilot_id)
+    except CanonicalParserAssistedMicroLivePilotError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-assisted-micro-live-pilot/arm", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def arm_assisted_micro_live_pilot_endpoint(request: CanonicalParserAssistedMicroLivePilotArmRequest, db: Session = Depends(get_db)):
+    try:
+        return arm_assisted_micro_live_pilot(db, pilot_id=request.pilot_id, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserAssistedMicroLivePilotError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-assisted-micro-live-pilot/checkpoint-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_assisted_micro_live_pilot_checkpoint_endpoint(request: CanonicalParserAssistedMicroLivePilotCheckpointRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_assisted_micro_live_pilot_checkpoint(db, pilot_id=request.pilot_id, checkpoint_type=request.checkpoint_type, source_id=request.source_id, idempotency_token=request.idempotency_token)
+    except CanonicalParserAssistedMicroLivePilotError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-assisted-micro-live-pilot/checkpoint", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def record_assisted_micro_live_pilot_checkpoint_endpoint(request: CanonicalParserAssistedMicroLivePilotCheckpointRequest, db: Session = Depends(get_db)):
+    try:
+        return record_assisted_micro_live_pilot_checkpoint(db, pilot_id=request.pilot_id, checkpoint_type=request.checkpoint_type, source_id=request.source_id, idempotency_token=request.idempotency_token, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserAssistedMicroLivePilotError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-assisted-micro-live-pilot/complete-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_complete_assisted_micro_live_pilot_endpoint(request: CanonicalParserAssistedMicroLivePilotCompleteRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_complete_assisted_micro_live_pilot(db, pilot_id=request.pilot_id)
+    except CanonicalParserAssistedMicroLivePilotError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-assisted-micro-live-pilot/complete", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def complete_assisted_micro_live_pilot_endpoint(request: CanonicalParserAssistedMicroLivePilotCompleteRequest, db: Session = Depends(get_db)):
+    try:
+        return complete_assisted_micro_live_pilot(db, pilot_id=request.pilot_id, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserAssistedMicroLivePilotError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-assisted-micro-live-pilot/abort", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def abort_assisted_micro_live_pilot_endpoint(request: CanonicalParserAssistedMicroLivePilotAbortRequest, db: Session = Depends(get_db)):
+    try:
+        return abort_assisted_micro_live_pilot(db, pilot_id=request.pilot_id, reason=request.reason, confirmation=request.confirmation, actor_label=request.actor_label)
+    except CanonicalParserAssistedMicroLivePilotError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-assisted-micro-live-pilot/pilots/{pilot_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_assisted_micro_live_pilot_endpoint(pilot_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_assisted_micro_live_pilot(db, pilot_id)
+    except CanonicalParserAssistedMicroLivePilotError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-assisted-micro-live-pilot/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_assisted_micro_live_pilot_endpoint(wallet_address: str | None = None, token_mint: str | None = None, limit: int = 50, db: Session = Depends(get_db)):
+    return resolve_assisted_micro_live_pilots(db, wallet_address=wallet_address, token_mint=token_mint, limit=limit)
+# END M45 ASSISTED MICRO-LIVE PILOT & RUNBOOK

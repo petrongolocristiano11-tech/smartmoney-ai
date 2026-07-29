@@ -288,6 +288,7 @@ def _preview(
     idempotency_token: str,
     portfolio_risk_permit_id: str | None,
     preproduction_release_approval_id: str | None,
+    assisted_micro_live_pilot_id: str | None,
     settings_object: Any,
     evaluated_at: datetime,
 ) -> dict[str, Any]:
@@ -358,10 +359,12 @@ def _preview(
     incident_guard = {"blocked": False, "reason_codes": [], "active_incident_ids": []}
     portfolio_risk = {"required": False, "ready": True, "reason_codes": [], "permit": None, "snapshot": {"enforcement_enabled": False}}
     preproduction_release = {"required": False, "ready": True, "reason_codes": [], "release": None, "snapshot": {"release_guard_enabled": False}}
+    assisted_pilot = {"required": False, "ready": True, "reason_codes": [], "pilot": None, "snapshot": {"pilot_guard_enabled": False}}
     if dry_run is not None:
         from backend.app.services.blockchain_parser_live_incident_response_service import get_live_submission_incident_guard
         from backend.app.services.blockchain_parser_live_portfolio_risk_service import validate_portfolio_risk_permit_for_submission
         from backend.app.services.blockchain_parser_preproduction_certification_service import validate_preproduction_release_for_submission
+        from backend.app.services.blockchain_parser_assisted_micro_live_pilot_service import validate_assisted_micro_live_pilot_for_submission
         incident_guard = get_live_submission_incident_guard(
             db, side=dry_run.side, settings_object=settings_object, evaluated_at=evaluated_at
         )
@@ -388,6 +391,17 @@ def _preview(
             evaluated_at=evaluated_at,
         )
         reasons.extend(preproduction_release["reason_codes"])
+        assisted_pilot = validate_assisted_micro_live_pilot_for_submission(
+            db,
+            pilot_id=assisted_micro_live_pilot_id,
+            side=dry_run.side,
+            token_mint=dry_run.token_mint,
+            requested_budget_sol=budget,
+            wallet_address=None if signer_profile is None else signer_profile.wallet_address,
+            settings_object=settings_object,
+            evaluated_at=evaluated_at,
+        )
+        reasons.extend(assisted_pilot["reason_codes"])
     used_budget = Decimal("0")
     used_count = 0
     if permit is not None:
@@ -407,6 +421,7 @@ def _preview(
             "idempotency_token": str(idempotency_token).strip(),
             "portfolio_risk_permit_id": portfolio_risk_permit_id,
             "preproduction_release_approval_id": preproduction_release_approval_id,
+            "assisted_micro_live_pilot_id": assisted_micro_live_pilot_id,
             "policy": policy,
         }
     )
@@ -435,6 +450,7 @@ def _preview(
         else int(permit.max_order_count) - used_count - 1,
         "portfolio_risk": portfolio_risk["snapshot"],
         "preproduction_release": preproduction_release["snapshot"],
+        "assisted_micro_live_pilot": assisted_pilot["snapshot"],
         "incident_guard": incident_guard,
     }
     evidence = {
@@ -447,6 +463,7 @@ def _preview(
         "incident_guard": incident_guard,
         "portfolio_risk": portfolio_risk["snapshot"],
         "preproduction_release": preproduction_release["snapshot"],
+        "assisted_micro_live_pilot": assisted_pilot["snapshot"],
         "reason_codes": sorted(set(reasons)),
         "policy": policy,
     }
@@ -457,6 +474,7 @@ def _preview(
         "permit": permit,
         "portfolio_risk_permit": portfolio_risk["permit"],
         "preproduction_release_approval": preproduction_release["release"],
+        "assisted_micro_live_pilot": assisted_pilot,
         "incident_guard": incident_guard,
         "portfolio_risk": portfolio_risk,
         "preproduction_release": preproduction_release,
@@ -482,6 +500,7 @@ def preview_controlled_live_submission(
     idempotency_token: str,
     portfolio_risk_permit_id: str | None = None,
     preproduction_release_approval_id: str | None = None,
+    assisted_micro_live_pilot_id: str | None = None,
     settings_object: Any = settings,
     evaluated_at: datetime | None = None,
 ) -> dict[str, Any]:
@@ -492,6 +511,7 @@ def preview_controlled_live_submission(
         idempotency_token=idempotency_token,
         portfolio_risk_permit_id=portfolio_risk_permit_id,
         preproduction_release_approval_id=preproduction_release_approval_id,
+        assisted_micro_live_pilot_id=assisted_micro_live_pilot_id,
         settings_object=settings_object,
         evaluated_at=_aware(evaluated_at),
     )
@@ -505,6 +525,7 @@ def preview_controlled_live_submission(
         "incident_guard": preview["incident_guard"],
         "portfolio_risk": preview["portfolio_risk"]["snapshot"],
         "preproduction_release": preview["preproduction_release"]["snapshot"],
+        "assisted_micro_live_pilot": preview["assisted_micro_live_pilot"]["snapshot"],
         "reason_codes": preview["reason_codes"],
         "evidence_hash": preview["evidence_hash"],
         "confirmation": preview["confirmation"],
@@ -527,6 +548,7 @@ def submit_controlled_live_transaction(
     idempotency_token: str,
     portfolio_risk_permit_id: str | None = None,
     preproduction_release_approval_id: str | None = None,
+    assisted_micro_live_pilot_id: str | None = None,
     confirmation: str = "",
     actor_label: str | None = None,
     note: str | None = None,
@@ -562,6 +584,7 @@ def submit_controlled_live_transaction(
         idempotency_token=idempotency_token,
         portfolio_risk_permit_id=portfolio_risk_permit_id,
         preproduction_release_approval_id=preproduction_release_approval_id,
+        assisted_micro_live_pilot_id=assisted_micro_live_pilot_id,
         settings_object=settings_object,
         evaluated_at=now,
     )
@@ -605,8 +628,10 @@ def submit_controlled_live_transaction(
             "raw_signed_transaction_persisted": False,
             "portfolio_risk_permit_id": portfolio_risk_permit_id,
             "preproduction_release_approval_id": preproduction_release_approval_id,
+            "assisted_micro_live_pilot_id": assisted_micro_live_pilot_id,
             "incident_guard": preview["incident_guard"],
             "preproduction_release": preview["preproduction_release"]["snapshot"],
+            "assisted_micro_live_pilot": preview["assisted_micro_live_pilot"]["snapshot"],
         },
         evidence_hash=preview["evidence_hash"],
         actor_label=_actor(actor_label),
@@ -644,6 +669,19 @@ def submit_controlled_live_transaction(
         consume_preproduction_release_approval(
             db,
             release_id=str(preproduction_release_approval_id),
+            submission_id=row.submission_id,
+            side=row.side,
+            token_mint=row.token_mint,
+            requested_budget_sol=row.reserved_budget_sol,
+            wallet_address=None if preview["signer_profile"] is None else preview["signer_profile"].wallet_address,
+            settings_object=settings_object,
+            consumed_at=now,
+        )
+    if preview["assisted_micro_live_pilot"]["required"]:
+        from backend.app.services.blockchain_parser_assisted_micro_live_pilot_service import consume_assisted_micro_live_pilot_submission_slot
+        consume_assisted_micro_live_pilot_submission_slot(
+            db,
+            pilot_id=str(assisted_micro_live_pilot_id),
             submission_id=row.submission_id,
             side=row.side,
             token_mint=row.token_mint,
