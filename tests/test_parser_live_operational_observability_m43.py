@@ -307,3 +307,28 @@ def test_m43_openapi_and_static_safety():
     assert "backend.app.services.solana_transaction_signer" not in imports
     assert "backend.app.services.live_copy_trading_engine" not in imports
     assert "backend.app.workers.helius_live_trading_worker" not in imports
+
+def test_preview_confirmation_remains_valid_across_request_time(db):
+    configured = settings_for_m43()
+
+    preview = service.preview_live_operational_observation(
+        db,
+        idempotency_token="m43-api-confirmation-regression",
+        settings_object=configured,
+        observed_at=NOW,
+    )
+
+    result = service.observe_live_operations(
+        db,
+        idempotency_token="m43-api-confirmation-regression",
+        confirmation=preview["confirmation"],
+        settings_object=configured,
+        observed_at=NOW + timedelta(seconds=1),
+    )
+
+    assert result["status"] == "HEALTHY"
+    assert result["snapshot_key"] == preview["snapshot_key"]
+    assert (
+        db.query(CanonicalParserLiveObservabilitySnapshot).count()
+        == 1
+    )

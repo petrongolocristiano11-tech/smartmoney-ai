@@ -246,7 +246,11 @@ def preview_live_operational_observation(
     policy = _policy(settings_object)
     metrics = _collect_metrics(db, observed_at=now, policy=policy)
     snapshot_key = calculate_payload_hash(
-        {"idempotency_token": token, "observed_at": now.isoformat(), "metrics": metrics, "policy": policy}
+        {
+            "idempotency_token": token,
+            "metrics": metrics,
+            "policy": policy,
+        }
     )
     existing = db.scalar(
         select(CanonicalParserLiveObservabilitySnapshot).where(
