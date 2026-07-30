@@ -289,6 +289,7 @@ def _preview(
     portfolio_risk_permit_id: str | None,
     preproduction_release_approval_id: str | None,
     assisted_micro_live_pilot_id: str | None,
+    progressive_automation_lease_id: str | None,
     settings_object: Any,
     evaluated_at: datetime,
 ) -> dict[str, Any]:
@@ -360,11 +361,13 @@ def _preview(
     portfolio_risk = {"required": False, "ready": True, "reason_codes": [], "permit": None, "snapshot": {"enforcement_enabled": False}}
     preproduction_release = {"required": False, "ready": True, "reason_codes": [], "release": None, "snapshot": {"release_guard_enabled": False}}
     assisted_pilot = {"required": False, "ready": True, "reason_codes": [], "pilot": None, "snapshot": {"pilot_guard_enabled": False}}
+    progressive_automation = {"required": False, "ready": True, "reason_codes": [], "lease": None, "snapshot": {"guard_enabled": False, "manual_trigger_only": True, "automatic_dispatch": False}}
     if dry_run is not None:
         from backend.app.services.blockchain_parser_live_incident_response_service import get_live_submission_incident_guard
         from backend.app.services.blockchain_parser_live_portfolio_risk_service import validate_portfolio_risk_permit_for_submission
         from backend.app.services.blockchain_parser_preproduction_certification_service import validate_preproduction_release_for_submission
         from backend.app.services.blockchain_parser_assisted_micro_live_pilot_service import validate_assisted_micro_live_pilot_for_submission
+        from backend.app.services.blockchain_parser_progressive_automation_service import validate_progressive_automation_lease_for_submission
         incident_guard = get_live_submission_incident_guard(
             db, side=dry_run.side, settings_object=settings_object, evaluated_at=evaluated_at
         )
@@ -402,6 +405,18 @@ def _preview(
             evaluated_at=evaluated_at,
         )
         reasons.extend(assisted_pilot["reason_codes"])
+        progressive_automation = validate_progressive_automation_lease_for_submission(
+            db,
+            lease_id=progressive_automation_lease_id,
+            side=dry_run.side,
+            token_mint=dry_run.token_mint,
+            requested_budget_sol=budget,
+            wallet_address=None if signer_profile is None else signer_profile.wallet_address,
+            assisted_micro_live_pilot_id=assisted_micro_live_pilot_id,
+            settings_object=settings_object,
+            evaluated_at=evaluated_at,
+        )
+        reasons.extend(progressive_automation["reason_codes"])
     used_budget = Decimal("0")
     used_count = 0
     if permit is not None:
@@ -422,6 +437,7 @@ def _preview(
             "portfolio_risk_permit_id": portfolio_risk_permit_id,
             "preproduction_release_approval_id": preproduction_release_approval_id,
             "assisted_micro_live_pilot_id": assisted_micro_live_pilot_id,
+            "progressive_automation_lease_id": progressive_automation_lease_id,
             "policy": policy,
         }
     )
@@ -451,6 +467,7 @@ def _preview(
         "portfolio_risk": portfolio_risk["snapshot"],
         "preproduction_release": preproduction_release["snapshot"],
         "assisted_micro_live_pilot": assisted_pilot["snapshot"],
+        "progressive_automation": progressive_automation["snapshot"],
         "incident_guard": incident_guard,
     }
     evidence = {
@@ -475,6 +492,7 @@ def _preview(
         "portfolio_risk_permit": portfolio_risk["permit"],
         "preproduction_release_approval": preproduction_release["release"],
         "assisted_micro_live_pilot": assisted_pilot,
+        "progressive_automation": progressive_automation,
         "incident_guard": incident_guard,
         "portfolio_risk": portfolio_risk,
         "preproduction_release": preproduction_release,
@@ -501,6 +519,7 @@ def preview_controlled_live_submission(
     portfolio_risk_permit_id: str | None = None,
     preproduction_release_approval_id: str | None = None,
     assisted_micro_live_pilot_id: str | None = None,
+    progressive_automation_lease_id: str | None = None,
     settings_object: Any = settings,
     evaluated_at: datetime | None = None,
 ) -> dict[str, Any]:
@@ -512,6 +531,7 @@ def preview_controlled_live_submission(
         portfolio_risk_permit_id=portfolio_risk_permit_id,
         preproduction_release_approval_id=preproduction_release_approval_id,
         assisted_micro_live_pilot_id=assisted_micro_live_pilot_id,
+        progressive_automation_lease_id=progressive_automation_lease_id,
         settings_object=settings_object,
         evaluated_at=_aware(evaluated_at),
     )
@@ -526,6 +546,7 @@ def preview_controlled_live_submission(
         "portfolio_risk": preview["portfolio_risk"]["snapshot"],
         "preproduction_release": preview["preproduction_release"]["snapshot"],
         "assisted_micro_live_pilot": preview["assisted_micro_live_pilot"]["snapshot"],
+        "progressive_automation": preview["progressive_automation"]["snapshot"],
         "reason_codes": preview["reason_codes"],
         "evidence_hash": preview["evidence_hash"],
         "confirmation": preview["confirmation"],
@@ -549,6 +570,7 @@ def submit_controlled_live_transaction(
     portfolio_risk_permit_id: str | None = None,
     preproduction_release_approval_id: str | None = None,
     assisted_micro_live_pilot_id: str | None = None,
+    progressive_automation_lease_id: str | None = None,
     confirmation: str = "",
     actor_label: str | None = None,
     note: str | None = None,
@@ -585,6 +607,7 @@ def submit_controlled_live_transaction(
         portfolio_risk_permit_id=portfolio_risk_permit_id,
         preproduction_release_approval_id=preproduction_release_approval_id,
         assisted_micro_live_pilot_id=assisted_micro_live_pilot_id,
+        progressive_automation_lease_id=progressive_automation_lease_id,
         settings_object=settings_object,
         evaluated_at=now,
     )
@@ -629,9 +652,11 @@ def submit_controlled_live_transaction(
             "portfolio_risk_permit_id": portfolio_risk_permit_id,
             "preproduction_release_approval_id": preproduction_release_approval_id,
             "assisted_micro_live_pilot_id": assisted_micro_live_pilot_id,
+            "progressive_automation_lease_id": progressive_automation_lease_id,
             "incident_guard": preview["incident_guard"],
             "preproduction_release": preview["preproduction_release"]["snapshot"],
             "assisted_micro_live_pilot": preview["assisted_micro_live_pilot"]["snapshot"],
+            "progressive_automation": preview["progressive_automation"]["snapshot"],
         },
         evidence_hash=preview["evidence_hash"],
         actor_label=_actor(actor_label),
@@ -687,6 +712,20 @@ def submit_controlled_live_transaction(
             token_mint=row.token_mint,
             requested_budget_sol=row.reserved_budget_sol,
             wallet_address=None if preview["signer_profile"] is None else preview["signer_profile"].wallet_address,
+            settings_object=settings_object,
+            consumed_at=now,
+        )
+    if preview["progressive_automation"]["required"]:
+        from backend.app.services.blockchain_parser_progressive_automation_service import consume_progressive_automation_lease_submission_slot
+        consume_progressive_automation_lease_submission_slot(
+            db,
+            lease_id=str(progressive_automation_lease_id),
+            submission_id=row.submission_id,
+            side=row.side,
+            token_mint=row.token_mint,
+            requested_budget_sol=row.reserved_budget_sol,
+            wallet_address=None if preview["signer_profile"] is None else preview["signer_profile"].wallet_address,
+            assisted_micro_live_pilot_id=assisted_micro_live_pilot_id,
             settings_object=settings_object,
             consumed_at=now,
         )

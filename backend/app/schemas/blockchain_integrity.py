@@ -560,6 +560,7 @@ class CanonicalParserControlledLiveSubmissionRequest(BaseModel):
     portfolio_risk_permit_id: str | None = Field(default=None, min_length=36, max_length=36)
     preproduction_release_approval_id: str | None = Field(default=None, min_length=36, max_length=36)
     assisted_micro_live_pilot_id: str | None = Field(default=None, min_length=36, max_length=36)
+    progressive_automation_lease_id: str | None = Field(default=None, min_length=36, max_length=36)
     confirmation: str = Field(default="", max_length=500)
     actor_label: str | None = Field(default=None, max_length=80)
     note: str | None = Field(default=None, max_length=500)
@@ -810,3 +811,49 @@ class CanonicalParserAssistedMicroLivePilotAbortRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=500)
     confirmation: str = Field(default="", max_length=500)
     actor_label: str | None = Field(default=None, max_length=80)
+
+class CanonicalParserProductionHardeningAssessmentRequest(BaseModel):
+    wallet_address: str = Field(min_length=32, max_length=64)
+    token_mint: str = Field(min_length=32, max_length=64)
+    requested_stage: Literal["OBSERVE_ONLY", "ASSISTED", "SUPERVISED", "AUTOMATION_CANDIDATE"]
+    requested_max_budget_sol: float = Field(default=0, ge=0, le=1)
+    requested_max_submissions: int = Field(default=0, ge=0, le=100)
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserProgressiveAutomationLeaseIssueRequest(BaseModel):
+    assessment_id: str = Field(min_length=36, max_length=36)
+    validity_minutes: int = Field(default=15, ge=1, le=1440)
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserProgressiveAutomationLeaseRevokeRequest(BaseModel):
+    lease_id: str = Field(min_length=36, max_length=36)
+    reason: str = Field(min_length=3, max_length=500)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+
+
+class CanonicalParserProductionCircuitBreakerTripRequest(BaseModel):
+    wallet_address: str = Field(min_length=32, max_length=64)
+    reason_codes: list[str] = Field(default_factory=list, max_length=20)
+    source_type: Literal["MANUAL", "INCIDENT", "OBSERVABILITY", "SUBMISSION"] = "MANUAL"
+    source_id: str | None = Field(default=None, max_length=96)
+    idempotency_token: str = Field(min_length=8, max_length=200)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserProductionCircuitBreakerResetRequest(BaseModel):
+    breaker_id: str = Field(min_length=36, max_length=36)
+    resolution_evidence: str = Field(min_length=8, max_length=500)
+    confirmation: str = Field(default="", max_length=500)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)

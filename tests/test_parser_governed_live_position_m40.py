@@ -107,7 +107,7 @@ def test_m40_migration_is_consecutive_and_head():
     config = Config("alembic.ini"); config.set_main_option("script_location", "alembic")
     scripts = ScriptDirectory.from_config(config)
     assert scripts.get_revision("c5f7a0b3d419").down_revision == "b4e6f9a2c308"
-    assert scripts.get_heads() == ["b0e2f5a8c964"]
+    assert scripts.get_heads() == ["c1f3a6b9d075"]
 
 
 def test_hold_assessment_without_trigger(db, monkeypatch):

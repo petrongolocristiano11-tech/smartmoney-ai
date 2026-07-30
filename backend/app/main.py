@@ -156,6 +156,11 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserAssistedMicroLivePilotCheckpointRequest,
     CanonicalParserAssistedMicroLivePilotCompleteRequest,
     CanonicalParserAssistedMicroLivePilotAbortRequest,
+    CanonicalParserProductionHardeningAssessmentRequest,
+    CanonicalParserProgressiveAutomationLeaseIssueRequest,
+    CanonicalParserProgressiveAutomationLeaseRevokeRequest,
+    CanonicalParserProductionCircuitBreakerTripRequest,
+    CanonicalParserProductionCircuitBreakerResetRequest,
     CanonicalQualityAssessmentRequest,
     CanonicalShadowValidationExecuteRequest,
     NormalizationReplayExecuteRequest,
@@ -555,6 +560,23 @@ from backend.app.services.blockchain_parser_assisted_micro_live_pilot_service im
     preview_complete_assisted_micro_live_pilot,
     record_assisted_micro_live_pilot_checkpoint,
     resolve_assisted_micro_live_pilots,
+)
+from backend.app.services.blockchain_parser_progressive_automation_service import (
+    CanonicalParserProgressiveAutomationError,
+    assess_production_hardening,
+    get_production_circuit_breaker,
+    get_production_hardening_assessment,
+    get_progressive_automation_lease,
+    get_progressive_automation_status,
+    issue_progressive_automation_lease,
+    preview_production_hardening_assessment,
+    preview_progressive_automation_lease,
+    preview_reset_production_circuit_breaker,
+    preview_trip_production_circuit_breaker,
+    reset_production_circuit_breaker,
+    resolve_progressive_automation,
+    revoke_progressive_automation_lease,
+    trip_production_circuit_breaker,
 )
 from backend.app.services.blockchain_canonical_shadow_service import (
     CanonicalShadowError,
@@ -3898,6 +3920,7 @@ def preview_controlled_live_submission_endpoint(
             portfolio_risk_permit_id=request.portfolio_risk_permit_id,
             preproduction_release_approval_id=request.preproduction_release_approval_id,
             assisted_micro_live_pilot_id=request.assisted_micro_live_pilot_id,
+            progressive_automation_lease_id=request.progressive_automation_lease_id,
         )
     except CanonicalParserControlledLiveSubmissionError as exception:
         raise HTTPException(
@@ -3920,6 +3943,7 @@ def submit_controlled_live_submission_endpoint(
             portfolio_risk_permit_id=request.portfolio_risk_permit_id,
             preproduction_release_approval_id=request.preproduction_release_approval_id,
             assisted_micro_live_pilot_id=request.assisted_micro_live_pilot_id,
+            progressive_automation_lease_id=request.progressive_automation_lease_id,
             confirmation=request.confirmation,
             actor_label=request.actor_label,
             note=request.note,
@@ -4517,3 +4541,107 @@ def read_assisted_micro_live_pilot_endpoint(pilot_id: str, db: Session = Depends
 def resolve_assisted_micro_live_pilot_endpoint(wallet_address: str | None = None, token_mint: str | None = None, limit: int = 50, db: Session = Depends(get_db)):
     return resolve_assisted_micro_live_pilots(db, wallet_address=wallet_address, token_mint=token_mint, limit=limit)
 # END M45 ASSISTED MICRO-LIVE PILOT & RUNBOOK
+
+# BEGIN M46 PROGRESSIVE AUTOMATION & PRODUCTION HARDENING
+@app.get("/integrity/parser-progressive-automation/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_progressive_automation_status_endpoint(db: Session = Depends(get_db)):
+    return get_progressive_automation_status(db)
+
+
+@app.post("/integrity/parser-progressive-automation/assessment-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_production_hardening_assessment_endpoint(request: CanonicalParserProductionHardeningAssessmentRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_production_hardening_assessment(db, wallet_address=request.wallet_address, token_mint=request.token_mint, requested_stage=request.requested_stage, requested_max_budget_sol=request.requested_max_budget_sol, requested_max_submissions=request.requested_max_submissions, idempotency_token=request.idempotency_token)
+    except CanonicalParserProgressiveAutomationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-progressive-automation/assess", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def assess_production_hardening_endpoint(request: CanonicalParserProductionHardeningAssessmentRequest, db: Session = Depends(get_db)):
+    try:
+        return assess_production_hardening(db, wallet_address=request.wallet_address, token_mint=request.token_mint, requested_stage=request.requested_stage, requested_max_budget_sol=request.requested_max_budget_sol, requested_max_submissions=request.requested_max_submissions, idempotency_token=request.idempotency_token, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserProgressiveAutomationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-progressive-automation/lease-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_progressive_automation_lease_endpoint(request: CanonicalParserProgressiveAutomationLeaseIssueRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_progressive_automation_lease(db, assessment_id=request.assessment_id, validity_minutes=request.validity_minutes, idempotency_token=request.idempotency_token)
+    except CanonicalParserProgressiveAutomationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-progressive-automation/lease/issue", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def issue_progressive_automation_lease_endpoint(request: CanonicalParserProgressiveAutomationLeaseIssueRequest, db: Session = Depends(get_db)):
+    try:
+        return issue_progressive_automation_lease(db, assessment_id=request.assessment_id, validity_minutes=request.validity_minutes, idempotency_token=request.idempotency_token, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserProgressiveAutomationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-progressive-automation/lease/revoke", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def revoke_progressive_automation_lease_endpoint(request: CanonicalParserProgressiveAutomationLeaseRevokeRequest, db: Session = Depends(get_db)):
+    try:
+        return revoke_progressive_automation_lease(db, lease_id=request.lease_id, reason=request.reason, confirmation=request.confirmation, actor_label=request.actor_label)
+    except CanonicalParserProgressiveAutomationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-progressive-automation/circuit-breaker-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_trip_production_circuit_breaker_endpoint(request: CanonicalParserProductionCircuitBreakerTripRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_trip_production_circuit_breaker(db, wallet_address=request.wallet_address, reason_codes=request.reason_codes, source_type=request.source_type, source_id=request.source_id, idempotency_token=request.idempotency_token)
+    except CanonicalParserProgressiveAutomationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-progressive-automation/circuit-breaker/trip", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def trip_production_circuit_breaker_endpoint(request: CanonicalParserProductionCircuitBreakerTripRequest, db: Session = Depends(get_db)):
+    try:
+        return trip_production_circuit_breaker(db, wallet_address=request.wallet_address, reason_codes=request.reason_codes, source_type=request.source_type, source_id=request.source_id, idempotency_token=request.idempotency_token, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserProgressiveAutomationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-progressive-automation/circuit-breaker-reset-preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def preview_reset_production_circuit_breaker_endpoint(request: CanonicalParserProductionCircuitBreakerResetRequest, db: Session = Depends(get_db)):
+    try:
+        return preview_reset_production_circuit_breaker(db, breaker_id=request.breaker_id, resolution_evidence=request.resolution_evidence)
+    except CanonicalParserProgressiveAutomationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.post("/integrity/parser-progressive-automation/circuit-breaker/reset", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def reset_production_circuit_breaker_endpoint(request: CanonicalParserProductionCircuitBreakerResetRequest, db: Session = Depends(get_db)):
+    try:
+        return reset_production_circuit_breaker(db, breaker_id=request.breaker_id, resolution_evidence=request.resolution_evidence, confirmation=request.confirmation, actor_label=request.actor_label, note=request.note)
+    except CanonicalParserProgressiveAutomationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-progressive-automation/assessments/{assessment_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_production_hardening_assessment_endpoint(assessment_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_production_hardening_assessment(db, assessment_id)
+    except CanonicalParserProgressiveAutomationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-progressive-automation/leases/{lease_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_progressive_automation_lease_endpoint(lease_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_progressive_automation_lease(db, lease_id)
+    except CanonicalParserProgressiveAutomationError as exception:
+        raise HTTPException(status_code=exception.status_code, detail={"code": exception.code, "message": str(exception)}) from exception
+
+
+@app.get("/integrity/parser-progressive-automation/circuit-breakers/{wallet_address}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_production_circuit_breaker_endpoint(wallet_address: str, db: Session = Depends(get_db)):
+    return get_production_circuit_breaker(db, wallet_address=wallet_address)
+
+
+@app.get("/integrity/parser-progressive-automation/resolve", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def resolve_progressive_automation_endpoint(wallet_address: str | None = None, token_mint: str | None = None, limit: int = 50, db: Session = Depends(get_db)):
+    return resolve_progressive_automation(db, wallet_address=wallet_address, token_mint=token_mint, limit=limit)
+# END M46 PROGRESSIVE AUTOMATION & PRODUCTION HARDENING

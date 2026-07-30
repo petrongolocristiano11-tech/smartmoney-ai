@@ -6217,3 +6217,170 @@ class CanonicalParserAssistedMicroLivePilotEvent(Base):
     event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+class CanonicalParserProductionHardeningAssessment(Base):
+    __tablename__ = "canonical_parser_production_hardening_assessments"
+    __table_args__ = (
+        CheckConstraint("scope = 'M46_PRODUCTION_HARDENING_ASSESSMENT'", name="ck_m46_assessment_scope"),
+        CheckConstraint("network = 'mainnet-beta'", name="ck_m46_assessment_network"),
+        CheckConstraint("status IN ('READY','BLOCKED','INSUFFICIENT_DATA')", name="ck_m46_assessment_status"),
+        CheckConstraint("requested_stage IN ('OBSERVE_ONLY','ASSISTED','SUPERVISED','AUTOMATION_CANDIDATE')", name="ck_m46_assessment_requested_stage"),
+        CheckConstraint("eligible_stage IN ('OBSERVE_ONLY','ASSISTED','SUPERVISED','AUTOMATION_CANDIDATE')", name="ck_m46_assessment_eligible_stage"),
+        CheckConstraint("completed_pilot_count >= 0 AND aborted_pilot_count >= 0 AND expired_pilot_count >= 0", name="ck_m46_assessment_pilot_counts"),
+        CheckConstraint("unresolved_submission_count >= 0 AND active_incident_count >= 0 AND open_critical_alert_count >= 0", name="ck_m46_assessment_risk_counts"),
+        CheckConstraint("requested_max_budget_sol >= 0 AND recommended_max_budget_sol >= 0", name="ck_m46_assessment_budgets"),
+        CheckConstraint("requested_max_submissions >= 0 AND recommended_max_submissions >= 0", name="ck_m46_assessment_submission_counts"),
+        CheckConstraint("length(assessment_key) = 64 AND length(evidence_hash) = 64", name="ck_m46_assessment_hashes"),
+        UniqueConstraint("assessment_id", name="uq_m46_assessment_id"), UniqueConstraint("assessment_key", name="uq_m46_assessment_key"),
+        Index("ix_m46_assessment_wallet_time", "wallet_address", "assessed_at"), Index("ix_m46_assessment_token_status", "token_mint", "status"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    assessment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    assessment_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    wallet_address: Mapped[str] = mapped_column(String(64), nullable=False)
+    network: Mapped[str] = mapped_column(String(32), nullable=False)
+    token_mint: Mapped[str] = mapped_column(String(64), nullable=False)
+    requested_stage: Mapped[str] = mapped_column(String(32), nullable=False)
+    eligible_stage: Mapped[str] = mapped_column(String(32), nullable=False)
+    completed_pilot_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    aborted_pilot_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    expired_pilot_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    unresolved_submission_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    active_incident_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    open_critical_alert_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    latest_observability_snapshot_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    requested_max_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    recommended_max_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    requested_max_submissions: Mapped[int] = mapped_column(Integer, nullable=False)
+    recommended_max_submissions: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, nullable=False)
+    evidence_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    assessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserProgressiveAutomationLease(Base):
+    __tablename__ = "canonical_parser_progressive_automation_leases"
+    __table_args__ = (
+        CheckConstraint("scope = 'M46_PROGRESSIVE_AUTOMATION_LEASE'", name="ck_m46_lease_scope"),
+        CheckConstraint("network = 'mainnet-beta'", name="ck_m46_lease_network"),
+        CheckConstraint("stage IN ('OBSERVE_ONLY','ASSISTED','SUPERVISED','AUTOMATION_CANDIDATE')", name="ck_m46_lease_stage"),
+        CheckConstraint("status IN ('ACTIVE','REVOKED','EXPIRED','EXHAUSTED','TRIPPED')", name="ck_m46_lease_status"),
+        CheckConstraint("max_budget_sol >= 0", name="ck_m46_lease_budget"),
+        CheckConstraint("max_submission_count >= 0 AND used_submission_count >= 0 AND used_submission_count <= max_submission_count", name="ck_m46_lease_submission_counts"),
+        CheckConstraint("automatic_dispatch_permitted = false", name="ck_m46_lease_no_auto_dispatch"),
+        CheckConstraint("latest_event_sequence >= 1", name="ck_m46_lease_event_sequence"),
+        CheckConstraint("length(lease_key) = 64 AND length(evidence_hash) = 64 AND length(latest_event_hash) = 64", name="ck_m46_lease_hashes"),
+        UniqueConstraint("lease_id", name="uq_m46_lease_id"), UniqueConstraint("lease_key", name="uq_m46_lease_key"),
+        Index("ix_m46_lease_wallet_status", "wallet_address", "status"), Index("ix_m46_lease_token_status", "token_mint", "status"), Index("ix_m46_lease_expiry", "status", "expires_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    lease_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    lease_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(64), nullable=False)
+    assessment_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_production_hardening_assessments.id", ondelete="RESTRICT"), nullable=False)
+    assessment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    wallet_address: Mapped[str] = mapped_column(String(64), nullable=False)
+    network: Mapped[str] = mapped_column(String(32), nullable=False)
+    token_mint: Mapped[str] = mapped_column(String(64), nullable=False)
+    stage: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    max_budget_sol: Mapped[Decimal] = mapped_column(Numeric(20, 9), nullable=False)
+    max_submission_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    used_submission_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    automatic_dispatch_permitted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    lease_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    tripped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    exhausted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    latest_event_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    latest_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserProgressiveAutomationLeaseEvent(Base):
+    __tablename__ = "canonical_parser_progressive_automation_lease_events"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_m46_lease_event_sequence"),
+        CheckConstraint("event_type IN ('ISSUED','CONSUMED','EXHAUSTED','REVOKED','TRIPPED','EXPIRED')", name="ck_m46_lease_event_type"),
+        CheckConstraint("length(event_hash) = 64", name="ck_m46_lease_event_hash"),
+        UniqueConstraint("event_id", name="uq_m46_lease_event_id"), UniqueConstraint("lease_db_id", "sequence", name="uq_m46_lease_event_sequence"),
+        Index("ix_m46_lease_event_time", "lease_db_id", "occurred_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    lease_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_progressive_automation_leases.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserProductionCircuitBreaker(Base):
+    __tablename__ = "canonical_parser_production_circuit_breakers"
+    __table_args__ = (
+        CheckConstraint("scope = 'M46_PRODUCTION_CIRCUIT_BREAKER'", name="ck_m46_breaker_scope"),
+        CheckConstraint("network = 'mainnet-beta'", name="ck_m46_breaker_network"),
+        CheckConstraint("status IN ('CLEAR','TRIPPED')", name="ck_m46_breaker_status"),
+        CheckConstraint("source_type IN ('MANUAL','INCIDENT','OBSERVABILITY','SUBMISSION')", name="ck_m46_breaker_source"),
+        CheckConstraint("trip_count >= 1 AND reset_count >= 0", name="ck_m46_breaker_counts"),
+        CheckConstraint("latest_event_sequence >= 1", name="ck_m46_breaker_event_sequence"),
+        CheckConstraint("length(breaker_key) = 64 AND length(evidence_hash) = 64 AND length(latest_event_hash) = 64", name="ck_m46_breaker_hashes"),
+        UniqueConstraint("breaker_id", name="uq_m46_breaker_id"), UniqueConstraint("wallet_address", name="uq_m46_breaker_wallet"), Index("ix_m46_breaker_status", "status", "tripped_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    breaker_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    breaker_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(String(64), nullable=False)
+    wallet_address: Mapped[str] = mapped_column(String(64), nullable=False)
+    network: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason_codes: Mapped[list] = mapped_column(JSON, nullable=False)
+    source_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    source_id: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    trip_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    reset_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    breaker_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tripped_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    latest_event_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    latest_event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CanonicalParserProductionCircuitBreakerEvent(Base):
+    __tablename__ = "canonical_parser_production_circuit_breaker_events"
+    __table_args__ = (
+        CheckConstraint("sequence >= 1", name="ck_m46_breaker_event_sequence"),
+        CheckConstraint("event_type IN ('TRIPPED','RESET')", name="ck_m46_breaker_event_type"),
+        CheckConstraint("length(event_hash) = 64", name="ck_m46_breaker_event_hash"),
+        UniqueConstraint("event_id", name="uq_m46_breaker_event_id"), UniqueConstraint("breaker_db_id", "sequence", name="uq_m46_breaker_event_sequence"), Index("ix_m46_breaker_event_time", "breaker_db_id", "occurred_at"),
+    )
+    id: Mapped[int] = mapped_column(_PRIMARY_KEY_TYPE, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    breaker_db_id: Mapped[int] = mapped_column(ForeignKey("canonical_parser_production_circuit_breakers.id", ondelete="CASCADE"), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    previous_event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

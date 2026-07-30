@@ -32,7 +32,7 @@ CERTIFY_PREFIX = "CERTIFY_M44_PREPRODUCTION"
 REVOKE_CERT_PREFIX = "REVOKE_M44_PREPRODUCTION_CERTIFICATION"
 RELEASE_PREFIX = "ISSUE_M44_PREPRODUCTION_RELEASE"
 REVOKE_RELEASE_PREFIX = "REVOKE_M44_PREPRODUCTION_RELEASE"
-EXPECTED_ALEMBIC_HEAD = "b0e2f5a8c964"
+EXPECTED_ALEMBIC_HEAD = "c1f3a6b9d075"
 _MONEY_QUANTUM = Decimal("0.000000001")
 _ACTIVE_INCIDENT_STATUSES = {"OPEN", "ACKNOWLEDGED", "RECOVERY_AUTHORIZED"}
 _ACTIVE_ALERT_STATUSES = {"OPEN", "ACKNOWLEDGED"}
@@ -86,7 +86,7 @@ def _policy(settings_object: Any = settings) -> dict[str, Any]:
         "release_guard_enabled": bool(getattr(settings_object, "CANONICAL_PARSER_PREPRODUCTION_RELEASE_GUARD_ENABLED", False)),
         "certification_ttl_minutes": int(getattr(settings_object, "CANONICAL_PARSER_PREPRODUCTION_CERTIFICATION_TTL_MINUTES", 30)),
         "max_release_validity_minutes": int(getattr(settings_object, "CANONICAL_PARSER_PREPRODUCTION_MAX_RELEASE_VALIDITY_MINUTES", 10)),
-        "minimum_full_test_count": int(getattr(settings_object, "CANONICAL_PARSER_PREPRODUCTION_MIN_FULL_TEST_COUNT", 1160)),
+        "minimum_full_test_count": int(getattr(settings_object, "CANONICAL_PARSER_PREPRODUCTION_MIN_FULL_TEST_COUNT", 1187)),
         "required_fastapi_version": str(getattr(settings_object, "CANONICAL_PARSER_PREPRODUCTION_REQUIRED_FASTAPI_VERSION", "0.138.2")),
         "expected_alembic_head": EXPECTED_ALEMBIC_HEAD,
         "require_healthy_observability": bool(getattr(settings_object, "CANONICAL_PARSER_PREPRODUCTION_REQUIRE_HEALTHY_OBSERVABILITY", True)),

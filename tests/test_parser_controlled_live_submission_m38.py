@@ -156,7 +156,7 @@ def test_m38_migration_is_consecutive_and_is_head():
     scripts = ScriptDirectory.from_config(config)
     revision = scripts.get_revision("a3d5e8f1b297")
     assert revision.down_revision == "f2c4d7e0a186"
-    assert scripts.get_heads() == ["b0e2f5a8c964"]
+    assert scripts.get_heads() == ["c1f3a6b9d075"]
 
 
 def test_rpc_send_uses_fail_closed_options():
