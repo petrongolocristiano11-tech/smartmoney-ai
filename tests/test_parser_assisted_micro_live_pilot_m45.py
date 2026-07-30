@@ -495,6 +495,52 @@ def test_checklist_is_immutable(db):
     assert db.query(CanonicalParserAssistedMicroLivePilotChecklist).count() == 1
 
 
+
+def test_arm_confirmation_remains_valid_across_request_delay(db):
+    pilot = issue_pilot(db)
+    attest_all(db, pilot["pilot_id"])
+
+    preview = service.preview_arm_assisted_micro_live_pilot(
+        db,
+        pilot_id=pilot["pilot_id"],
+        settings_object=settings_for_m45(),
+        evaluated_at=NOW + timedelta(minutes=1),
+    )
+    delayed_preview = service.preview_arm_assisted_micro_live_pilot(
+        db,
+        pilot_id=pilot["pilot_id"],
+        settings_object=settings_for_m45(),
+        evaluated_at=NOW + timedelta(minutes=1, seconds=1),
+    )
+
+    assert preview["status"] == "READY"
+    assert delayed_preview["status"] == "READY"
+    assert preview["confirmation"] == delayed_preview["confirmation"]
+    assert preview["evidence_hash"] == delayed_preview["evidence_hash"]
+    assert (
+        preview["snapshot"]["evaluated_at"]
+        != delayed_preview["snapshot"]["evaluated_at"]
+    )
+
+    armed_at = NOW + timedelta(minutes=1, seconds=1)
+    result = service.arm_assisted_micro_live_pilot(
+        db,
+        pilot_id=pilot["pilot_id"],
+        confirmation=preview["confirmation"],
+        settings_object=settings_for_m45(),
+        armed_at=armed_at,
+    )
+
+    stored_armed_at = result["armed_at"]
+    if stored_armed_at.tzinfo is None:
+        stored_armed_at = stored_armed_at.replace(tzinfo=timezone.utc)
+    else:
+        stored_armed_at = stored_armed_at.astimezone(timezone.utc)
+
+    assert result["status"] == "ARMED"
+    assert stored_armed_at == armed_at
+
+
 def test_arm_blocks_incomplete_checklist(db):
     pilot = issue_pilot(db)
     preview = service.preview_arm_assisted_micro_live_pilot(db, pilot_id=pilot["pilot_id"], settings_object=settings_for_m45(), evaluated_at=NOW)

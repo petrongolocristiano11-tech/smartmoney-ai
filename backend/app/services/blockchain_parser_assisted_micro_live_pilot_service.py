@@ -816,7 +816,7 @@ def preview_arm_assisted_micro_live_pilot(
     health = _operational_health(db, now=now)
     if policy["require_healthy_observability"] and not health["healthy"]:
         reasons.append("M45_OPERATIONAL_HEALTH_NOT_READY")
-    snapshot = {
+    stable_snapshot = {
         "pilot_id": row.pilot_id,
         "checklist": statuses,
         "missing_items": missing,
@@ -824,9 +824,12 @@ def preview_arm_assisted_micro_live_pilot(
         "certification_status": cert_status,
         "operational_health": health,
         "policy": policy,
+    }
+    evidence_hash = calculate_payload_hash(stable_snapshot)
+    snapshot = {
+        **stable_snapshot,
         "evaluated_at": now.isoformat(),
     }
-    evidence_hash = calculate_payload_hash(snapshot)
     return {
         "status": "READY" if not reasons else "BLOCKED",
         "ready": not reasons,
