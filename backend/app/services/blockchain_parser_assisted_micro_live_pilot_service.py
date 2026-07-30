@@ -679,15 +679,18 @@ def preview_assisted_micro_live_checklist_attestation(
     )
     if existing is not None:
         reasons.append("M45_CHECKLIST_ITEM_ALREADY_ATTESTED")
-    evidence_body = {
+    stable_evidence = {
         "pilot_id": pilot_id,
         "item_code": code,
         "status": normalized_status,
         "evidence": str(evidence).strip()[:500],
         "pilot_evidence_hash": row.evidence_hash,
+    }
+    evidence_hash = calculate_payload_hash(stable_evidence)
+    evidence_body = {
+        **stable_evidence,
         "evaluated_at": now.isoformat(),
     }
-    evidence_hash = calculate_payload_hash(evidence_body)
     return {
         "status": "READY" if not reasons else "BLOCKED",
         "ready": not reasons,

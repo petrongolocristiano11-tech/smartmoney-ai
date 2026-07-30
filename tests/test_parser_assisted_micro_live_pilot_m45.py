@@ -432,6 +432,53 @@ def test_checklist_unknown_item_blocked(db):
     assert "M45_UNKNOWN_CHECKLIST_ITEM" in preview["reason_codes"]
 
 
+
+def test_checklist_confirmation_remains_valid_across_request_delay(db):
+    pilot = issue_pilot(db)
+    code = service.REQUIRED_CHECKLIST_ITEMS[0]
+    evidence = "operator presence verified"
+
+    preview = service.preview_assisted_micro_live_checklist_attestation(
+        db,
+        pilot_id=pilot["pilot_id"],
+        item_code=code,
+        status="PASS",
+        evidence=evidence,
+        evaluated_at=NOW + timedelta(seconds=1),
+    )
+    delayed_preview = service.preview_assisted_micro_live_checklist_attestation(
+        db,
+        pilot_id=pilot["pilot_id"],
+        item_code=code,
+        status="PASS",
+        evidence=evidence,
+        evaluated_at=NOW + timedelta(seconds=2),
+    )
+
+    assert preview["confirmation"] == delayed_preview["confirmation"]
+    assert preview["evidence_hash"] == delayed_preview["evidence_hash"]
+    assert (
+        preview["evidence"]["evaluated_at"]
+        != delayed_preview["evidence"]["evaluated_at"]
+    )
+
+    result = service.attest_assisted_micro_live_checklist(
+        db,
+        pilot_id=pilot["pilot_id"],
+        item_code=code,
+        status="PASS",
+        evidence=evidence,
+        confirmation=preview["confirmation"],
+        settings_object=settings_for_m45(),
+        attested_at=NOW + timedelta(seconds=2),
+    )
+
+    assert result["status"] == "PLANNED"
+    assert result["passed_checklist_count"] == 1
+    assert result["checklist"][0]["item_code"] == code
+    assert result["checklist"][0]["status"] == "PASS"
+
+
 def test_checklist_is_immutable(db):
     pilot = issue_pilot(db)
     code = service.REQUIRED_CHECKLIST_ITEMS[0]
