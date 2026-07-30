@@ -86,7 +86,7 @@ def _policy(settings_object: Any = settings) -> dict[str, Any]:
         "release_guard_enabled": bool(getattr(settings_object, "CANONICAL_PARSER_PREPRODUCTION_RELEASE_GUARD_ENABLED", False)),
         "certification_ttl_minutes": int(getattr(settings_object, "CANONICAL_PARSER_PREPRODUCTION_CERTIFICATION_TTL_MINUTES", 30)),
         "max_release_validity_minutes": int(getattr(settings_object, "CANONICAL_PARSER_PREPRODUCTION_MAX_RELEASE_VALIDITY_MINUTES", 10)),
-        "minimum_full_test_count": int(getattr(settings_object, "CANONICAL_PARSER_PREPRODUCTION_MIN_FULL_TEST_COUNT", 1187)),
+        "minimum_full_test_count": int(getattr(settings_object, "CANONICAL_PARSER_PREPRODUCTION_MIN_FULL_TEST_COUNT", 1188)),
         "required_fastapi_version": str(getattr(settings_object, "CANONICAL_PARSER_PREPRODUCTION_REQUIRED_FASTAPI_VERSION", "0.138.2")),
         "expected_alembic_head": EXPECTED_ALEMBIC_HEAD,
         "require_healthy_observability": bool(getattr(settings_object, "CANONICAL_PARSER_PREPRODUCTION_REQUIRE_HEALTHY_OBSERVABILITY", True)),

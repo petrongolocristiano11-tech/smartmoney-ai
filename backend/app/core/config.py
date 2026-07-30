@@ -1023,7 +1023,7 @@ class Settings(BaseSettings):
         default=10, ge=1, le=1440
     )
     CANONICAL_PARSER_PREPRODUCTION_MIN_FULL_TEST_COUNT: int = Field(
-        default=1187, ge=1, le=1000000
+        default=1188, ge=1, le=1000000
     )
     CANONICAL_PARSER_PREPRODUCTION_REQUIRED_FASTAPI_VERSION: str = "0.138.2"
     CANONICAL_PARSER_PREPRODUCTION_REQUIRE_HEALTHY_OBSERVABILITY: bool = True
