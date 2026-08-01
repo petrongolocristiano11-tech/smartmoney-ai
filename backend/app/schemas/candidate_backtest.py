@@ -288,6 +288,11 @@ class CandidatePositionLifecycleAuditResponse(
 class CandidateExitPriceAuditRequest(BaseModel):
     wallet_address: str = Field(min_length=32, max_length=64)
     max_local_price_age_hours: int = Field(default=24, ge=1, le=720)
+    lifecycle_run_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+    )
 
     @field_validator("wallet_address")
     @classmethod

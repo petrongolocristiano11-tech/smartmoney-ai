@@ -63,17 +63,25 @@ def _source_price(trade: Trade) -> float | None:
     return sol_amount / token_amount
 
 
-def _latest_lifecycle_run(
+def _resolve_lifecycle_run(
     db: Session,
     wallet_address: str,
+    lifecycle_run_id: str | None = None,
 ) -> CandidatePositionLifecycleAuditRun | None:
+    query = db.query(CandidatePositionLifecycleAuditRun).filter(
+        CandidatePositionLifecycleAuditRun.wallet_address
+        == wallet_address
+    )
+
+    requested_run_id = str(lifecycle_run_id or "").strip()
+    if requested_run_id:
+        return query.filter(
+            CandidatePositionLifecycleAuditRun.run_id
+            == requested_run_id
+        ).first()
+
     return (
-        db.query(CandidatePositionLifecycleAuditRun)
-        .filter(
-            CandidatePositionLifecycleAuditRun.wallet_address
-            == wallet_address
-        )
-        .order_by(
+        query.order_by(
             CandidatePositionLifecycleAuditRun.completed_at.desc(),
             CandidatePositionLifecycleAuditRun.id.desc(),
         )
@@ -322,6 +330,7 @@ def run_candidate_exit_price_audit(
     *,
     wallet_address: str,
     max_local_price_age_hours: int = 24,
+    lifecycle_run_id: str | None = None,
     now: datetime | None = None,
 ) -> CandidateExitPriceAuditRun:
     started_at = ensure_aware(now) or utc_now()
@@ -333,14 +342,38 @@ def run_candidate_exit_price_audit(
     if wallet is None:
         raise ValueError("Wallet scoperto non trovato")
 
-    lifecycle = _latest_lifecycle_run(db, wallet_address)
+    requested_lifecycle_run_id = str(lifecycle_run_id or "").strip() or None
+    lifecycle = _resolve_lifecycle_run(
+        db,
+        wallet_address,
+        requested_lifecycle_run_id,
+    )
     if lifecycle is None:
+        if requested_lifecycle_run_id:
+            raise ValueError(
+                "Lifecycle audit richiesto non trovato per il wallet selezionato"
+            )
         raise ValueError(
             "Esegui prima il Position Lifecycle & Stale Position Audit"
         )
+    if str(lifecycle.status or "").strip().upper() != "COMPLETED":
+        raise ValueError("Lifecycle audit sorgente non completato")
 
     effective_max_age = max(1, min(int(max_local_price_age_hours), 720))
     position_details = [dict(row) for row in list(lifecycle.position_details or [])]
+    source_open_positions = int(
+        (lifecycle.baseline_metrics or {}).get(
+            "open_positions",
+            len(position_details),
+        )
+        or 0
+    )
+    if source_open_positions != len(position_details):
+        raise ValueError(
+            "Lifecycle audit incompleto: "
+            f"{source_open_positions} posizioni aperte ma "
+            f"{len(position_details)} dettagli disponibili"
+        )
     tokens = {
         str(row.get("token_mint") or "").strip()
         for row in position_details
@@ -593,6 +626,11 @@ def run_candidate_exit_price_audit(
     )
     summary = {
         "positions_analyzed": len(position_results),
+        "source_lifecycle_open_positions": source_open_positions,
+        "source_lifecycle_position_details": len(position_details),
+        "position_count_matches_lifecycle": (
+            source_open_positions == len(position_results)
+        ),
         "readiness_basis": (
             "45% local freshness + 35% current cached route + 20% cache presence"
         ),
@@ -626,7 +664,16 @@ def run_candidate_exit_price_audit(
     diagnoses = _diagnoses(summary)
 
     parameters = {
+        "requested_lifecycle_run_id": requested_lifecycle_run_id,
         "source_lifecycle_run_id": lifecycle.run_id,
+        "source_lifecycle_completed_at": (
+            ensure_aware(lifecycle.completed_at).isoformat()
+            if lifecycle.completed_at is not None
+            else None
+        ),
+        "source_lifecycle_max_open_positions": int(
+            (lifecycle.parameters or {}).get("max_open_positions") or 0
+        ),
         "max_local_price_age_hours": effective_max_age,
         "fixed_buy_size_sol": fixed_buy_size_sol,
         "slippage_bps": slippage_bps,

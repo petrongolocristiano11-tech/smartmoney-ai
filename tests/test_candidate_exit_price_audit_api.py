@@ -35,7 +35,10 @@ def test_exit_price_audit_api_and_latest(monkeypatch):
             status="COMPLETED",
             readiness_status="BLOCKED",
             readiness_score=45,
-            parameters={"max_local_price_age_hours": 24},
+            parameters={
+                "max_local_price_age_hours": 24,
+                "source_lifecycle_run_id": payload.get("lifecycle_run_id"),
+            },
             safety={"helius_requests": 0, "jupiter_requests": 0},
             summary={"positions_analyzed": 1},
             scenario_results=[],
@@ -63,10 +66,15 @@ def test_exit_price_audit_api_and_latest(monkeypatch):
             json={
                 "wallet_address": WALLET,
                 "max_local_price_age_hours": 24,
+                "lifecycle_run_id": "lifecycle-api-run",
             },
         )
         assert response.status_code == 200
         assert response.json()["readiness_status"] == "BLOCKED"
+        assert (
+            response.json()["parameters"]["source_lifecycle_run_id"]
+            == "lifecycle-api-run"
+        )
 
         latest = client.get(
             f"/discovered-wallets/promotion/exit-price-audit/{WALLET}/latest"

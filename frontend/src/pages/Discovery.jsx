@@ -582,6 +582,17 @@ function ExitPriceAuditPanel({ result }) {
           Separa prezzo osservabile, route cached attuale e prova temporale storica.
           Nessun look-ahead, nessuna richiesta Helius/Jupiter e nessuna modifica operativa.
         </p>
+        <p className="mt-2 font-mono text-xs text-cyan-300">
+          Lifecycle sorgente: {result.parameters?.source_lifecycle_run_id ?? "-"}
+          {" · "}aperte {summary.source_lifecycle_open_positions ?? summary.positions_analyzed ?? 0}
+          {" · "}analizzate {summary.positions_analyzed ?? 0}
+          {" · "}max slot {result.parameters?.source_lifecycle_max_open_positions ?? "-"}
+        </p>
+        {summary.position_count_matches_lifecycle === false && (
+          <p className="mt-2 text-xs font-bold text-red-300">
+            Audit non allineato: il numero di posizioni non coincide con il lifecycle sorgente.
+          </p>
+        )}
       </div>
 
       <div className="p-5">
@@ -937,6 +948,9 @@ function Discovery() {
     setCandidateWallet(wallet);
     setExtendedHistoryResult(null);
     setPromotionResult(null);
+    setReconstructionAuditResult(null);
+    setLifecycleAuditResult(null);
+    setExitPriceAuditResult(null);
     setError("");
     setMessage(
       wallet
@@ -1212,6 +1226,9 @@ function Discovery() {
     setError("");
     setMessage("");
     setPromotionResult(null);
+    setReconstructionAuditResult(null);
+    setLifecycleAuditResult(null);
+    setExitPriceAuditResult(null);
     try {
       const response = await runCandidatePromotionBacktest({
         walletAddress: wallet,
@@ -1334,6 +1351,7 @@ async function handleLifecycleAudit(
   setError("");
   setMessage("");
   setLifecycleAuditResult(null);
+  setExitPriceAuditResult(null);
 
   try {
     const response =
@@ -1403,9 +1421,15 @@ async function handleExitPriceAudit(
   setExitPriceAuditResult(null);
 
   try {
+    const boundLifecycleRunId =
+      lifecycleAuditResult?.wallet_address === wallet
+        ? lifecycleAuditResult.run_id
+        : null;
+
     const response = await runCandidateExitPriceAudit({
       walletAddress: wallet,
       maxLocalPriceAgeHours,
+      lifecycleRunId: boundLifecycleRunId,
     });
 
     setExitPriceAuditResult(response.data);

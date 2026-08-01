@@ -294,12 +294,14 @@ export function getLatestCandidatePositionLifecycleAudit(
 export function runCandidateExitPriceAudit({
   walletAddress,
   maxLocalPriceAgeHours = 24,
+  lifecycleRunId = null,
 }) {
   return api.post(
     "/discovered-wallets/promotion/exit-price-audit",
     {
       wallet_address: walletAddress,
       max_local_price_age_hours: maxLocalPriceAgeHours,
+      lifecycle_run_id: lifecycleRunId || null,
     }
   );
 }

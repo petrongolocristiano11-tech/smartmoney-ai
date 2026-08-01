@@ -43,24 +43,46 @@ def db():
         engine.dispose()
 
 
-def add_lifecycle(db, *, entry_hours_ago=12, details=True):
+def add_lifecycle(
+    db,
+    *,
+    entry_hours_ago=12,
+    details=True,
+    detail_count=1,
+    run_id=None,
+    completed_at=NOW,
+    baseline_open_positions=None,
+):
     position_details = []
     if details:
-        position_details.append(
-            {
-                "token_mint": TOKEN,
-                "bootstrap": False,
-                "entry_at": (NOW - timedelta(hours=entry_hours_ago)).isoformat(),
-                "remaining_quantity": 100.0,
-                "remaining_cost_basis_sol": 0.05,
-                "reason_still_open": "NO_SOURCE_SELL",
-                "last_source_activity_at": (
-                    NOW - timedelta(hours=entry_hours_ago)
-                ).isoformat(),
-            }
-        )
+        for index in range(detail_count):
+            position_details.append(
+                {
+                    "token_mint": f"{index:032d}",
+                    "bootstrap": False,
+                    "entry_at": (
+                        NOW - timedelta(hours=entry_hours_ago)
+                    ).isoformat(),
+                    "remaining_quantity": 100.0,
+                    "remaining_cost_basis_sol": 0.05,
+                    "reason_still_open": "NO_SOURCE_SELL",
+                    "last_source_activity_at": (
+                        NOW - timedelta(hours=entry_hours_ago)
+                    ).isoformat(),
+                }
+            )
+    if detail_count == 1 and details:
+        position_details[0]["token_mint"] = TOKEN
+    effective_open_positions = (
+        len(position_details)
+        if baseline_open_positions is None
+        else baseline_open_positions
+    )
     run = CandidatePositionLifecycleAuditRun(
-        run_id=f"lifecycle-{entry_hours_ago}-{int(details)}",
+        run_id=(
+            run_id
+            or f"lifecycle-{entry_hours_ago}-{int(details)}-{detail_count}"
+        ),
         wallet_address=WALLET,
         status="COMPLETED",
         parameters={
@@ -70,13 +92,13 @@ def add_lifecycle(db, *, entry_hours_ago=12, details=True):
             "effective_market_friction_bps": 103.3333,
         },
         safety={"cached_data_only": True},
-        baseline_metrics={},
+        baseline_metrics={"open_positions": effective_open_positions},
         lifecycle_summary={},
         position_details=position_details,
         scenario_results=[],
         diagnoses=[],
         started_at=NOW,
-        completed_at=NOW,
+        completed_at=completed_at,
     )
     db.add(run)
     db.commit()
@@ -207,3 +229,66 @@ def test_no_open_positions_is_ready_and_not_applicable(db):
     assert run.readiness_score == 100
     assert run.summary["positions_analyzed"] == 0
     assert run.diagnoses == ["NO_OPEN_POSITIONS_REQUIRING_EXIT"]
+
+
+def test_explicit_lifecycle_run_id_binds_exact_position_snapshot(db):
+    selected = add_lifecycle(
+        db,
+        detail_count=8,
+        run_id="lifecycle-eight",
+        completed_at=NOW - timedelta(minutes=1),
+    )
+    add_lifecycle(
+        db,
+        detail_count=4,
+        run_id="lifecycle-four-latest",
+        completed_at=NOW,
+    )
+
+    run = run_candidate_exit_price_audit(
+        db,
+        wallet_address=WALLET,
+        lifecycle_run_id=selected.run_id,
+        now=NOW,
+    )
+
+    assert run.parameters["requested_lifecycle_run_id"] == selected.run_id
+    assert run.parameters["source_lifecycle_run_id"] == selected.run_id
+    assert run.summary["source_lifecycle_open_positions"] == 8
+    assert run.summary["positions_analyzed"] == 8
+    assert run.summary["position_count_matches_lifecycle"] is True
+
+
+def test_missing_explicit_lifecycle_run_fails_closed(db):
+    add_lifecycle(db)
+
+    with pytest.raises(
+        ValueError,
+        match="Lifecycle audit richiesto non trovato",
+    ):
+        run_candidate_exit_price_audit(
+            db,
+            wallet_address=WALLET,
+            lifecycle_run_id="missing-lifecycle-run",
+            now=NOW,
+        )
+
+
+def test_incomplete_lifecycle_position_details_fail_closed(db):
+    lifecycle = add_lifecycle(
+        db,
+        detail_count=4,
+        run_id="lifecycle-truncated",
+        baseline_open_positions=8,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="8 posizioni aperte ma 4 dettagli disponibili",
+    ):
+        run_candidate_exit_price_audit(
+            db,
+            wallet_address=WALLET,
+            lifecycle_run_id=lifecycle.run_id,
+            now=NOW,
+        )
