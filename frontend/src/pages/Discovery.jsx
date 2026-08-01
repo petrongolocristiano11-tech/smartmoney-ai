@@ -718,13 +718,15 @@ function ExitabilityRefreshPanel({ result }) {
         </p>
       </div>
 
-      <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-6">
+      <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-8">
         {[
           ["Posizioni", summary.source_open_positions],
           ["Token controllati", summary.tokens_checked],
           ["Route trovate", summary.route_found],
           ["No route", summary.no_route],
           ["Errori quote", summary.quote_errors],
+          ["Route riusate", summary.reused_current_routes],
+          ["Retry", summary.retry_attempts],
           ["Richieste Jupiter", summary.requests],
         ].map(([label, value]) => (
           <div key={label} className="rounded-lg border border-slate-700 bg-slate-950/60 p-3">
@@ -1535,7 +1537,7 @@ async function handleExitabilityRefresh(
       cacheTtlHours: backtestJupiterCacheTtlHours,
       maxLocalPriceAgeHours,
       maxTokens: 20,
-      forceRefresh: true,
+      forceRefresh: false,
     });
 
     setExitabilityRefreshResult(response.data);

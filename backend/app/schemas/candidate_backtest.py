@@ -379,7 +379,7 @@ class CandidateExitabilityRefreshRequest(BaseModel):
     cache_ttl_hours: int = Field(default=6, ge=1, le=24)
     max_local_price_age_hours: int = Field(default=24, ge=1, le=720)
     max_tokens: int = Field(default=20, ge=1, le=50)
-    force_refresh: bool = True
+    force_refresh: bool = False
 
     @field_validator("wallet_address")
     @classmethod

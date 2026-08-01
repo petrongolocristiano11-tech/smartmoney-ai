@@ -176,3 +176,119 @@ def test_refresh_is_partial_when_token_budget_is_lower_than_open_tokens():
     finally:
         db.close()
         engine.dispose()
+
+
+def test_refresh_reuses_current_routes_and_retries_only_transient_failures():
+    from backend.app.services.live_trading_errors import JupiterSwapError
+
+    class RecoveringRateLimitJupiter:
+        def __init__(self):
+            self.calls = []
+            self.rate_limited_once = False
+
+        def get_order(
+            self,
+            *,
+            input_mint,
+            output_mint,
+            amount_raw,
+            taker,
+            slippage_bps,
+        ):
+            self.calls.append(
+                (input_mint, output_mint, amount_raw, slippage_bps)
+            )
+            if (
+                output_mint == TOKEN_B
+                and not self.rate_limited_once
+            ):
+                self.rate_limited_once = True
+                raise JupiterSwapError(
+                    "[API Gateway] Too many requests",
+                    code="JUPITER_HTTP_ERROR",
+                    status_code=429,
+                )
+            if input_mint == "So11111111111111111111111111111111111111112":
+                return SimpleNamespace(out_amount=max(1, amount_raw * 2))
+            return SimpleNamespace(out_amount=max(1, amount_raw // 2))
+
+    engine, db = make_db()
+    try:
+        lifecycle = add_lifecycle(db, tokens=[TOKEN_A, TOKEN_B])
+        db.add_all(
+            [
+                CandidateTokenCompatibility(
+                    token_mint=TOKEN_A,
+                    fixed_buy_size_lamports=5_000_000,
+                    slippage_bps=100,
+                    status="PASSED",
+                    buy_quote=True,
+                    sell_quote=True,
+                    compatible=True,
+                    buy_out_amount_raw=10_000_000,
+                    sell_out_amount_raw=4_900_000,
+                    checked_at=NOW - timedelta(minutes=5),
+                    expires_at=NOW + timedelta(hours=6),
+                ),
+                CandidateTokenCompatibility(
+                    token_mint=TOKEN_B,
+                    fixed_buy_size_lamports=5_000_000,
+                    slippage_bps=100,
+                    status="FAILED",
+                    buy_quote=False,
+                    sell_quote=False,
+                    compatible=False,
+                    error_code="JUPITER_HTTP_ERROR",
+                    error_message="[API Gateway] Too many requests",
+                    checked_at=NOW - timedelta(minutes=5),
+                    expires_at=NOW + timedelta(hours=6),
+                ),
+            ]
+        )
+        db.commit()
+
+        client = RecoveringRateLimitJupiter()
+        sleeps = []
+        result = refresh_candidate_open_position_exitability(
+            db,
+            wallet_address=WALLET,
+            lifecycle_run_id=lifecycle.run_id,
+            force_refresh=True,
+            jupiter_client=client,
+            now=NOW,
+            transient_retry_count=1,
+            transient_retry_delay_seconds=0.25,
+            sleep_fn=sleeps.append,
+        )
+
+        assert result["status"] == "COMPLETED"
+        assert result["summary"]["route_found"] == 2
+        assert result["summary"]["quote_errors"] == 0
+        assert result["summary"]["reused_current_routes"] == 1
+        assert result["summary"]["tokens_retried"] == 1
+        assert result["summary"]["retry_attempts"] == 1
+        assert result["summary"]["transient_errors_seen"] == 1
+        assert result["summary"]["requests"] == 3
+        assert result["summary"]["cache_hits"] == 1
+        assert result["summary"]["audit_current_route_percent"] == 100.0
+        assert result["safety"]["current_compatible_cache_preserved"] is True
+        assert sleeps == [0.25]
+        assert len(client.calls) == 3
+
+        row_a = (
+            db.query(CandidateTokenCompatibility)
+            .filter_by(token_mint=TOKEN_A)
+            .one()
+        )
+        row_b = (
+            db.query(CandidateTokenCompatibility)
+            .filter_by(token_mint=TOKEN_B)
+            .one()
+        )
+        assert row_a.checked_at.replace(tzinfo=timezone.utc) == NOW - timedelta(minutes=5)
+        assert row_a.compatible is True
+        assert row_b.compatible is True
+        assert row_b.error_code is None
+    finally:
+        db.close()
+        engine.dispose()

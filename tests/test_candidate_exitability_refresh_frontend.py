@@ -15,4 +15,8 @@ def test_exitability_refresh_frontend_has_bound_cached_workflow():
     assert "Refresh Jupiter posizioni aperte" in page
     assert "Open Position Jupiter Exitability Refresh" in page
     assert "response.data.exit_price_audit" in page
+    assert "forceRefresh: false" in page
+    assert "forceRefresh = false" in api
+    assert "summary.reused_current_routes" in page
+    assert "summary.retry_attempts" in page
     assert "transactions_signed" not in page

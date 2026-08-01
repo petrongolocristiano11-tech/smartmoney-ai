@@ -14,6 +14,10 @@ from backend.app.models.candidate_exit_price_audit import (
 )
 
 
+from backend.app.schemas.candidate_backtest import (
+    CandidateExitabilityRefreshRequest,
+)
+
 NOW = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
 WALLET = "Y" * 32
 
@@ -99,3 +103,12 @@ def test_exitability_refresh_api(monkeypatch):
 
     db.close()
     engine.dispose()
+
+
+def test_exitability_refresh_request_defaults_to_cache_preserving_mode():
+    request = CandidateExitabilityRefreshRequest(
+        wallet_address=WALLET,
+        lifecycle_run_id="lifecycle-api",
+    )
+
+    assert request.force_refresh is False

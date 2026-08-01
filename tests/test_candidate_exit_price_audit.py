@@ -189,9 +189,16 @@ def test_stale_local_price_is_not_counted_as_observable(db):
     )
 
     assert run.summary["local_observable_percent"] == pytest.approx(0.0)
+    assert run.summary["current_route_supported_percent"] == pytest.approx(100.0)
+    assert run.summary["temporal_execution_percent"] == pytest.approx(0.0)
     assert run.summary["stale_local_prices"] == 1
+    assert run.readiness_status == "PARTIAL"
+    assert "LOCAL_PRICE_COVERAGE_LOW" in run.diagnoses
+    assert "CURRENT_CACHED_ROUTE_COVERAGE_LOW" not in run.diagnoses
     evidence = run.position_results[0]["scenario_evidence"][0]
-    assert evidence["evidence_status"] == "STALE_LOCAL_PRICE"
+    assert evidence["evidence_status"] == "CURRENT_ROUTE_ONLY"
+    assert evidence["current_route_supported"] is True
+    assert evidence["temporal_executable"] is False
     assert evidence["observable_pnl_sol"] is None
 
 

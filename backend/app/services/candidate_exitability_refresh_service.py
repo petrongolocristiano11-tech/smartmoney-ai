@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 
 from backend.app.models.candidate_position_lifecycle_audit import (
     CandidatePositionLifecycleAuditRun,
+)
+from backend.app.models.candidate_token_compatibility import (
+    CandidateTokenCompatibility,
 )
 from backend.app.models.discovered_wallet import DiscoveredWallet
 from backend.app.services.candidate_exit_price_audit_service import (
@@ -29,6 +33,12 @@ NO_ROUTE = "NO_ROUTE"
 QUOTE_ERROR = "QUOTE_ERROR"
 JUPITER_UNAVAILABLE_RESULT = "JUPITER_UNAVAILABLE"
 NOT_ATTEMPTED = "NOT_ATTEMPTED"
+
+_TRANSIENT_ERROR_CODES = {
+    "JUPITER_HTTP_ERROR",
+    "JUPITER_NETWORK_ERROR",
+    "JUPITER_TIMEOUT",
+}
 
 
 def utc_now() -> datetime:
@@ -86,6 +96,90 @@ def _result_status(item: dict[str, Any]) -> str:
     return NO_ROUTE
 
 
+def _profile_cache_rows(
+    db: Session,
+    *,
+    tokens: list[str],
+    fixed_buy_size_lamports: int,
+    slippage_bps: int,
+) -> dict[str, CandidateTokenCompatibility]:
+    if not tokens:
+        return {}
+
+    rows = (
+        db.query(CandidateTokenCompatibility)
+        .filter(CandidateTokenCompatibility.token_mint.in_(tokens))
+        .filter(
+            CandidateTokenCompatibility.fixed_buy_size_lamports
+            == fixed_buy_size_lamports
+        )
+        .filter(CandidateTokenCompatibility.slippage_bps == slippage_bps)
+        .all()
+    )
+    return {str(row.token_mint): row for row in rows}
+
+
+def _is_current_compatible_cache(
+    row: CandidateTokenCompatibility | None,
+    *,
+    now: datetime,
+) -> bool:
+    if row is None:
+        return False
+    expires_at = ensure_aware(row.expires_at)
+    return bool(
+        row.compatible
+        and row.buy_quote
+        and row.sell_quote
+        and expires_at
+        and expires_at > now
+    )
+
+
+def _cache_result(row: CandidateTokenCompatibility) -> dict[str, Any]:
+    checked_at = ensure_aware(row.checked_at)
+    expires_at = ensure_aware(row.expires_at)
+    item = {
+        "token_mint": str(row.token_mint),
+        "buy_quote": bool(row.buy_quote),
+        "sell_quote": bool(row.sell_quote),
+        "compatible": bool(row.compatible),
+        "buy_out_amount_raw": row.buy_out_amount_raw,
+        "sell_out_amount_raw": row.sell_out_amount_raw,
+        "error_code": row.error_code,
+        "error_message": row.error_message,
+        "source": "CACHE",
+        "checked_at": checked_at.isoformat() if checked_at else None,
+        "expires_at": expires_at.isoformat() if expires_at else None,
+    }
+    item["result_status"] = _result_status(item)
+    return item
+
+
+def _is_transient_quote_error(item: dict[str, Any]) -> bool:
+    code = str(item.get("error_code") or "").strip().upper()
+    message = str(item.get("error_message") or "").strip().lower()
+    if code not in _TRANSIENT_ERROR_CODES:
+        return False
+    if code in {"JUPITER_NETWORK_ERROR", "JUPITER_TIMEOUT"}:
+        return True
+    return "too many requests" in message or "429" in message
+
+
+def _empty_compatibility() -> dict[str, Any]:
+    return {
+        "checked": True,
+        "status": "PASSED",
+        "tokens_checked": 0,
+        "tokens_compatible": 0,
+        "requests": 0,
+        "cache_hits": 0,
+        "live_checks": 0,
+        "compatibility_percent": 100.0,
+        "results": [],
+    }
+
+
 def refresh_candidate_open_position_exitability(
     db: Session,
     *,
@@ -94,9 +188,12 @@ def refresh_candidate_open_position_exitability(
     cache_ttl_hours: int = 6,
     max_local_price_age_hours: int = 24,
     max_tokens: int = 20,
-    force_refresh: bool = True,
+    force_refresh: bool = False,
     jupiter_client: JupiterSwapClient | None = None,
     now: datetime | None = None,
+    transient_retry_count: int = 1,
+    transient_retry_delay_seconds: float = 1.5,
+    sleep_fn: Callable[[float], None] | None = None,
 ) -> dict[str, Any]:
     started_at = ensure_aware(now) or utc_now()
     normalized_wallet = str(wallet_address or "").strip()
@@ -137,13 +234,15 @@ def refresh_candidate_open_position_exitability(
     not_selected_tokens = all_tokens[effective_max_tokens:]
 
     parameters = dict(lifecycle.parameters or {})
-    fixed_buy_size_sol = safe_float(
-        parameters.get("fixed_buy_size_sol")
-    )
+    fixed_buy_size_sol = safe_float(parameters.get("fixed_buy_size_sol"))
     if fixed_buy_size_sol <= 0:
         raise ValueError(
             "Lifecycle audit privo di fixed_buy_size_sol valido"
         )
+    fixed_buy_size_lamports = max(
+        1,
+        int(float(fixed_buy_size_sol) * 1_000_000_000),
+    )
     slippage_bps = max(
         0,
         min(int(parameters.get("slippage_bps") or 100), 1000),
@@ -153,50 +252,99 @@ def refresh_candidate_open_position_exitability(
         1,
         min(int(max_local_price_age_hours), 720),
     )
+    retry_budget = max(0, min(int(transient_retry_count), 2))
+    retry_delay = max(
+        0.0,
+        min(float(transient_retry_delay_seconds), 5.0),
+    )
+    effective_sleep = sleep_fn or time.sleep
 
-    compatibility: dict[str, Any]
-    result_rows: list[dict[str, Any]] = []
+    cache_rows = _profile_cache_rows(
+        db,
+        tokens=selected_tokens,
+        fixed_buy_size_lamports=fixed_buy_size_lamports,
+        slippage_bps=slippage_bps,
+    )
+    reusable_tokens = [
+        token
+        for token in selected_tokens
+        if _is_current_compatible_cache(
+            cache_rows.get(token),
+            now=started_at,
+        )
+    ]
+    live_tokens = [
+        token for token in selected_tokens if token not in reusable_tokens
+    ]
+
+    result_by_token: dict[str, dict[str, Any]] = {
+        token: _cache_result(cache_rows[token])
+        for token in reusable_tokens
+    }
+    aggregate_requests = 0
+    aggregate_live_checks = 0
+    aggregate_cache_hits = len(reusable_tokens)
+    retry_attempts = 0
+    transient_errors_seen = 0
+    unavailable = False
+
+    client = jupiter_client or JupiterSwapClient(
+        max_retries=2,
+        retry_base_seconds=1.0,
+        retry_max_seconds=4.0,
+    )
 
     try:
-        if selected_tokens:
+        compatibility = _empty_compatibility()
+        pending_tokens = list(live_tokens)
+
+        for attempt_index in range(retry_budget + 1):
+            if not pending_tokens:
+                break
+            if attempt_index > 0:
+                retry_attempts += 1
+                effective_sleep(retry_delay * attempt_index)
+
             compatibility = check_candidate_jupiter_compatibility(
                 db,
-                selected_tokens,
+                pending_tokens,
                 fixed_buy_size_sol=fixed_buy_size_sol,
                 slippage_bps=slippage_bps,
-                token_limit=len(selected_tokens),
-                client=jupiter_client or JupiterSwapClient(),
+                token_limit=len(pending_tokens),
+                client=client,
                 cache_ttl_hours=effective_ttl,
-                force_refresh=bool(force_refresh),
+                force_refresh=True,
                 now=started_at,
             )
-        else:
-            compatibility = {
-                "checked": True,
-                "status": "PASSED",
-                "tokens_checked": 0,
-                "tokens_compatible": 0,
-                "requests": 0,
-                "cache_hits": 0,
-                "live_checks": 0,
-                "compatibility_percent": 100.0,
-                "results": [],
-            }
+            aggregate_requests += int(compatibility.get("requests") or 0)
+            aggregate_live_checks += int(
+                compatibility.get("live_checks") or 0
+            )
+            aggregate_cache_hits += int(
+                compatibility.get("cache_hits") or 0
+            )
+            if str(compatibility.get("status") or "") == JUPITER_UNAVAILABLE:
+                unavailable = True
 
-        returned_by_token: dict[str, dict[str, Any]] = {}
-        for raw_item in list(compatibility.get("results") or []):
-            item = dict(raw_item)
-            token = str(item.get("token_mint") or "").strip()
-            item["result_status"] = _result_status(item)
-            if token:
-                returned_by_token[token] = item
-            result_rows.append(item)
+            returned_tokens: set[str] = set()
+            transient_tokens: list[str] = []
+            for raw_item in list(compatibility.get("results") or []):
+                item = dict(raw_item)
+                token = str(item.get("token_mint") or "").strip()
+                if not token:
+                    continue
+                returned_tokens.add(token)
+                item["result_status"] = _result_status(item)
+                item["retry_attempt"] = attempt_index
+                result_by_token[token] = item
+                if _is_transient_quote_error(item):
+                    transient_errors_seen += 1
+                    transient_tokens.append(token)
 
-        for token in selected_tokens:
-            if token in returned_by_token:
-                continue
-            result_rows.append(
-                {
+            for token in pending_tokens:
+                if token in returned_tokens:
+                    continue
+                result_by_token[token] = {
                     "token_mint": token,
                     "result_status": NOT_ATTEMPTED,
                     "buy_quote": False,
@@ -209,8 +357,30 @@ def refresh_candidate_open_position_exitability(
                     "source": "NONE",
                     "checked_at": None,
                     "expires_at": None,
+                    "retry_attempt": attempt_index,
                 }
+
+            pending_tokens = transient_tokens
+
+        result_rows = [
+            result_by_token.get(
+                token,
+                {
+                    "token_mint": token,
+                    "result_status": NOT_ATTEMPTED,
+                    "buy_quote": False,
+                    "sell_quote": False,
+                    "compatible": False,
+                    "error_code": "JUPITER_CHECK_NOT_ATTEMPTED",
+                    "error_message": "Controllo Jupiter non eseguito",
+                    "source": "NONE",
+                    "checked_at": None,
+                    "expires_at": None,
+                    "retry_attempt": 0,
+                },
             )
+            for token in selected_tokens
+        ]
 
         exit_price_audit = run_candidate_exit_price_audit(
             db,
@@ -234,16 +404,22 @@ def refresh_candidate_open_position_exitability(
         status = str(row.get("result_status") or NOT_ATTEMPTED)
         counts[status] = counts.get(status, 0) + 1
 
-    compatibility_status = str(
-        compatibility.get("status") or "FAILED"
-    )
-    if compatibility_status == JUPITER_UNAVAILABLE:
+    if unavailable:
         refresh_status = REFRESH_UNAVAILABLE
-    elif not_selected_tokens or counts[NOT_ATTEMPTED] > 0:
+    elif (
+        not_selected_tokens
+        or counts[NOT_ATTEMPTED] > 0
+        or counts[QUOTE_ERROR] > 0
+    ):
         refresh_status = REFRESH_PARTIAL
     else:
         refresh_status = REFRESH_COMPLETED
 
+    checked_count = len(result_rows)
+    compatible_count = counts[ROUTE_FOUND]
+    compatibility_percent = (
+        compatible_count / checked_count * 100.0 if checked_count else 100.0
+    )
     completed_at = utc_now()
     audit_summary = dict(exit_price_audit.summary or {})
 
@@ -257,15 +433,17 @@ def refresh_candidate_open_position_exitability(
             "cache_ttl_hours": effective_ttl,
             "max_local_price_age_hours": effective_local_age,
             "max_tokens": effective_max_tokens,
-            "force_refresh": bool(force_refresh),
+            "force_refresh_requested": bool(force_refresh),
+            "refresh_policy": "REUSE_CURRENT_COMPATIBLE_RETRY_FAILURES",
+            "transient_retry_count": retry_budget,
+            "transient_retry_delay_seconds": retry_delay,
             "quote_profile": "SOL_TO_TOKEN_TO_SOL_FIXED_BUY_SIZE",
         },
         "safety": {
             "diagnostic_only": True,
             "helius_requests": 0,
-            "jupiter_requests": int(
-                compatibility.get("requests") or 0
-            ),
+            "jupiter_requests": aggregate_requests,
+            "current_compatible_cache_preserved": True,
             "transactions_signed": False,
             "transactions_submitted": False,
             "live_enabled": False,
@@ -281,26 +459,20 @@ def refresh_candidate_open_position_exitability(
             "unique_open_position_tokens": len(all_tokens),
             "tokens_selected": len(selected_tokens),
             "tokens_not_selected": len(not_selected_tokens),
-            "tokens_checked": int(
-                compatibility.get("tokens_checked") or 0
-            ),
+            "tokens_checked": checked_count,
             "route_found": counts[ROUTE_FOUND],
             "no_route": counts[NO_ROUTE],
             "quote_errors": counts[QUOTE_ERROR],
-            "jupiter_unavailable": counts[
-                JUPITER_UNAVAILABLE_RESULT
-            ],
+            "jupiter_unavailable": counts[JUPITER_UNAVAILABLE_RESULT],
             "not_attempted": counts[NOT_ATTEMPTED],
-            "requests": int(compatibility.get("requests") or 0),
-            "live_checks": int(
-                compatibility.get("live_checks") or 0
-            ),
-            "cache_hits": int(
-                compatibility.get("cache_hits") or 0
-            ),
-            "compatibility_percent": safe_float(
-                compatibility.get("compatibility_percent")
-            ),
+            "requests": aggregate_requests,
+            "live_checks": aggregate_live_checks,
+            "cache_hits": aggregate_cache_hits,
+            "reused_current_routes": len(reusable_tokens),
+            "tokens_retried": len(live_tokens),
+            "retry_attempts": retry_attempts,
+            "transient_errors_seen": transient_errors_seen,
+            "compatibility_percent": round(compatibility_percent, 4),
             "audit_cache_missing": int(
                 audit_summary.get("cache_missing") or 0
             ),
@@ -308,9 +480,7 @@ def refresh_candidate_open_position_exitability(
                 audit_summary.get("cache_present_percent")
             ),
             "audit_current_route_percent": safe_float(
-                audit_summary.get(
-                    "current_route_supported_percent"
-                )
+                audit_summary.get("current_route_supported_percent")
             ),
             "audit_positions_analyzed": int(
                 audit_summary.get("positions_analyzed") or 0

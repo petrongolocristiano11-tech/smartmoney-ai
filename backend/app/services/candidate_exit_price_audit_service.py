@@ -256,12 +256,9 @@ def _evidence_status(
     local_fresh: bool,
     cache: dict[str, Any],
 ) -> str:
-    if not local_available:
-        return "NO_LOCAL_PRICE"
-    if not local_fresh:
-        return "STALE_LOCAL_PRICE"
     if (
-        cache["compatible"]
+        local_fresh
+        and cache["compatible"]
         and cache["sell_quote"]
         and cache["valid_at_target"]
     ):
@@ -272,6 +269,10 @@ def _evidence_status(
         and cache["valid_at_audit"]
     ):
         return "CURRENT_ROUTE_ONLY"
+    if not local_available:
+        return "NO_LOCAL_PRICE"
+    if not local_fresh:
+        return "STALE_LOCAL_PRICE"
     if not cache["present"]:
         return "LOCAL_PRICE_ONLY_CACHE_MISSING"
     if not cache["compatible"] or not cache["sell_quote"]:
@@ -459,7 +460,6 @@ def run_candidate_exit_price_audit(
             )
             current_route_supported = bool(
                 due
-                and local_fresh
                 and cache["compatible"]
                 and cache["sell_quote"]
                 and cache["valid_at_audit"]
@@ -632,7 +632,8 @@ def run_candidate_exit_price_audit(
             source_open_positions == len(position_results)
         ),
         "readiness_basis": (
-            "45% local freshness + 35% current cached route + 20% cache presence"
+            "45% local freshness + 35% independent current cached route "
+            "+ 20% cache presence"
         ),
         "local_observable_percent": baseline["local_observable_percent"],
         "current_route_supported_percent": baseline[
@@ -682,7 +683,9 @@ def run_candidate_exit_price_audit(
         "scenario_hours": list(SCENARIO_HOURS),
         "no_lookahead": True,
         "local_price_policy": "LATEST_SOURCE_TRADE_AT_OR_BEFORE_TARGET",
-        "route_policy": "EXACT_CACHED_QUOTE_PROFILE_ONLY",
+        "route_policy": (
+            "EXACT_CURRENT_CACHED_QUOTE_PROFILE_INDEPENDENT_OF_LOCAL_PRICE"
+        ),
     }
     safety = {
         "diagnostic_only": True,

@@ -324,7 +324,7 @@ export function refreshCandidateOpenPositionExitability({
   cacheTtlHours = 6,
   maxLocalPriceAgeHours = 24,
   maxTokens = 20,
-  forceRefresh = true,
+  forceRefresh = false,
 }) {
   return api.post(
     "/discovered-wallets/promotion/exitability-refresh",
