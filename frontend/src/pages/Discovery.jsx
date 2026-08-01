@@ -807,7 +807,7 @@ function Discovery() {
   const [backtestLookbackDays, setBacktestLookbackDays] = useState(30);
   const [backtestWarmupDays, setBacktestWarmupDays] = useState(14);
   const [backtestStartingCapital, setBacktestStartingCapital] = useState(1);
-  const [backtestBuySize, setBacktestBuySize] = useState(0.05);
+  const [backtestBuySize, setBacktestBuySize] = useState(0.005);
   const [backtestSlippageBps, setBacktestSlippageBps] = useState(100);
   const [backtestFeeBps, setBacktestFeeBps] = useState(10);
   const [backtestDelaySeconds, setBacktestDelaySeconds] = useState(8);
@@ -1980,7 +1980,7 @@ async function handleExitPriceAudit(
                 <label className="text-sm text-slate-400">
                   Size BUY (SOL)
                   <input
-                    type="number" min="0.001" step="0.01" value={backtestBuySize}
+                    type="number" min="0.001" step="0.001" inputMode="decimal" value={backtestBuySize}
                     onChange={(event) => setBacktestBuySize(Number(event.target.value))}
                     className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3"
                   />
