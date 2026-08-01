@@ -14,6 +14,8 @@ from backend.app.schemas.candidate_backtest import (
     CandidatePositionLifecycleAuditResponse,
     CandidateExitPriceAuditRequest,
     CandidateExitPriceAuditResponse,
+    CandidateExitabilityRefreshRequest,
+    CandidateExitabilityRefreshResponse,
     CandidateHistoryBackfillRequest,
     CandidateHistoryBackfillResponse,
 )
@@ -42,6 +44,9 @@ from backend.app.services.candidate_position_lifecycle_audit_service import (
 from backend.app.services.candidate_exit_price_audit_service import (
     get_latest_candidate_exit_price_audit,
     run_candidate_exit_price_audit,
+)
+from backend.app.services.candidate_exitability_refresh_service import (
+    refresh_candidate_open_position_exitability,
 )
 from backend.app.services.candidate_history_service import (
     CandidateHistoryAlreadyRunningError,
@@ -419,6 +424,26 @@ def run_exit_price_audit(
 ):
     try:
         return run_candidate_exit_price_audit(
+            db,
+            **request.model_dump(),
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=409,
+            detail=str(error),
+        ) from error
+
+
+@router.post(
+    "/promotion/exitability-refresh",
+    response_model=CandidateExitabilityRefreshResponse,
+)
+def refresh_open_position_exitability(
+    request: CandidateExitabilityRefreshRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return refresh_candidate_open_position_exitability(
             db,
             **request.model_dump(),
         )

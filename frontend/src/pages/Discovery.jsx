@@ -11,6 +11,7 @@ import {
   runCandidateReconstructionAudit,
   runCandidatePositionLifecycleAudit,
   runCandidateExitPriceAudit,
+  refreshCandidateOpenPositionExitability,
   refreshExitabilityGate,
   refreshCandidateFunnel,
   runDiscovery,
@@ -689,6 +690,96 @@ function ExitPriceAuditPanel({ result }) {
 }
 
 
+function ExitabilityRefreshPanel({ result }) {
+  if (!result) return null;
+
+  const summary = result.summary ?? {};
+  const rows = result.results ?? [];
+
+  return (
+    <section className="mb-8 overflow-hidden rounded-xl border border-violet-900 bg-slate-800">
+      <div className="border-b border-slate-700 p-5">
+        <p className="font-mono text-xs text-slate-400">{result.wallet_address}</p>
+        <div className="mt-1 flex flex-wrap items-center gap-3">
+          <h2 className="text-xl font-bold text-violet-300">
+            Open Position Jupiter Exitability Refresh
+          </h2>
+          <span className="rounded-full border border-violet-700 bg-violet-950/60 px-2.5 py-1 text-xs font-bold text-violet-200">
+            {result.status}
+          </span>
+        </div>
+        <p className="mt-2 text-xs text-slate-400">
+          Aggiorna solo le quote Jupiter cached per i token ancora aperti nello
+          snapshot lifecycle selezionato. Nessuna firma, invio, modifica LIVE,
+          stream o worker.
+        </p>
+        <p className="mt-2 font-mono text-xs text-cyan-300">
+          Lifecycle: {result.lifecycle_run_id} · profilo: {result.parameters?.quote_profile}
+        </p>
+      </div>
+
+      <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-6">
+        {[
+          ["Posizioni", summary.source_open_positions],
+          ["Token controllati", summary.tokens_checked],
+          ["Route trovate", summary.route_found],
+          ["No route", summary.no_route],
+          ["Errori quote", summary.quote_errors],
+          ["Richieste Jupiter", summary.requests],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-lg border border-slate-700 bg-slate-950/60 p-3">
+            <p className="text-xs text-slate-500">{label}</p>
+            <p className="mt-1 text-xl font-bold text-white">{value ?? 0}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="overflow-x-auto px-5 pb-5">
+        <table className="min-w-full text-xs">
+          <thead className="bg-slate-950 text-slate-400">
+            <tr>
+              <th className="p-3 text-left">Token</th>
+              <th className="p-3 text-center">Esito</th>
+              <th className="p-3 text-center">BUY quote</th>
+              <th className="p-3 text-center">SELL quote</th>
+              <th className="p-3 text-center">Fonte</th>
+              <th className="p-3 text-left">Errore</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((item, index) => (
+              <tr key={`${item.token_mint}-${index}`} className="border-t border-slate-700">
+                <td className="p-3 font-mono text-slate-300">
+                  {shortenAddress(item.token_mint, 9, 7)}
+                </td>
+                <td className="p-3 text-center font-bold text-violet-200">
+                  {item.result_status}
+                </td>
+                <td className="p-3 text-center">{item.buy_quote ? "SI" : "NO"}</td>
+                <td className="p-3 text-center">{item.sell_quote ? "SI" : "NO"}</td>
+                <td className="p-3 text-center">{item.source ?? "-"}</td>
+                <td className="p-3 text-slate-400">
+                  {item.error_code
+                    ? `${item.error_code}: ${item.error_message ?? ""}`
+                    : "-"}
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan="6" className="p-6 text-center text-slate-500">
+                  Nessuna posizione aperta da verificare.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+
 function Discovery() {
   const [mode, setMode] = useState("FULL");
   const [seedWallet, setSeedWallet] = useState("");
@@ -726,6 +817,7 @@ function Discovery() {
   const [reconstructionAuditResult, setReconstructionAuditResult] = useState(null);
   const [lifecycleAuditResult, setLifecycleAuditResult] = useState(null);
   const [exitPriceAuditResult, setExitPriceAuditResult] = useState(null);
+  const [exitabilityRefreshResult, setExitabilityRefreshResult] = useState(null);
   const [maxLocalPriceAgeHours, setMaxLocalPriceAgeHours] = useState(24);
 
   const [discoveredWallets, setDiscoveredWallets] = useState([]);
@@ -760,6 +852,7 @@ function Discovery() {
   const [runningReconstructionAudit, setRunningReconstructionAudit] = useState(false);
   const [runningLifecycleAudit, setRunningLifecycleAudit] = useState(false);
   const [runningExitPriceAudit, setRunningExitPriceAudit] = useState(false);
+  const [runningExitabilityRefresh, setRunningExitabilityRefresh] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -951,6 +1044,7 @@ function Discovery() {
     setReconstructionAuditResult(null);
     setLifecycleAuditResult(null);
     setExitPriceAuditResult(null);
+    setExitabilityRefreshResult(null);
     setError("");
     setMessage(
       wallet
@@ -1229,6 +1323,7 @@ function Discovery() {
     setReconstructionAuditResult(null);
     setLifecycleAuditResult(null);
     setExitPriceAuditResult(null);
+    setExitabilityRefreshResult(null);
     try {
       const response = await runCandidatePromotionBacktest({
         walletAddress: wallet,
@@ -1352,6 +1447,7 @@ async function handleLifecycleAudit(
   setMessage("");
   setLifecycleAuditResult(null);
   setExitPriceAuditResult(null);
+  setExitabilityRefreshResult(null);
 
   try {
     const response =
@@ -1401,6 +1497,67 @@ async function handleLifecycleAudit(
     );
   } finally {
     setRunningLifecycleAudit(false);
+  }
+}
+
+
+async function handleExitabilityRefresh(
+  walletAddress = candidateWallet
+) {
+  const wallet = String(walletAddress || "").trim();
+
+  if (!wallet) {
+    setError("Seleziona un wallet per il refresh exitability.");
+    return;
+  }
+
+  if (
+    !lifecycleAuditResult
+    || lifecycleAuditResult.wallet_address !== wallet
+    || !lifecycleAuditResult.run_id
+  ) {
+    setError(
+      "Esegui prima il Position Lifecycle Audit sul wallet selezionato."
+    );
+    return;
+  }
+
+  setRunningExitabilityRefresh(true);
+  setError("");
+  setMessage("");
+  setExitabilityRefreshResult(null);
+  setExitPriceAuditResult(null);
+
+  try {
+    const response = await refreshCandidateOpenPositionExitability({
+      walletAddress: wallet,
+      lifecycleRunId: lifecycleAuditResult.run_id,
+      cacheTtlHours: backtestJupiterCacheTtlHours,
+      maxLocalPriceAgeHours,
+      maxTokens: 20,
+      forceRefresh: true,
+    });
+
+    setExitabilityRefreshResult(response.data);
+    setExitPriceAuditResult(response.data.exit_price_audit);
+    setCandidateWallet(wallet);
+    setMessage(
+      `Refresh exitability ${response.data.status}: `
+      + `${response.data.summary?.route_found ?? 0} route trovate, `
+      + `${response.data.summary?.no_route ?? 0} senza route, `
+      + `${response.data.summary?.quote_errors ?? 0} errori quote.`
+    );
+    await loadDiscoveredWallets();
+  } catch (requestError) {
+    console.error("Errore Open Position Exitability Refresh:", requestError);
+    const backendMessage = requestError.response?.data?.detail;
+    setError(
+      typeof backendMessage === "string"
+        ? backendMessage
+        : "Refresh exitability non completato. Nessuna funzione LIVE e stata modificata."
+    );
+  } finally {
+    setRunningExitabilityRefresh(false);
   }
 }
 
@@ -1963,6 +2120,22 @@ async function handleExitPriceAudit(
 
   <button
     type="button"
+    onClick={() => handleExitabilityRefresh()}
+    disabled={
+      runningExitabilityRefresh
+      || !candidateWallet
+      || lifecycleAuditResult?.wallet_address !== candidateWallet
+      || !lifecycleAuditResult?.run_id
+    }
+    className="rounded-lg bg-violet-600 px-5 py-3 font-bold text-white disabled:opacity-50"
+  >
+    {runningExitabilityRefresh
+      ? "Refresh Jupiter in corso..."
+      : "Refresh Jupiter posizioni aperte"}
+  </button>
+
+  <button
+    type="button"
     onClick={() => handleExitPriceAudit()}
     disabled={runningExitPriceAudit || !candidateWallet}
     className="rounded-lg bg-rose-600 px-5 py-3 font-bold text-white disabled:opacity-50"
@@ -2262,6 +2435,7 @@ async function handleExitPriceAudit(
 )}
 
         <LifecycleAuditPanel result={lifecycleAuditResult} />
+        <ExitabilityRefreshPanel result={exitabilityRefreshResult} />
         <ExitPriceAuditPanel result={exitPriceAuditResult} />
 
         <section className="mb-8 overflow-hidden rounded-xl border border-cyan-900 bg-slate-800">

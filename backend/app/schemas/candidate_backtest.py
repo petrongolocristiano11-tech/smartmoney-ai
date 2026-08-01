@@ -371,3 +371,41 @@ class CandidateHistoryBackfillResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class CandidateExitabilityRefreshRequest(BaseModel):
+    wallet_address: str = Field(min_length=32, max_length=64)
+    lifecycle_run_id: str = Field(min_length=1, max_length=64)
+    cache_ttl_hours: int = Field(default=6, ge=1, le=24)
+    max_local_price_age_hours: int = Field(default=24, ge=1, le=720)
+    max_tokens: int = Field(default=20, ge=1, le=50)
+    force_refresh: bool = True
+
+    @field_validator("wallet_address")
+    @classmethod
+    def normalize_wallet(cls, value: str) -> str:
+        wallet = str(value or "").strip()
+        if not 32 <= len(wallet) <= 64:
+            raise ValueError("Wallet address non valido")
+        return wallet
+
+    @field_validator("lifecycle_run_id")
+    @classmethod
+    def normalize_lifecycle_run_id(cls, value: str) -> str:
+        run_id = str(value or "").strip()
+        if not run_id:
+            raise ValueError("Lifecycle run_id obbligatorio")
+        return run_id
+
+
+class CandidateExitabilityRefreshResponse(BaseModel):
+    wallet_address: str
+    lifecycle_run_id: str
+    status: str
+    parameters: dict
+    safety: dict
+    summary: dict
+    results: list[dict]
+    exit_price_audit: CandidateExitPriceAuditResponse
+    started_at: datetime
+    completed_at: datetime

@@ -318,6 +318,28 @@ export function getLatestCandidateExitPriceAudit(
 }
 
 
+export function refreshCandidateOpenPositionExitability({
+  walletAddress,
+  lifecycleRunId,
+  cacheTtlHours = 6,
+  maxLocalPriceAgeHours = 24,
+  maxTokens = 20,
+  forceRefresh = true,
+}) {
+  return api.post(
+    "/discovered-wallets/promotion/exitability-refresh",
+    {
+      wallet_address: walletAddress,
+      lifecycle_run_id: lifecycleRunId,
+      cache_ttl_hours: cacheTtlHours,
+      max_local_price_age_hours: maxLocalPriceAgeHours,
+      max_tokens: maxTokens,
+      force_refresh: forceRefresh,
+    }
+  );
+}
+
+
 export function refreshExitabilityGate(
   limit = 250
 ) {
