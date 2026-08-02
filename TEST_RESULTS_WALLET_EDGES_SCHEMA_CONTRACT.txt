@@ -1,0 +1,44 @@
+WALLET_EDGES SCHEMA CONTRACT - RISULTATI DI PREPARAZIONE
+Data: 2026-08-02
+Baseline sorgente: efc2267e97ac23652cffb8916142a2accd088c73
+Precedente Alembic head: c1f3a6b9d075
+Nuova Alembic head: d2a4b7c0e186
+
+ESEGUITO NELL'AMBIENTE DI PREPARAZIONE
+
+1. Estrazione e analisi del Git archive: OK
+2. Verifica SHA-256 baseline: OK
+3. Compilazione Python dei file modificati e nuovi: OK
+4. Test mirati tests/test_wallet_edges_schema_contract.py: 9 passed
+5. Casi coperti:
+   - creazione tabella su schema vuoto;
+   - contratto colonne, tipi, nullability e indici;
+   - rimozione DDL runtime;
+   - catena Alembic consecutiva;
+   - preservazione e normalizzazione tabella legacy;
+   - aggiunta colonne opzionali mancanti;
+   - ricostruzione tabella parziale vuota;
+   - rifiuto tabella popolata priva di colonne fondamentali;
+   - rifiuto di inventare source_wallet/target_wallet;
+   - blocco downgrade quando esistono righe.
+
+NON DICHIARATO COME ESEGUITO NELL'AMBIENTE DI PREPARAZIONE
+
+- suite completa del progetto;
+- test M31 completo;
+- lifecycle PostgreSQL reale.
+
+Motivo: l'ambiente Linux di preparazione non contiene il modulo nativo
+`solders`, richiesto dall'import completo dell'applicazione. Il pacchetto non
+nasconde questa limitazione.
+
+VERIFICHE OBBLIGATORIE ESEGUITE DALL'INSTALLER SUL PC DEL PROGETTO
+
+- test wallet_edges + regressione M31;
+- verifier statico e OpenAPI;
+- lifecycle completo su database PostgreSQL temporanei;
+- suite backend completa;
+- upgrade del database locale;
+- verifica read-only della nuova revision e dello schema.
+
+Nessun commit, push, deploy, firma o invio di transazioni è stato eseguito.

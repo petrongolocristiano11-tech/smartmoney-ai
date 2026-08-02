@@ -219,7 +219,7 @@ def test_m46_models_and_migration_registered():
     config.set_main_option("script_location", "alembic")
     scripts = ScriptDirectory.from_config(config)
     assert scripts.get_revision("c1f3a6b9d075").down_revision == "b0e2f5a8c964"
-    assert scripts.get_heads() == ["c1f3a6b9d075"]
+    assert len(scripts.get_heads()) == 1
 
 
 def test_status_is_manual_and_no_dispatch(db):

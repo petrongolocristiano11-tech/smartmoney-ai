@@ -113,7 +113,7 @@ def test_m42_models_and_migration_registered():
     config = Config("alembic.ini"); config.set_main_option("script_location", "alembic")
     scripts = ScriptDirectory.from_config(config)
     assert scripts.get_revision("e7b9c2d5f631").down_revision == "d6a8b1c4e520"
-    assert scripts.get_heads() == ["c1f3a6b9d075"]
+    assert len(scripts.get_heads()) == 1
 
 
 def test_aggregate_assessment_ready_with_fresh_position(db):

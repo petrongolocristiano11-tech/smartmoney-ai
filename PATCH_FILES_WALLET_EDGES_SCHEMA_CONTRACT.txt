@@ -1,0 +1,26 @@
+PACCHETTO WALLET_EDGES SCHEMA CONTRACT
+
+FILE DA COPIARE NEL REPOSITORY
+
+MODIFICATI
+backend/app/models/wallet_edge.py
+backend/app/services/wallet_graph_engine.py
+
+NUOVI
+alembic/versions/d2a4b7c0e186_add_wallet_edges_schema_contract.py
+tests/test_wallet_edges_schema_contract.py
+scripts/verify_wallet_edges_schema_contract.py
+scripts/test_wallet_edges_postgresql_migration.py
+README_WALLET_EDGES_SCHEMA_CONTRACT.md
+ROLLBACK_WALLET_EDGES_SCHEMA_CONTRACT.ps1
+TEST_WALLET_EDGES_SCHEMA_CONTRACT.ps1
+TEST_RESULTS_WALLET_EDGES_SCHEMA_CONTRACT.txt
+PATCH_FILES_WALLET_EDGES_SCHEMA_CONTRACT.txt
+PATCH_MANIFEST_SHA256.txt
+
+FILE DI AVVIO PRESENTE NELLA RADICE DEL PACCHETTO
+APPLY_AND_TEST_WALLET_EDGES_SCHEMA_CONTRACT.ps1
+
+REVISIONI
+precedente: c1f3a6b9d075
+nuova: d2a4b7c0e186

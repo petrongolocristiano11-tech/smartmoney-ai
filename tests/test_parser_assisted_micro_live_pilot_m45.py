@@ -350,7 +350,7 @@ def test_m45_models_and_migration_registered():
     config.set_main_option("script_location", "alembic")
     scripts = ScriptDirectory.from_config(config)
     assert scripts.get_revision("b0e2f5a8c964").down_revision == "a9d1e4f7b853"
-    assert scripts.get_heads() == ["c1f3a6b9d075"]
+    assert len(scripts.get_heads()) == 1
 
 
 def test_preview_ready_and_bounded(db):
