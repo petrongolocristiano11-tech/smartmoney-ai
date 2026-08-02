@@ -110,6 +110,11 @@ from backend.app.models.blockchain_integrity import (
 from backend.app.models.candidate_backtest import (
     CandidateBacktestRun,
 )
+from backend.app.models.gen4_profitability import (
+    CanonicalParserGen4ProfitabilityRun,
+    CanonicalParserGen4ProfitabilityWindow,
+    CanonicalParserGen4ProfitabilityTrade,
+)
 from backend.app.models.candidate_reconstruction_audit import (
     CandidateReconstructionAuditRun,
 )
@@ -302,6 +307,9 @@ __all__ = [
     "NormalizationRun",
     "RawBlockchainEvent",
     "CandidateBacktestRun",
+    "CanonicalParserGen4ProfitabilityRun",
+    "CanonicalParserGen4ProfitabilityWindow",
+    "CanonicalParserGen4ProfitabilityTrade",
     "CandidateReconstructionAuditRun",
     "CandidatePositionLifecycleAuditRun",
     "CandidateExitPriceAuditRun",

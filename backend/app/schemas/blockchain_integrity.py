@@ -397,6 +397,15 @@ class CanonicalParserUnifiedDecisionRunRequest(BaseModel):
     actor_label: str | None = Field(default=None, max_length=80)
     note: str | None = Field(default=None, max_length=500)
 
+class CanonicalParserGen4ProfitabilityRunRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=320)
+    training_days: int | None = Field(default=None, ge=3, le=365)
+    test_days: int | None = Field(default=None, ge=1, le=90)
+    step_days: int | None = Field(default=None, ge=1, le=90)
+    max_windows: int | None = Field(default=None, ge=1, le=24)
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
 class CanonicalParserPermitBoundPaperExecutionRequest(BaseModel):
     permit_id: str = Field(min_length=36, max_length=36)
     decision_result_id: str = Field(min_length=36, max_length=36)

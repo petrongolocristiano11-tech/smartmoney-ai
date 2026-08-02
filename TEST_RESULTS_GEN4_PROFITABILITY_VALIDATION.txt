@@ -1,0 +1,27 @@
+M47 Gen4 Walk-Forward Profitability Validation
+Prepared against commit: 63b18d17ba62cf9962978cb5ebec04126b1e697a
+Previous Alembic head: d2a4b7c0e186
+New Alembic head: e3b5c8d1f297
+
+Preparation environment checks:
+- Python compilation: PASS
+- Alembic single head: e3b5c8d1f297
+- M47 focused tests: 9 passed
+- M47 + wallet_edges contract tests: 18 passed
+- M47 + wallet_edges + candidate promotion regression: 24 passed
+
+Not declared in the preparation environment:
+- Full backend suite, because the preparation container does not contain the native solders module.
+- OpenAPI runtime import, for the same missing solders dependency.
+- PostgreSQL temporary-database lifecycle, because no PostgreSQL server is available in the preparation container.
+
+The installer executes all three checks with the project's Windows virtual environment before upgrading the configured database.
+
+Safety contract:
+- Preview is read-only.
+- Persistent run is disabled by default.
+- Persistent run writes only M47 metadata tables.
+- No Helius or Jupiter requests.
+- No paper orders or positions.
+- No LIVE orders.
+- No transaction build, signature, submit, worker, scheduler, stream or signer activation.

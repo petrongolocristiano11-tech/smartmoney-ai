@@ -113,6 +113,7 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserPaperExecutionPermitIssueRequest,
     CanonicalParserPaperExecutionPermitRevokeRequest,
     CanonicalParserUnifiedDecisionRunRequest,
+    CanonicalParserGen4ProfitabilityRunRequest,
     CanonicalParserPermitBoundPaperExecutionRequest,
     CanonicalParserPermitBoundPaperReconcileRequest,
     CanonicalParserPaperCalibrationRunRequest,
@@ -390,6 +391,13 @@ from backend.app.services.blockchain_parser_unified_decision_service import (
     preview_unified_decision,
     resolve_unified_decision,
     run_unified_decision_shadow_validation,
+)
+from backend.app.services.blockchain_parser_gen4_profitability_service import (
+    CanonicalParserGen4ProfitabilityError,
+    get_gen4_profitability_run,
+    get_gen4_profitability_status,
+    preview_gen4_profitability,
+    run_gen4_profitability_validation,
 )
 from backend.app.services.blockchain_parser_permit_bound_paper_execution_service import (
     CanonicalParserPermitBoundPaperExecutionError,
@@ -4645,3 +4653,60 @@ def read_production_circuit_breaker_endpoint(wallet_address: str, db: Session = 
 def resolve_progressive_automation_endpoint(wallet_address: str | None = None, token_mint: str | None = None, limit: int = 50, db: Session = Depends(get_db)):
     return resolve_progressive_automation(db, wallet_address=wallet_address, token_mint=token_mint, limit=limit)
 # END M46 PROGRESSIVE AUTOMATION & PRODUCTION HARDENING
+
+# BEGIN M47 GEN4 WALK-FORWARD PROFITABILITY VALIDATION
+@app.get("/integrity/parser-gen4-profitability/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_gen4_profitability_status_endpoint(db: Session = Depends(get_db)):
+    return get_gen4_profitability_status(db)
+
+
+@app.get("/integrity/parser-gen4-profitability/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_gen4_profitability_preview_endpoint(
+    training_days: int | None = Query(default=None, ge=3, le=365),
+    test_days: int | None = Query(default=None, ge=1, le=90),
+    step_days: int | None = Query(default=None, ge=1, le=90),
+    max_windows: int | None = Query(default=None, ge=1, le=24),
+    db: Session = Depends(get_db),
+):
+    return preview_gen4_profitability(
+        db,
+        training_days=training_days,
+        test_days=test_days,
+        step_days=step_days,
+        max_windows=max_windows,
+    )
+
+
+@app.post("/integrity/parser-gen4-profitability/run", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def run_gen4_profitability_endpoint(
+    request: CanonicalParserGen4ProfitabilityRunRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return run_gen4_profitability_validation(
+            db,
+            confirmation=request.confirmation,
+            training_days=request.training_days,
+            test_days=request.test_days,
+            step_days=request.step_days,
+            max_windows=request.max_windows,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+    except CanonicalParserGen4ProfitabilityError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-gen4-profitability/runs/{run_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_gen4_profitability_run_endpoint(run_id: str, db: Session = Depends(get_db)):
+    try:
+        return get_gen4_profitability_run(db, run_id)
+    except CanonicalParserGen4ProfitabilityError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+# END M47 GEN4 WALK-FORWARD PROFITABILITY VALIDATION
