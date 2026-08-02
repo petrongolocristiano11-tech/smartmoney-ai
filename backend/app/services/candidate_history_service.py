@@ -207,6 +207,7 @@ def _update_wallet_backfill_fields(
     *,
     run: CandidateHistoryBackfillRun,
     success: bool,
+    mark_updated: bool = True,
 ) -> None:
     wallet.extended_history_status = run.status
     wallet.extended_history_run_id = run.run_id
@@ -233,7 +234,8 @@ def _update_wallet_backfill_fields(
     wallet.extended_history_stop_reason = run.stop_reason
     wallet.extended_history_error_code = run.error_code
     wallet.extended_history_error_message = run.error_message
-    wallet.status = "UPDATED"
+    if mark_updated:
+        wallet.status = "UPDATED"
 
 
 def _recalculate_wallet(db: Session, wallet: DiscoveredWallet, now: datetime) -> None:
@@ -252,6 +254,7 @@ def run_extended_candidate_history(
     max_helius_requests: int = 5,
     page_size: int = 100,
     force: bool = False,
+    evidence_only: bool = False,
     now: datetime | None = None,
 ) -> CandidateHistoryBackfillRun:
     if not _RUN_LOCK.acquire(blocking=False):
@@ -267,19 +270,27 @@ def run_extended_candidate_history(
             .filter(DiscoveredWallet.wallet_address == wallet_address)
             .first()
         )
-        if wallet is None:
+        external_evidence_only = wallet is None and evidence_only
+        if wallet is None and not evidence_only:
             raise ValueError("Wallet scoperto non trovato")
         allowed_history_quality_classifications = {
             "COPIABILE",
             "OSSERVAZIONE",
         }
+        if force and evidence_only:
+            raise ValueError(
+                "evidence_only non può essere combinato con force."
+            )
         if (
             not force
+            and not evidence_only
+            and wallet is not None
             and wallet.quality_classification
             not in allowed_history_quality_classifications
         ):
             raise ValueError(
-                "Lo storico esteso è consentito solo ai wallet COPIABILE."
+                "Lo storico esteso candidato è consentito solo ai wallet "
+                "COPIABILE o OSSERVAZIONE."
             )
 
         effective_lookback = max(
@@ -342,6 +353,8 @@ def run_extended_candidate_history(
                 "token_accounts": "balanceChanged",
                 "pagination": "before-signature",
                 "force": force,
+                "evidence_only": evidence_only,
+                "external_wallet_evidence_only": external_evidence_only,
                 "resumed": bool(
                     resume_context["resumed"]
                 ),
@@ -367,6 +380,11 @@ def run_extended_candidate_history(
                 "transactions_signed": False,
                 "transactions_submitted": False,
                 "retry_attempts_enabled": False,
+                "evidence_only": evidence_only,
+                "external_wallet_evidence_only": external_evidence_only,
+                "discovered_wallet_record_required": not external_evidence_only,
+                "quality_recalculation_enabled": not evidence_only,
+                "promotion_changes_allowed": False,
             },
             started_at=started_at,
         )
@@ -499,15 +517,19 @@ def run_extended_candidate_history(
             run.status = BACKFILL_STATUS_COMPLETED
         run.completed_at = utc_now()
 
-        _recalculate_wallet(db, wallet, started_at)
-        _update_wallet_backfill_fields(
-            wallet,
-            run=run,
-            success=True,
-        )
+        if wallet is not None:
+            if not evidence_only:
+                _recalculate_wallet(db, wallet, started_at)
+            _update_wallet_backfill_fields(
+                wallet,
+                run=run,
+                success=True,
+                mark_updated=not evidence_only,
+            )
         db.commit()
         db.refresh(run)
-        db.refresh(wallet)
+        if wallet is not None:
+            db.refresh(wallet)
         return run
 
     except Exception as error:
@@ -543,7 +565,13 @@ def run_extended_candidate_history(
                 requested_lookback_days=max(7, min(int(lookback_days), 90)),
                 page_size=max(10, min(int(page_size), 100)),
                 request_budget=max(1, min(int(max_helius_requests), 20)),
-                parameters={"force": force},
+                parameters={
+                    "force": force,
+                    "evidence_only": evidence_only,
+                    "external_wallet_evidence_only": (
+                        wallet is None and evidence_only
+                    ),
+                },
                 safety={
                     "manual_only": True,
                     "live_enabled": False,
@@ -554,6 +582,15 @@ def run_extended_candidate_history(
                     "generation_reset": False,
                     "transactions_signed": False,
                     "transactions_submitted": False,
+                    "evidence_only": evidence_only,
+                    "external_wallet_evidence_only": (
+                        wallet is None and evidence_only
+                    ),
+                    "discovered_wallet_record_required": not (
+                        wallet is None and evidence_only
+                    ),
+                    "quality_recalculation_enabled": not evidence_only,
+                    "promotion_changes_allowed": False,
                 },
                 started_at=started_at,
             )
@@ -572,6 +609,7 @@ def run_extended_candidate_history(
                 wallet,
                 run=run,
                 success=run.status == BACKFILL_STATUS_PARTIAL,
+                mark_updated=not evidence_only,
             )
         db.commit()
         db.refresh(run)

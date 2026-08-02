@@ -1,0 +1,17 @@
+M48 V3 — risultati di preparazione
+
+- Compilazione file modificati: OK
+- Test mirati e regressioni: 46 passed
+- Verifier contratto M48: OK
+- Head Alembic prevista: e3b5c8d1f297
+- Wallet esplicito non presente in discovered_wallets: ammesso solo evidence-only
+- Creazione automatica discovered_wallets per wallet esterno: vietata e verificata
+- Wallet mancante senza evidence_only: ancora rifiutato
+- Wallet SOSPETTO registrato: ancora rifiutato
+- force: false
+- qualità/promozione: non ricalcolate
+- M31/paper/LIVE/signer/submit: non collegati
+
+La suite completa non è stata eseguita nel container di preparazione perché il modulo nativo
+`solders` non è disponibile. L'installer la esegue obbligatoriamente nel virtual environment
+Windows del progetto prima di avviare l'acquisizione.

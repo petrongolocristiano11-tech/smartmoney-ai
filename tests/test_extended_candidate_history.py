@@ -518,3 +518,100 @@ def test_completed_same_lookback_is_not_repeated(
             page_size=10,
             now=NOW,
         )
+
+def test_evidence_only_allows_non_analyzed_without_recalculation(db, monkeypatch):
+    wallet = db.query(DiscoveredWallet).filter_by(wallet_address=WALLET).one()
+    wallet.quality_classification = "NON_ANALIZZATO"
+    wallet.quality_eligible = False
+    wallet.promotion_status = "OSSERVAZIONE"
+    wallet.promotion_eligible = False
+    wallet.status = "DISCOVERED"
+    db.commit()
+
+    monkeypatch.setattr(history, "get_wallet_history", lambda *_args, **_kwargs: [])
+
+    def forbidden_recalculation(*_args, **_kwargs):
+        raise AssertionError("evidence_only non deve ricalcolare qualità")
+
+    monkeypatch.setattr(history, "_recalculate_wallet", forbidden_recalculation)
+
+    run = history.run_extended_candidate_history(
+        db,
+        wallet_address=WALLET,
+        lookback_days=45,
+        max_helius_requests=1,
+        page_size=10,
+        evidence_only=True,
+        now=NOW,
+    )
+
+    db.refresh(wallet)
+    assert run.status == "EMPTY"
+    assert run.parameters["evidence_only"] is True
+    assert run.safety["quality_recalculation_enabled"] is False
+    assert wallet.quality_classification == "NON_ANALIZZATO"
+    assert wallet.quality_eligible is False
+    assert wallet.promotion_status == "OSSERVAZIONE"
+    assert wallet.promotion_eligible is False
+    assert wallet.status == "DISCOVERED"
+    assert wallet.extended_history_status == "EMPTY"
+
+
+def test_evidence_only_cannot_be_combined_with_force(db):
+    with pytest.raises(ValueError, match="evidence_only"):
+        history.run_extended_candidate_history(
+            db,
+            wallet_address=WALLET,
+            force=True,
+            evidence_only=True,
+            now=NOW,
+        )
+
+
+
+def test_evidence_only_allows_explicit_wallet_without_discovered_record(
+    db,
+    monkeypatch,
+):
+    external_wallet = "E" * 32
+    assert (
+        db.query(DiscoveredWallet)
+        .filter_by(wallet_address=external_wallet)
+        .first()
+        is None
+    )
+    monkeypatch.setattr(history, "get_wallet_history", lambda *_args, **_kwargs: [])
+
+    run = history.run_extended_candidate_history(
+        db,
+        wallet_address=external_wallet,
+        lookback_days=45,
+        max_helius_requests=1,
+        page_size=10,
+        evidence_only=True,
+        now=NOW,
+    )
+
+    assert run.status == "EMPTY"
+    assert run.parameters["evidence_only"] is True
+    assert run.parameters["external_wallet_evidence_only"] is True
+    assert run.safety["discovered_wallet_record_required"] is False
+    assert (
+        db.query(DiscoveredWallet)
+        .filter_by(wallet_address=external_wallet)
+        .first()
+        is None
+    )
+
+
+def test_missing_wallet_without_evidence_only_is_still_rejected(db):
+    with pytest.raises(ValueError, match="Wallet scoperto non trovato"):
+        history.run_extended_candidate_history(
+            db,
+            wallet_address="F" * 32,
+            lookback_days=30,
+            max_helius_requests=1,
+            page_size=10,
+            evidence_only=False,
+            now=NOW,
+        )

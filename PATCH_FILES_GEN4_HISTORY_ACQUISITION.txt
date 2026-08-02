@@ -1,0 +1,11 @@
+backend/app/services/candidate_history_service.py
+backend/app/services/gen4_history_acquisition_service.py
+scripts/run_gen4_history_acquisition.py
+scripts/verify_gen4_history_acquisition_contract.py
+tests/test_extended_candidate_history.py
+tests/test_gen4_history_acquisition_m48.py
+README_GEN4_HISTORY_ACQUISITION.md
+TEST_GEN4_HISTORY_ACQUISITION.ps1
+ROLLBACK_GEN4_HISTORY_ACQUISITION.ps1
+TEST_RESULTS_GEN4_HISTORY_ACQUISITION.txt
+PATCH_FILES_GEN4_HISTORY_ACQUISITION.txt
