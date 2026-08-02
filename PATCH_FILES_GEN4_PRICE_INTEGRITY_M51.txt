@@ -1,0 +1,11 @@
+.env.example
+backend/app/core/config.py
+backend/app/core/constants.py
+backend/app/services/blockchain_parser_gen4_profitability_service.py
+scripts/run_gen4_price_integrity_preview.py
+scripts/verify_gen4_price_integrity_m51.py
+tests/test_gen4_price_integrity_m51.py
+README_GEN4_PRICE_INTEGRITY_M51.md
+TEST_RESULTS_GEN4_PRICE_INTEGRITY_M51.txt
+TEST_GEN4_PRICE_INTEGRITY_M51.ps1
+ROLLBACK_GEN4_PRICE_INTEGRITY_M51.ps1

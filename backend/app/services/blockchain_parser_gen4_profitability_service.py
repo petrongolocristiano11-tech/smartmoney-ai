@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from statistics import median
 from typing import Any, Iterable
 from uuid import uuid4
 
@@ -11,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import settings
-from backend.app.core.constants import SOL_MINT
+from backend.app.core.constants import GEN4_MANDATORY_EXCLUDED_PRICE_MINTS
 from backend.app.models.candidate_backtest import CandidateBacktestRun
 from backend.app.models.gen4_profitability import (
     CanonicalParserGen4ProfitabilityRun,
@@ -26,7 +27,7 @@ from backend.app.services.blockchain_integrity_service import (
     sanitize_error_message,
 )
 
-GEN4_PROFITABILITY_POLICY_VERSION = "canonical-parser-gen4-walk-forward-profitability/1"
+GEN4_PROFITABILITY_POLICY_VERSION = "canonical-parser-gen4-walk-forward-profitability/2"
 GEN4_PROFITABILITY_SCOPE = "HISTORICAL_SHADOW_ANALYTICS_ONLY"
 GEN4_PROFITABILITY_CONFIRMATION = "RUN_GEN4_PROFITABILITY_VALIDATION"
 
@@ -132,6 +133,27 @@ def _price(trade: Trade) -> float | None:
         return None
     resolved = sol_amount / token_amount
     return resolved if resolved > 0 else None
+
+
+def _configured_excluded_price_mints(settings_object: Any) -> set[str]:
+    raw = str(
+        getattr(
+            settings_object,
+            "CANONICAL_PARSER_GEN4_PROFITABILITY_EXCLUDED_TOKEN_MINTS",
+            "",
+        )
+        or ""
+    )
+    configured = {item.strip() for item in raw.split(",") if item.strip()}
+    return set(GEN4_MANDATORY_EXCLUDED_PRICE_MINTS) | configured
+
+
+def _price_ratio(first: float, second: float) -> float:
+    low = min(float(first), float(second))
+    high = max(float(first), float(second))
+    if low <= 0:
+        return float("inf")
+    return high / low
 
 
 def _policy_snapshot(settings_object: Any) -> dict[str, Any]:
@@ -243,6 +265,25 @@ def _policy_snapshot(settings_object: Any) -> dict[str, Any]:
         "maximum_wallet_profit_concentration_percent": float(
             getattr(settings_object, "CANONICAL_PARSER_GEN4_PROFITABILITY_MAX_WALLET_PROFIT_CONCENTRATION_PERCENT", 40.0)
         ),
+        "excluded_price_mints": sorted(_configured_excluded_price_mints(settings_object)),
+        "mandatory_excluded_price_mints": sorted(GEN4_MANDATORY_EXCLUDED_PRICE_MINTS),
+        "price_continuity_window_seconds": int(
+            getattr(
+                settings_object,
+                "CANONICAL_PARSER_GEN4_PROFITABILITY_PRICE_CONTINUITY_WINDOW_SECONDS",
+                3600,
+            )
+        ),
+        "maximum_price_discontinuity_ratio": float(
+            getattr(
+                settings_object,
+                "CANONICAL_PARSER_GEN4_PROFITABILITY_MAX_PRICE_DISCONTINUITY_RATIO",
+                25.0,
+            )
+        ),
+        "take_profit_fill_method": "THRESHOLD_PRICE_WITH_EXIT_FRICTION",
+        "stop_loss_fill_method": "THRESHOLD_PRICE_WITH_EXIT_FRICTION",
+        "price_integrity_version": "gen4-price-integrity/1",
         "manual_run_only": True,
         "external_requests_allowed": False,
         "source_tables_read_only": [
@@ -325,27 +366,85 @@ def _load_trades(
     return list(db.scalars(query))
 
 
-def _valid_price_points(trades: Iterable[Trade]) -> list[PricePoint]:
-    points: list[PricePoint] = []
+def _valid_price_points(
+    trades: Iterable[Trade],
+    *,
+    policy: dict[str, Any],
+) -> tuple[list[PricePoint], dict[str, Any]]:
+    excluded_mints = set(policy["excluded_price_mints"])
+    raw_by_token: dict[str, list[PricePoint]] = defaultdict(list)
+    audit: dict[str, Any] = {
+        "source_trade_count": 0,
+        "accepted_price_point_count": 0,
+        "excluded_quote_asset_count": 0,
+        "invalid_amount_count": 0,
+        "unsupported_side_count": 0,
+        "missing_token_count": 0,
+        "price_discontinuity_rejected_count": 0,
+        "excluded_mint_counts": defaultdict(int),
+        "price_discontinuity_rejected_trade_ids": [],
+    }
+
     for trade in trades:
+        audit["source_trade_count"] += 1
         token = str(trade.token_mint or "").strip()
         side = str(trade.side or "").strip().upper()
-        occurred_at = _aware(trade.block_time)
-        price = _price(trade)
-        if not token or token == SOL_MINT or side not in {"BUY", "SELL"} or price is None:
+        if not token:
+            audit["missing_token_count"] += 1
             continue
-        points.append(
+        if token in excluded_mints:
+            audit["excluded_quote_asset_count"] += 1
+            audit["excluded_mint_counts"][token] += 1
+            continue
+        if side not in {"BUY", "SELL"}:
+            audit["unsupported_side_count"] += 1
+            continue
+        price = _price(trade)
+        if price is None:
+            audit["invalid_amount_count"] += 1
+            continue
+        raw_by_token[token].append(
             PricePoint(
                 trade_id=int(trade.id),
                 signature=str(trade.signature),
                 wallet_address=str(trade.wallet_address),
                 token_mint=token,
                 side=side,
-                occurred_at=occurred_at,
+                occurred_at=_aware(trade.block_time),
                 price_sol=price,
             )
         )
-    return points
+
+    accepted: list[PricePoint] = []
+    continuity_seconds = int(policy["price_continuity_window_seconds"])
+    maximum_ratio = float(policy["maximum_price_discontinuity_ratio"])
+
+    for token in sorted(raw_by_token):
+        recent: deque[PricePoint] = deque()
+        for point in sorted(
+            raw_by_token[token],
+            key=lambda item: (item.occurred_at, item.trade_id),
+        ):
+            cutoff = point.occurred_at - timedelta(seconds=continuity_seconds)
+            while recent and recent[0].occurred_at < cutoff:
+                recent.popleft()
+
+            if recent:
+                reference = median(item.price_sol for item in recent)
+                if _price_ratio(point.price_sol, reference) > maximum_ratio:
+                    audit["price_discontinuity_rejected_count"] += 1
+                    rejected_ids = audit["price_discontinuity_rejected_trade_ids"]
+                    if len(rejected_ids) < 50:
+                        rejected_ids.append(point.trade_id)
+                    continue
+
+            accepted.append(point)
+            recent.append(point)
+
+    accepted.sort(key=lambda item: (item.occurred_at, item.trade_id))
+    audit["accepted_price_point_count"] = len(accepted)
+    audit["excluded_mint_counts"] = dict(sorted(audit["excluded_mint_counts"].items()))
+    return accepted, audit
 
 
 def _wallet_training_metrics(points: list[PricePoint], policy: dict[str, Any]) -> dict[str, Any]:
@@ -717,6 +816,11 @@ def _simulate_signal(
         "source_signatures": list(signal.source_signatures),
         "copy_delay_seconds": int(policy["copy_delay_seconds"]),
         "maximum_execution_lag_seconds": int(policy["maximum_execution_lag_seconds"]),
+        "price_integrity_version": policy["price_integrity_version"],
+        "maximum_price_discontinuity_ratio": float(
+            policy["maximum_price_discontinuity_ratio"]
+        ),
+        "threshold_fill_enforced": True,
     }
     if entry_point is None:
         return CandidateOutcome(
@@ -746,37 +850,50 @@ def _simulate_signal(
     stop_price = entry_price * (1.0 - float(policy["stop_loss_percent"]) / 100.0)
     take_price = entry_price * (1.0 + float(policy["take_profit_percent"]) / 100.0)
     source_wallets = set(signal.contributing_wallets)
+    maximum_ratio = float(policy["maximum_price_discontinuity_ratio"])
 
     exit_point: PricePoint | None = None
     exit_reason: str | None = None
+    exit_reference_price: float | None = None
     last_after_entry: PricePoint | None = None
     min_observed_return = 0.0
     max_observed_return = 0.0
+    rejected_discontinuities = 0
+
     for point in token_points:
         if point.occurred_at <= entry_point.occurred_at:
             continue
         if point.occurred_at > deadline:
             break
+        if _price_ratio(point.price_sol, entry_point.price_sol) > maximum_ratio:
+            rejected_discontinuities += 1
+            continue
+
         last_after_entry = point
         observed_return = (point.price_sol / entry_price - 1.0) * 100.0
         min_observed_return = min(min_observed_return, observed_return)
         max_observed_return = max(max_observed_return, observed_return)
+
         if point.price_sol <= stop_price:
             exit_point = point
             exit_reason = "STOP_LOSS"
+            exit_reference_price = stop_price
             break
         if point.price_sol >= take_price:
             exit_point = point
             exit_reason = "TAKE_PROFIT"
+            exit_reference_price = take_price
             break
         if point.side == "SELL" and point.wallet_address in source_wallets:
             exit_point = point
             exit_reason = "SOURCE_WALLET_SELL"
+            exit_reference_price = point.price_sol
             break
 
     if exit_point is None and last_after_entry is not None:
         exit_point = last_after_entry
         exit_reason = "MAX_HOLD_OBSERVED_PRICE"
+        exit_reference_price = last_after_entry.price_sol
 
     evidence = {
         **base_evidence,
@@ -786,8 +903,9 @@ def _simulate_signal(
         "minimum_observed_return_percent": _round(min_observed_return, 4),
         "maximum_observed_return_percent": _round(max_observed_return, 4),
         "deadline_at": deadline.isoformat(),
+        "price_discontinuity_rejected_points": rejected_discontinuities,
     }
-    if exit_point is None:
+    if exit_point is None or exit_reference_price is None:
         return CandidateOutcome(
             lane=signal.lane,
             token_mint=signal.token_mint,
@@ -799,19 +917,26 @@ def _simulate_signal(
             order_size_sol=order_size,
             pnl_sol=None,
             return_percent=None,
-            exit_reason="NO_EXIT_PRICE",
+            exit_reason=(
+                "PRICE_INTEGRITY_NO_VALID_EXIT"
+                if rejected_discontinuities
+                else "NO_EXIT_PRICE"
+            ),
             contributing_wallets=signal.contributing_wallets,
             independent_cluster_count=signal.independent_cluster_count,
             source_trade_ids=signal.source_trade_ids,
             evidence=evidence,
         )
 
-    exit_price = exit_point.price_sol * max(0.0, 1.0 - friction_ratio)
+    exit_price = exit_reference_price * max(0.0, 1.0 - friction_ratio)
     proceeds = quantity * exit_price * max(0.0, 1.0 - fee_ratio)
     pnl = proceeds - order_size
     return_percent = pnl / order_size * 100.0 if order_size > 0 else 0.0
     evidence["exit_source_trade_id"] = exit_point.trade_id
     evidence["exit_signature"] = exit_point.signature
+    evidence["exit_trigger_observed_price_sol"] = _round(exit_point.price_sol, 18)
+    evidence["exit_execution_reference_price_sol"] = _round(exit_reference_price, 18)
+    evidence["threshold_fill_applied"] = exit_reason in {"STOP_LOSS", "TAKE_PROFIT"}
     return CandidateOutcome(
         lane=signal.lane,
         token_mint=signal.token_mint,
@@ -1064,7 +1189,7 @@ def _build_report(
         end_at=min(exit_buffer_end, now),
         max_source_trades=int(policy["max_source_trades"]),
     )
-    points = _valid_price_points(trades)
+    points, price_integrity_audit = _valid_price_points(trades, policy=policy)
     edges = list(db.scalars(select(WalletEdge)))
     token_snapshots = {row.token_mint: row for row in db.scalars(select(TokenSafetySnapshot))}
 
@@ -1205,6 +1330,13 @@ def _build_report(
             "strict_lane_requires_historical_token_safety": True,
             "proxy_lane_bypasses_token_safety": True,
             "proxy_lane_is_not_profitability_proof": True,
+            "price_integrity": {
+                "excluded_price_mints": policy["excluded_price_mints"],
+                "maximum_price_discontinuity_ratio": policy[
+                    "maximum_price_discontinuity_ratio"
+                ],
+                "threshold_fill_enforced": True,
+            },
         }
         window_hash = calculate_payload_hash(
             {
@@ -1261,6 +1393,7 @@ def _build_report(
     summary = {
         "source_trade_count": len(trades),
         "valid_price_point_count": len(points),
+        "price_integrity_audit": price_integrity_audit,
         "source_wallet_count": len({item.wallet_address for item in points}),
         "source_token_count": len({item.token_mint for item in points}),
         "window_count": len(window_payloads),

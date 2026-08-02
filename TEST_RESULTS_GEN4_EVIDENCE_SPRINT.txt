@@ -1,0 +1,15 @@
+M49-M50 Gen4 Evidence Sprint — risultati di preparazione
+
+- Compilazione Python: OK
+- Test specifici M49-M50: 11 passed
+- Test M47/M48 e storico candidato combinati: 47 passed
+- Alembic: nessuna nuova revisione; head prevista e3b5c8d1f297
+- Budget Helius hard: 40 richieste
+- Force: disabilitato
+- Backfill: evidence_only
+- discovered_wallets: nessuna creazione consentita
+- Qualità/promozione: nessuna modifica consentita
+- STRICT_GEN4: nessuna ricostruzione o retrodatazione
+- M31, paper, LIVE, worker, scheduler, signer e submit: non collegati
+
+La suite completa viene eseguita dall'installer sul progetto locale prima delle richieste Helius.

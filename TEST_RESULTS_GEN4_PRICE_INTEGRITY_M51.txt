@@ -1,0 +1,12 @@
+Preparazione pacchetto M51
+
+- Compilazione Python: OK
+- Test mirati M47/M48/M49-M50/M51: 40 passed
+- Test M51 specifici: inclusi nei 40 test
+- Quote asset obbligatori verificati: SOL, native SOL sentinel, USDC, USDT
+- Fill take-profit a soglia: verificato
+- Fill stop-loss a soglia: verificato
+- Discontinuità prezzo: verificata
+- Nessuna chiamata esterna nel servizio: verificata staticamente
+- Suite completa nel container di preparazione: non eseguibile per assenza del modulo nativo solders
+- Suite completa: obbligatoria e bloccante nell'installer Windows dell'utente
