@@ -406,6 +406,28 @@ class CanonicalParserGen4ProfitabilityRunRequest(BaseModel):
     actor_label: str | None = Field(default=None, max_length=80)
     note: str | None = Field(default=None, max_length=500)
 
+class CanonicalParserGen4ForwardCampaignStartRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=320)
+    candidate_wallets: list[str] | None = Field(default=None, max_length=100)
+    anchor_at: datetime | None = None
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserGen4ForwardCycleRequest(BaseModel):
+    campaign_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=320)
+    observed_at: datetime | None = None
+
+
+class CanonicalParserGen4ForwardCampaignStopRequest(BaseModel):
+    campaign_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=320)
+    observed_at: datetime | None = None
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
 class CanonicalParserPermitBoundPaperExecutionRequest(BaseModel):
     permit_id: str = Field(min_length=36, max_length=36)
     decision_result_id: str = Field(min_length=36, max_length=36)

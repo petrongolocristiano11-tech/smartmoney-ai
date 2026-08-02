@@ -1108,6 +1108,22 @@ class Settings(BaseSettings):
     )
 
     # =========================
+    # M52-M53 GEN4 STRICT FORWARD SHADOW CAMPAIGN
+    # Metadata-only forward observation; disabled by default; no execution connections.
+    # =========================
+
+    CANONICAL_PARSER_GEN4_FORWARD_ENABLED: bool = False
+    CANONICAL_PARSER_GEN4_FORWARD_TRAINING_DAYS: int = Field(default=14, ge=3, le=365)
+    CANONICAL_PARSER_GEN4_FORWARD_MIN_FROZEN_WALLETS: int = Field(default=2, ge=2, le=100)
+    CANONICAL_PARSER_GEN4_FORWARD_MAX_FROZEN_WALLETS: int = Field(default=20, ge=2, le=100)
+    CANONICAL_PARSER_GEN4_FORWARD_MIN_OBSERVATION_DAYS: int = Field(default=21, ge=1, le=3650)
+    CANONICAL_PARSER_GEN4_FORWARD_MIN_CLOSED_TRADES: int = Field(default=30, ge=1, le=1000000)
+    CANONICAL_PARSER_GEN4_FORWARD_PROOF_CLOSED_TRADES: int = Field(default=100, ge=1, le=1000000)
+    CANONICAL_PARSER_GEN4_FORWARD_MAX_SOURCE_TRADES_PER_CYCLE: int = Field(default=200000, ge=100, le=2000000)
+    CANONICAL_PARSER_GEN4_FORWARD_MAX_INGESTION_LAG_SECONDS: int = Field(default=300, ge=1, le=86400)
+    CANONICAL_PARSER_GEN4_FORWARD_MAX_SAFETY_WAIT_MINUTES: int = Field(default=30, ge=1, le=10080)
+
+    # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
 

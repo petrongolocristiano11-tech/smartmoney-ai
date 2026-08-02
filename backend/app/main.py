@@ -114,6 +114,9 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserPaperExecutionPermitRevokeRequest,
     CanonicalParserUnifiedDecisionRunRequest,
     CanonicalParserGen4ProfitabilityRunRequest,
+    CanonicalParserGen4ForwardCampaignStartRequest,
+    CanonicalParserGen4ForwardCycleRequest,
+    CanonicalParserGen4ForwardCampaignStopRequest,
     CanonicalParserPermitBoundPaperExecutionRequest,
     CanonicalParserPermitBoundPaperReconcileRequest,
     CanonicalParserPaperCalibrationRunRequest,
@@ -398,6 +401,15 @@ from backend.app.services.blockchain_parser_gen4_profitability_service import (
     get_gen4_profitability_status,
     preview_gen4_profitability,
     run_gen4_profitability_validation,
+)
+from backend.app.services.blockchain_parser_gen4_forward_shadow_service import (
+    CanonicalParserGen4ForwardShadowError,
+    get_gen4_forward_campaign,
+    get_gen4_forward_status,
+    preview_gen4_forward_campaign,
+    run_gen4_forward_cycle,
+    start_gen4_forward_campaign,
+    stop_gen4_forward_campaign,
 )
 from backend.app.services.blockchain_parser_permit_bound_paper_execution_service import (
     CanonicalParserPermitBoundPaperExecutionError,
@@ -4710,3 +4722,108 @@ def read_gen4_profitability_run_endpoint(run_id: str, db: Session = Depends(get_
             detail={"code": exception.code, "message": str(exception)},
         ) from exception
 # END M47 GEN4 WALK-FORWARD PROFITABILITY VALIDATION
+
+# BEGIN M52-M53 GEN4 STRICT FORWARD SHADOW CAMPAIGN
+@app.get("/integrity/parser-gen4-forward/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_gen4_forward_status_endpoint(db: Session = Depends(get_db)):
+    return get_gen4_forward_status(db)
+
+
+@app.get("/integrity/parser-gen4-forward/preview", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_gen4_forward_preview_endpoint(
+    candidate_wallets: list[str] | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    return preview_gen4_forward_campaign(db, candidate_wallets=candidate_wallets)
+
+
+@app.post("/integrity/parser-gen4-forward/start", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def start_gen4_forward_campaign_endpoint(
+    request: CanonicalParserGen4ForwardCampaignStartRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        result = start_gen4_forward_campaign(
+            db,
+            confirmation=request.confirmation,
+            candidate_wallets=request.candidate_wallets,
+            anchor_at=request.anchor_at,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+        db.commit()
+        return result
+    except CanonicalParserGen4ForwardShadowError as exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-gen4-forward/cycle", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def run_gen4_forward_cycle_endpoint(
+    request: CanonicalParserGen4ForwardCycleRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        result = run_gen4_forward_cycle(
+            db,
+            campaign_id=request.campaign_id,
+            confirmation=request.confirmation,
+            observed_at=request.observed_at,
+        )
+        db.commit()
+        return result
+    except CanonicalParserGen4ForwardShadowError as exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-gen4-forward/stop", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def stop_gen4_forward_campaign_endpoint(
+    request: CanonicalParserGen4ForwardCampaignStopRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        result = stop_gen4_forward_campaign(
+            db,
+            campaign_id=request.campaign_id,
+            confirmation=request.confirmation,
+            observed_at=request.observed_at,
+            actor_label=request.actor_label,
+            note=request.note,
+        )
+        db.commit()
+        return result
+    except CanonicalParserGen4ForwardShadowError as exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get("/integrity/parser-gen4-forward/campaigns/{campaign_id}", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_gen4_forward_campaign_endpoint(
+    campaign_id: str,
+    include_decisions: bool = Query(default=True),
+    decision_limit: int = Query(default=100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_gen4_forward_campaign(
+            db,
+            campaign_id,
+            include_decisions=include_decisions,
+            decision_limit=decision_limit,
+        )
+    except CanonicalParserGen4ForwardShadowError as exception:
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+# END M52-M53 GEN4 STRICT FORWARD SHADOW CAMPAIGN

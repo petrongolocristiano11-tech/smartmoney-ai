@@ -115,6 +115,11 @@ from backend.app.models.gen4_profitability import (
     CanonicalParserGen4ProfitabilityWindow,
     CanonicalParserGen4ProfitabilityTrade,
 )
+from backend.app.models.gen4_forward_shadow import (
+    CanonicalParserGen4ForwardCampaign,
+    CanonicalParserGen4ForwardCycle,
+    CanonicalParserGen4ForwardDecision,
+)
 from backend.app.models.candidate_reconstruction_audit import (
     CandidateReconstructionAuditRun,
 )
@@ -310,6 +315,9 @@ __all__ = [
     "CanonicalParserGen4ProfitabilityRun",
     "CanonicalParserGen4ProfitabilityWindow",
     "CanonicalParserGen4ProfitabilityTrade",
+    "CanonicalParserGen4ForwardCampaign",
+    "CanonicalParserGen4ForwardCycle",
+    "CanonicalParserGen4ForwardDecision",
     "CandidateReconstructionAuditRun",
     "CandidatePositionLifecycleAuditRun",
     "CandidateExitPriceAuditRun",

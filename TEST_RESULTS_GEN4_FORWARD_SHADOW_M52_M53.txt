@@ -1,0 +1,13 @@
+M52-M53 V3 package validation
+
+- Runtime M51 contract uses actual imports and policy snapshot: implemented
+- No hard-coded main.py hash: verified
+- No incorrect price_integrity_version marker check in constants.py: verified
+- Semantic patch check against M51 baseline: pass
+- Semantic patch apply and second idempotence check: pass
+- Preservation of unrelated main.py content: pass
+- Python installer compile: pass
+- Focused M47-M53 tests on package simulation: pass
+- Automatic pre-campaign file and Alembic rollback: implemented
+- Full suite remains mandatory on the user's project before campaign start
+- No Helius, Jupiter, paper, signer, worker, scheduler or LIVE connection
