@@ -36,6 +36,10 @@ const Discovery = lazy(() =>
   import("./pages/Discovery.jsx")
 );
 
+const Gen4Forward = lazy(() =>
+  import("./pages/Gen4Forward.jsx")
+);
+
 const LiveScanner = lazy(() =>
   import("./pages/LiveScanner.jsx")
 );
@@ -118,6 +122,11 @@ createRoot(
             <Route
               path="/live-trading"
               element={<LiveTrading />}
+            />
+
+            <Route
+              path="/gen4-forward"
+              element={<Gen4Forward />}
             />
 
             <Route

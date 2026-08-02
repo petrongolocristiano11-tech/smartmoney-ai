@@ -1123,6 +1123,18 @@ class Settings(BaseSettings):
     CANONICAL_PARSER_GEN4_FORWARD_MAX_INGESTION_LAG_SECONDS: int = Field(default=300, ge=1, le=86400)
     CANONICAL_PARSER_GEN4_FORWARD_MAX_SAFETY_WAIT_MINUTES: int = Field(default=30, ge=1, le=10080)
 
+    # BEGIN M56-M57 GEN4 FORWARD AUTOMATIC FEED
+    # Incremental source acquisition for frozen wallets; no paper/LIVE execution.
+    CANONICAL_PARSER_GEN4_FORWARD_FEED_ENABLED: bool = False
+    CANONICAL_PARSER_GEN4_FORWARD_FEED_AUTOSTART: bool = False
+    CANONICAL_PARSER_GEN4_FORWARD_FEED_INTERVAL_SECONDS: int = Field(default=120, ge=30, le=3600)
+    CANONICAL_PARSER_GEN4_FORWARD_FEED_MAX_REQUESTS_PER_RUN: int = Field(default=4, ge=1, le=20)
+    CANONICAL_PARSER_GEN4_FORWARD_FEED_PAGE_SIZE: int = Field(default=100, ge=10, le=100)
+    CANONICAL_PARSER_GEN4_FORWARD_FEED_OVERLAP_SECONDS: int = Field(default=90, ge=0, le=300)
+    CANONICAL_PARSER_GEN4_FORWARD_FEED_LEASE_SECONDS: int = Field(default=180, ge=60, le=3600)
+    CANONICAL_PARSER_GEN4_FORWARD_FEED_DAILY_REQUEST_CAP: int = Field(default=2000, ge=1, le=1000000)
+    # END M56-M57 GEN4 FORWARD AUTOMATIC FEED
+
     # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================

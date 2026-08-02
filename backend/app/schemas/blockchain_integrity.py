@@ -428,6 +428,26 @@ class CanonicalParserGen4ForwardCampaignStopRequest(BaseModel):
     note: str | None = Field(default=None, max_length=500)
 
 
+# BEGIN M56-M57 GEN4 FORWARD AUTOMATIC FEED
+class CanonicalParserGen4ForwardFeedConfigureRequest(BaseModel):
+    campaign_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=320)
+    enabled: bool = True
+    interval_seconds: int | None = Field(default=None, ge=30, le=3600)
+    max_requests_per_run: int | None = Field(default=None, ge=1, le=20)
+    page_size: int | None = Field(default=None, ge=10, le=100)
+    overlap_seconds: int | None = Field(default=None, ge=0, le=300)
+
+
+class CanonicalParserGen4ForwardFeedPollRequest(BaseModel):
+    campaign_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=320)
+    observed_at: datetime | None = None
+
+
+# END M56-M57 GEN4 FORWARD AUTOMATIC FEED
+
+
 class CanonicalParserPermitBoundPaperExecutionRequest(BaseModel):
     permit_id: str = Field(min_length=36, max_length=36)
     decision_result_id: str = Field(min_length=36, max_length=36)

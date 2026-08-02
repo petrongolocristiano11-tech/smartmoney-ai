@@ -25,6 +25,10 @@ const NAVIGATION_ITEMS = [
     path: "/autopilot",
   },
   {
+    label: "Gen 4 Forward",
+    path: "/gen4-forward",
+  },
+  {
     label: "Copy Trading",
     path: "/live-trading",
     liveTrading: true,

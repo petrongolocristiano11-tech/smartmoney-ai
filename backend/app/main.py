@@ -8,6 +8,9 @@ from backend.app.services.live_trading_worker_runtime import (
 from backend.app.services.live_position_monitor_runtime import (
     live_position_monitor_runtime,
 )
+from backend.app.services.gen4_forward_feed_runtime import (
+    gen4_forward_feed_runtime,
+)
 from datetime import (
     datetime,
     timezone,
@@ -117,6 +120,8 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserGen4ForwardCampaignStartRequest,
     CanonicalParserGen4ForwardCycleRequest,
     CanonicalParserGen4ForwardCampaignStopRequest,
+    CanonicalParserGen4ForwardFeedConfigureRequest,
+    CanonicalParserGen4ForwardFeedPollRequest,
     CanonicalParserPermitBoundPaperExecutionRequest,
     CanonicalParserPermitBoundPaperReconcileRequest,
     CanonicalParserPaperCalibrationRunRequest,
@@ -411,6 +416,12 @@ from backend.app.services.blockchain_parser_gen4_forward_shadow_service import (
     start_gen4_forward_campaign,
     stop_gen4_forward_campaign,
 )
+from backend.app.services.blockchain_parser_gen4_forward_feed_service import (
+    CanonicalParserGen4ForwardFeedError,
+    configure_gen4_forward_feed,
+    get_gen4_forward_feed_status,
+    run_gen4_forward_feed_poll,
+)
 from backend.app.services.blockchain_parser_permit_bound_paper_execution_service import (
     CanonicalParserPermitBoundPaperExecutionError,
     execute_permit_bound_paper,
@@ -682,11 +693,13 @@ async def lifespan(
 
     await live_trading_worker_runtime.start()
     await live_position_monitor_runtime.start()
+    await gen4_forward_feed_runtime.start()
 
     try:
         yield
 
     finally:
+        await gen4_forward_feed_runtime.stop()
         await live_position_monitor_runtime.stop()
         await live_trading_worker_runtime.stop()
 
@@ -4827,3 +4840,61 @@ def read_gen4_forward_campaign_endpoint(
             detail={"code": exception.code, "message": str(exception)},
         ) from exception
 # END M52-M53 GEN4 STRICT FORWARD SHADOW CAMPAIGN
+
+# BEGIN M56-M57 GEN4 FORWARD AUTOMATIC FEED
+@app.get("/integrity/parser-gen4-forward/feed/status", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def read_gen4_forward_feed_status_endpoint(db: Session = Depends(get_db)):
+    result = get_gen4_forward_feed_status(db)
+    result["worker_running"] = gen4_forward_feed_runtime.running
+    return result
+
+
+@app.post("/integrity/parser-gen4-forward/feed/configure", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def configure_gen4_forward_feed_endpoint(
+    request: CanonicalParserGen4ForwardFeedConfigureRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        result = configure_gen4_forward_feed(
+            db,
+            campaign_id=request.campaign_id,
+            confirmation=request.confirmation,
+            enabled=request.enabled,
+            interval_seconds=request.interval_seconds,
+            max_requests_per_run=request.max_requests_per_run,
+            page_size=request.page_size,
+            overlap_seconds=request.overlap_seconds,
+        )
+        db.commit()
+        result["worker_running"] = gen4_forward_feed_runtime.running
+        return result
+    except CanonicalParserGen4ForwardFeedError as exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post("/integrity/parser-gen4-forward/feed/poll", tags=["Blockchain Integrity"], dependencies=[Depends(require_automation_key)])
+def run_gen4_forward_feed_poll_endpoint(
+    request: CanonicalParserGen4ForwardFeedPollRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        result = run_gen4_forward_feed_poll(
+            db,
+            campaign_id=request.campaign_id,
+            confirmation=request.confirmation,
+            trigger="MANUAL",
+            observed_at=request.observed_at,
+        )
+        db.commit()
+        return result
+    except CanonicalParserGen4ForwardFeedError as exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+# END M56-M57 GEN4 FORWARD AUTOMATIC FEED

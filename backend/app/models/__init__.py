@@ -120,6 +120,10 @@ from backend.app.models.gen4_forward_shadow import (
     CanonicalParserGen4ForwardCycle,
     CanonicalParserGen4ForwardDecision,
 )
+from backend.app.models.gen4_forward_feed import (
+    CanonicalParserGen4ForwardFeedRun,
+    CanonicalParserGen4ForwardFeedState,
+)
 from backend.app.models.candidate_reconstruction_audit import (
     CandidateReconstructionAuditRun,
 )
@@ -318,6 +322,8 @@ __all__ = [
     "CanonicalParserGen4ForwardCampaign",
     "CanonicalParserGen4ForwardCycle",
     "CanonicalParserGen4ForwardDecision",
+    "CanonicalParserGen4ForwardFeedState",
+    "CanonicalParserGen4ForwardFeedRun",
     "CandidateReconstructionAuditRun",
     "CandidatePositionLifecycleAuditRun",
     "CandidateExitPriceAuditRun",

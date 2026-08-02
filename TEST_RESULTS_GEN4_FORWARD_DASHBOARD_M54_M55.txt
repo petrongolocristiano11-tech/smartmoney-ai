@@ -1,0 +1,8 @@
+M54-M55 V3 RESUME VALIDATION
+
+- Root bootstrap nel verifier: aggiunto prima degli import backend.
+- Modalità --structure-only: aggiunta per smoke test esterno senza query DB.
+- Regression test subprocess da cwd esterna e senza PYTHONPATH: incluso.
+- V2 precedente sul PC utente: 1.274 test backend passati, build Vite passata.
+- V3 ripete test mirati M52-M55 e build; la suite completa non viene ripetuta.
+- Nessuna migrazione, Helius, Jupiter, paper, signer o LIVE.

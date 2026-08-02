@@ -1,0 +1,32 @@
+PATCH CONFIGURAZIONE LOCALE
+.env (solo CANONICAL_PARSER_GEN4_FORWARD_ENABLED=true)
+
+PATCH SEMANTICHE
+frontend/src/main.jsx
+frontend/src/components/Navbar.jsx
+
+FILE NUOVI
+frontend/src/pages/Gen4Forward.jsx
+frontend/src/services/gen4ForwardApi.js
+frontend/src/components/gen4Forward/gen4ForwardFormatters.js
+frontend/src/components/gen4Forward/Gen4ForwardMetric.jsx
+frontend/src/components/gen4Forward/Gen4ForwardLaneCard.jsx
+frontend/src/components/gen4Forward/Gen4ForwardProgress.jsx
+frontend/src/components/gen4Forward/Gen4ForwardEquityChart.jsx
+frontend/src/components/gen4Forward/Gen4ForwardTables.jsx
+scripts/apply_gen4_forward_dashboard_m54_m55_patch.py
+scripts/verify_gen4_forward_dashboard_m54_m55.py
+tests/test_gen4_forward_dashboard_frontend_m54_m55.py
+README_GEN4_FORWARD_DASHBOARD_M54_M55.md
+PATCH_FILES_GEN4_FORWARD_DASHBOARD_M54_M55.txt
+TEST_RESULTS_GEN4_FORWARD_DASHBOARD_M54_M55.txt
+TEST_GEN4_FORWARD_DASHBOARD_M54_M55.ps1
+ROLLBACK_GEN4_FORWARD_DASHBOARD_M54_M55.ps1
+
+NESSUNA MODIFICA
+backend motore Gen4
+schema database
+Alembic
+Helius/Jupiter
+paper trading
+LIVE
