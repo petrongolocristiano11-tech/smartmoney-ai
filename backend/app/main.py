@@ -1,4 +1,6 @@
+import json
 import logging
+import secrets
 from contextlib import (
     asynccontextmanager,
 )
@@ -10,6 +12,9 @@ from backend.app.services.live_position_monitor_runtime import (
 )
 from backend.app.services.gen4_forward_feed_runtime import (
     gen4_forward_feed_runtime,
+)
+from backend.app.services.gen4_copyability_runtime import (
+    gen4_copyability_runtime,
 )
 from datetime import (
     datetime,
@@ -122,6 +127,10 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserGen4ForwardCampaignStopRequest,
     CanonicalParserGen4ForwardFeedConfigureRequest,
     CanonicalParserGen4ForwardFeedPollRequest,
+    CanonicalParserGen4CopyabilityStartRequest,
+    CanonicalParserGen4CopyabilityStopRequest,
+    CanonicalParserGen4CopyabilityWebhookConfigureRequest,
+    CanonicalParserGen4CopyabilityProcessRequest,
     CanonicalParserPermitBoundPaperExecutionRequest,
     CanonicalParserPermitBoundPaperReconcileRequest,
     CanonicalParserPaperCalibrationRunRequest,
@@ -422,6 +431,15 @@ from backend.app.services.blockchain_parser_gen4_forward_feed_service import (
     get_gen4_forward_feed_status,
     run_gen4_forward_feed_poll,
 )
+from backend.app.services.blockchain_parser_gen4_copyability_service import (
+    CanonicalParserGen4CopyabilityError,
+    configure_gen4_copyability_webhook,
+    get_gen4_copyability_status,
+    process_gen4_copyability_queue,
+    receive_gen4_copyability_webhook,
+    start_gen4_copyability_campaign,
+    stop_gen4_copyability_campaign,
+)
 from backend.app.services.blockchain_parser_permit_bound_paper_execution_service import (
     CanonicalParserPermitBoundPaperExecutionError,
     execute_permit_bound_paper,
@@ -694,11 +712,13 @@ async def lifespan(
     await live_trading_worker_runtime.start()
     await live_position_monitor_runtime.start()
     await gen4_forward_feed_runtime.start()
+    await gen4_copyability_runtime.start()
 
     try:
         yield
 
     finally:
+        await gen4_copyability_runtime.stop()
         await gen4_forward_feed_runtime.stop()
         await live_position_monitor_runtime.stop()
         await live_trading_worker_runtime.stop()
@@ -4898,3 +4918,227 @@ def run_gen4_forward_feed_poll_endpoint(
             detail={"code": exception.code, "message": str(exception)},
         ) from exception
 # END M56-M57 GEN4 FORWARD AUTOMATIC FEED
+
+# BEGIN M58-M60 GEN4 REAL-TIME COPYABILITY
+@app.post(
+    "/integrity/parser-gen4-copyability/webhook/helius",
+    tags=["Blockchain Integrity"],
+)
+async def receive_gen4_copyability_webhook_endpoint(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    configured_secret = str(
+        getattr(
+            settings,
+            "CANONICAL_PARSER_GEN4_COPYABILITY_WEBHOOK_SECRET",
+            "",
+        )
+        or ""
+    ).strip()
+    if not configured_secret:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "GEN4_COPYABILITY_WEBHOOK_SECRET_NOT_CONFIGURED",
+                "message": "Ricevitore webhook non configurato.",
+            },
+        )
+
+    supplied_secret = str(request.headers.get("authorization") or "").strip()
+    if not supplied_secret or not secrets.compare_digest(
+        supplied_secret,
+        configured_secret,
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "GEN4_COPYABILITY_WEBHOOK_AUTH_FAILED",
+                "message": "Autorizzazione webhook non valida.",
+            },
+        )
+
+    maximum_bytes = int(
+        getattr(
+            settings,
+            "CANONICAL_PARSER_GEN4_COPYABILITY_MAX_WEBHOOK_BYTES",
+            2_000_000,
+        )
+    )
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > maximum_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail={
+                        "code": "GEN4_COPYABILITY_WEBHOOK_TOO_LARGE",
+                        "message": "Payload webhook oltre il limite.",
+                    },
+                )
+        except ValueError:
+            pass
+
+    raw_body = await request.body()
+    if len(raw_body) > maximum_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "code": "GEN4_COPYABILITY_WEBHOOK_TOO_LARGE",
+                "message": "Payload webhook oltre il limite.",
+            },
+        )
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exception:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "GEN4_COPYABILITY_WEBHOOK_INVALID_JSON",
+                "message": "Payload webhook JSON non valido.",
+            },
+        ) from exception
+
+    try:
+        result = receive_gen4_copyability_webhook(
+            db,
+            payload=payload,
+            received_at=datetime.now(timezone.utc),
+        )
+        db.commit()
+        return {
+            "ok": True,
+            **result,
+            "processing": "PERSISTED_FOR_ASYNC_SHADOW_QUEUE",
+        }
+    except CanonicalParserGen4CopyabilityError as exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.get(
+    "/integrity/parser-gen4-copyability/status",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_gen4_copyability_status_endpoint(
+    recent_limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    result = get_gen4_copyability_status(db, recent_limit=recent_limit)
+    result["worker_running"] = gen4_copyability_runtime.running
+    db.commit()
+    return result
+
+
+@app.post(
+    "/integrity/parser-gen4-copyability/start",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def start_gen4_copyability_campaign_endpoint(
+    request: CanonicalParserGen4CopyabilityStartRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        result = start_gen4_copyability_campaign(
+            db,
+            confirmation=request.confirmation,
+            actor_label=request.actor_label,
+            note=request.note,
+            anchor_at=request.anchor_at,
+        )
+        db.commit()
+        return result
+    except CanonicalParserGen4CopyabilityError as exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-gen4-copyability/stop",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def stop_gen4_copyability_campaign_endpoint(
+    request: CanonicalParserGen4CopyabilityStopRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        result = stop_gen4_copyability_campaign(
+            db,
+            campaign_id=request.campaign_id,
+            confirmation=request.confirmation,
+            observed_at=request.observed_at,
+        )
+        db.commit()
+        return result
+    except CanonicalParserGen4CopyabilityError as exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-gen4-copyability/webhook/configure",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def configure_gen4_copyability_webhook_endpoint(
+    request: CanonicalParserGen4CopyabilityWebhookConfigureRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        result = configure_gen4_copyability_webhook(
+            db,
+            campaign_id=request.campaign_id,
+            confirmation=request.confirmation,
+            webhook_id=request.webhook_id,
+            webhook_url=request.webhook_url,
+            active=request.active,
+            observed_at=request.observed_at,
+        )
+        db.commit()
+        return result
+    except CanonicalParserGen4CopyabilityError as exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-gen4-copyability/process",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def process_gen4_copyability_queue_endpoint(
+    request: CanonicalParserGen4CopyabilityProcessRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        result = process_gen4_copyability_queue(
+            db,
+            confirmation=request.confirmation,
+            owner_id=f"manual-api-{uuid4()}",
+            batch_size=request.batch_size,
+            observed_at=request.observed_at,
+        )
+        db.commit()
+        return result
+    except CanonicalParserGen4CopyabilityError as exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+# END M58-M60 GEN4 REAL-TIME COPYABILITY

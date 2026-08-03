@@ -1135,6 +1135,69 @@ class Settings(BaseSettings):
     CANONICAL_PARSER_GEN4_FORWARD_FEED_DAILY_REQUEST_CAP: int = Field(default=2000, ge=1, le=1000000)
     # END M56-M57 GEN4 FORWARD AUTOMATIC FEED
 
+    # BEGIN M58-M60 GEN4 REAL-TIME COPYABILITY
+    # Raw Helius webhook + Jupiter unsigned quote/build shadow only. No signer,
+    # no paper order and no LIVE submission path is connected.
+    CANONICAL_PARSER_GEN4_COPYABILITY_ENABLED: bool = False
+    CANONICAL_PARSER_GEN4_COPYABILITY_AUTOSTART: bool = False
+    CANONICAL_PARSER_GEN4_COPYABILITY_WEBHOOK_SECRET: str = ""
+    CANONICAL_PARSER_GEN4_COPYABILITY_QUOTE_TAKER: str = ""
+    CANONICAL_PARSER_GEN4_COPYABILITY_MAX_WEBHOOK_BYTES: int = Field(
+        default=2_000_000, ge=10_000, le=10_000_000
+    )
+    CANONICAL_PARSER_GEN4_COPYABILITY_WORKER_INTERVAL_SECONDS: int = Field(
+        default=1, ge=1, le=60
+    )
+    CANONICAL_PARSER_GEN4_COPYABILITY_WORKER_BATCH_SIZE: int = Field(
+        default=20, ge=1, le=100
+    )
+    CANONICAL_PARSER_GEN4_COPYABILITY_WORKER_LEASE_SECONDS: int = Field(
+        default=30, ge=10, le=3600
+    )
+    CANONICAL_PARSER_GEN4_COPYABILITY_MAX_PROCESSING_ATTEMPTS: int = Field(
+        default=3, ge=1, le=20
+    )
+    CANONICAL_PARSER_GEN4_COPYABILITY_MIN_OBSERVATION_DAYS: int = Field(
+        default=21, ge=1, le=3650
+    )
+    CANONICAL_PARSER_GEN4_COPYABILITY_MIN_CLOSED_TRADES: int = Field(
+        default=30, ge=1, le=1_000_000
+    )
+    CANONICAL_PARSER_GEN4_COPYABILITY_PROOF_CLOSED_TRADES: int = Field(
+        default=100, ge=1, le=1_000_000
+    )
+    CANONICAL_PARSER_GEN4_COPYABILITY_SIMULATED_INPUT_LAMPORTS: int = Field(
+        default=10_000_000, ge=100_000, le=100_000_000_000
+    )
+    CANONICAL_PARSER_GEN4_COPYABILITY_SLIPPAGE_BPS: int = Field(
+        default=300, ge=1, le=10_000
+    )
+    CANONICAL_PARSER_GEN4_COPYABILITY_MAX_SIGNAL_AGE_MS: int = Field(
+        default=20_000, ge=1_000, le=600_000
+    )
+    CANONICAL_PARSER_GEN4_COPYABILITY_MAX_QUOTE_LATENCY_MS: int = Field(
+        default=5_000, ge=100, le=120_000
+    )
+    CANONICAL_PARSER_GEN4_COPYABILITY_MAX_PRICE_IMPACT_BPS: int = Field(
+        default=500, ge=1, le=10_000
+    )
+    CANONICAL_PARSER_GEN4_COPYABILITY_MAX_PRICE_DETERIORATION_BPS: int = Field(
+        default=1_000, ge=1, le=50_000
+    )
+    CANONICAL_PARSER_GEN4_COPYABILITY_ESTIMATED_NETWORK_FEE_LAMPORTS: int = Field(
+        default=100_000, ge=0, le=100_000_000
+    )
+    CANONICAL_PARSER_GEN4_COPYABILITY_MIN_WEBHOOK_COVERAGE_PERCENT: float = Field(
+        default=95.0, ge=0.0, le=100.0
+    )
+    CANONICAL_PARSER_GEN4_COPYABILITY_MIN_PROFIT_FACTOR: float = Field(
+        default=1.2, ge=0.0, le=1_000.0
+    )
+    CANONICAL_PARSER_GEN4_COPYABILITY_MAX_DRAWDOWN_PERCENT: float = Field(
+        default=20.0, ge=0.0, le=100.0
+    )
+    # END M58-M60 GEN4 REAL-TIME COPYABILITY
+
     # =========================
     # CONTROLLED DISCOVERY HYDRATION
     # =========================
@@ -1934,6 +1997,51 @@ class Settings(BaseSettings):
                 "essere almeno il doppio di "
                 "LIVE_STREAM_HEARTBEAT_SECONDS."
             )
+
+        return self
+
+
+    @model_validator(
+        mode="after"
+    )
+    def validate_gen4_copyability_configuration(
+        self,
+    ) -> Self:
+        if (
+            self.CANONICAL_PARSER_GEN4_COPYABILITY_AUTOSTART
+            and not self.CANONICAL_PARSER_GEN4_COPYABILITY_ENABLED
+        ):
+            raise ValueError(
+                "CANONICAL_PARSER_GEN4_COPYABILITY_AUTOSTART richiede "
+                "CANONICAL_PARSER_GEN4_COPYABILITY_ENABLED=true."
+            )
+
+        if (
+            self.CANONICAL_PARSER_GEN4_COPYABILITY_PROOF_CLOSED_TRADES
+            < self.CANONICAL_PARSER_GEN4_COPYABILITY_MIN_CLOSED_TRADES
+        ):
+            raise ValueError(
+                "La soglia proof M58-M60 non può essere inferiore alla "
+                "soglia minima di trade chiusi."
+            )
+
+        if self.CANONICAL_PARSER_GEN4_COPYABILITY_ENABLED:
+            if len(
+                self.CANONICAL_PARSER_GEN4_COPYABILITY_WEBHOOK_SECRET.strip()
+            ) < 32:
+                raise ValueError(
+                    "Il segreto Authorization del webhook M58-M60 deve "
+                    "contenere almeno 32 caratteri."
+                )
+            if not self.CANONICAL_PARSER_GEN4_COPYABILITY_QUOTE_TAKER.strip():
+                raise ValueError(
+                    "CANONICAL_PARSER_GEN4_COPYABILITY_QUOTE_TAKER è "
+                    "obbligatorio quando M58-M60 è abilitato."
+                )
+            if not self.JUPITER_API_KEY.strip():
+                raise ValueError(
+                    "JUPITER_API_KEY è obbligatoria quando M58-M60 è abilitato."
+                )
 
         return self
 

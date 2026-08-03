@@ -124,6 +124,12 @@ from backend.app.models.gen4_forward_feed import (
     CanonicalParserGen4ForwardFeedRun,
     CanonicalParserGen4ForwardFeedState,
 )
+from backend.app.models.gen4_copyability import (
+    CanonicalParserGen4CopyabilityCampaign,
+    CanonicalParserGen4CopyabilityPosition,
+    CanonicalParserGen4CopyabilityWorkerState,
+    CanonicalParserGen4WebhookReceipt,
+)
 from backend.app.models.candidate_reconstruction_audit import (
     CandidateReconstructionAuditRun,
 )

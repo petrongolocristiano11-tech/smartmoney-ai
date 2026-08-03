@@ -117,7 +117,7 @@ def test_models_and_migration_extend_single_head():
     config.set_main_option("script_location", "alembic")
     scripts = ScriptDirectory.from_config(config)
     assert scripts.get_revision("a5e7c1d4b926").down_revision == "f4d6a9c2b813"
-    assert scripts.get_heads() == ["a5e7c1d4b926"]
+    assert scripts.get_heads() == ["b6f8d2e4c731"]
 
 
 def test_status_creates_persistent_state_for_active_campaign(db):

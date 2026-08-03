@@ -516,6 +516,237 @@ class JupiterSwapClient:
             ),
         )
 
+    @staticmethod
+    def _valid_unsigned_build_instruction(
+        value: Any,
+    ) -> bool:
+        return (
+            isinstance(value, dict)
+            and bool(str(value.get("programId") or "").strip())
+            and bool(str(value.get("data") or "").strip())
+            and isinstance(value.get("accounts"), list)
+        )
+
+    def get_quote_and_unsigned_build(
+        self,
+        *,
+        input_mint: str,
+        output_mint: str,
+        amount_raw: int,
+        taker: str,
+        slippage_bps: int | None = None,
+        mode: str = "fast",
+    ) -> JupiterOrderResult:
+        """Quote without a taker, then validate unsigned /build instructions.
+
+        This method never signs, submits, or calls Jupiter /execute.  The
+        returned ``transaction`` value is a non-transaction marker used by the
+        copyability shadow to record that valid unsigned build instructions
+        existed at detection time.
+        """
+        if amount_raw <= 0:
+            raise JupiterSwapError(
+                "L'importo della quotazione deve essere positivo.",
+                code="INVALID_ORDER_AMOUNT",
+                status_code=422,
+            )
+
+        normalized_taker = str(taker or "").strip()
+        if not normalized_taker:
+            raise JupiterSwapError(
+                "Il taker pubblico per /build è obbligatorio.",
+                code="JUPITER_BUILD_TAKER_REQUIRED",
+                status_code=422,
+            )
+
+        normalized_mode = str(mode or "fast").strip().lower()
+        if normalized_mode != "fast":
+            raise JupiterSwapError(
+                "M58-M60 consente solo Jupiter /build mode=fast.",
+                code="JUPITER_BUILD_MODE_INVALID",
+                status_code=422,
+            )
+
+        common_params = {
+            "inputMint": input_mint,
+            "outputMint": output_mint,
+            "amount": str(amount_raw),
+        }
+        if slippage_bps is not None:
+            common_params["slippageBps"] = str(slippage_bps)
+
+        # Price observation is deliberately quote-only: no taker means Jupiter
+        # returns no assembled transaction and performs no wallet balance gate.
+        order_payload = self._request_json(
+            "GET",
+            "/order",
+            params=dict(common_params),
+            retryable=True,
+        )
+        request_id = str(order_payload.get("requestId") or "").strip()
+        if not request_id:
+            raise JupiterSwapError(
+                "Risposta Jupiter /order priva di requestId.",
+                code="JUPITER_INVALID_RESPONSE",
+                status_code=502,
+            )
+        if order_payload.get("transaction") not in (None, ""):
+            raise JupiterSwapError(
+                "Jupiter /order senza taker ha restituito una transazione inattesa.",
+                code="JUPITER_UNEXPECTED_TRANSACTION",
+                status_code=502,
+            )
+        order_in_amount = int(
+            self._parse_int(order_payload.get("inAmount"), "inAmount")
+        )
+        order_out_amount = int(
+            self._parse_int(order_payload.get("outAmount"), "outAmount")
+        )
+        if order_in_amount <= 0 or order_out_amount <= 0:
+            raise JupiterSwapError(
+                "Jupiter /order ha restituito importi non positivi.",
+                code="JUPITER_ORDER_AMOUNTS_INVALID",
+                status_code=502,
+            )
+
+        build_params = dict(common_params)
+        build_params["taker"] = normalized_taker
+        build_params["mode"] = normalized_mode
+        build_payload = self._request_json(
+            "GET",
+            "/build",
+            params=build_params,
+            retryable=True,
+        )
+
+        forbidden_artifacts = (
+            "signedTransaction",
+            "signature",
+            "transactionSignature",
+            "txid",
+        )
+        if any(build_payload.get(key) not in (None, "") for key in forbidden_artifacts):
+            raise JupiterSwapError(
+                "Jupiter /build ha restituito un artefatto firmato inatteso.",
+                code="JUPITER_SIGNED_ARTIFACT_FORBIDDEN",
+                status_code=502,
+            )
+        if not self._valid_unsigned_build_instruction(
+            build_payload.get("swapInstruction")
+        ):
+            raise JupiterSwapError(
+                "Jupiter /build privo di swapInstruction valida.",
+                code="JUPITER_BUILD_INSTRUCTION_MISSING",
+                status_code=502,
+            )
+
+        blockhash_metadata = build_payload.get("blockhashWithMetadata")
+        if not isinstance(blockhash_metadata, dict):
+            raise JupiterSwapError(
+                "Jupiter /build privo di blockhashWithMetadata.",
+                code="JUPITER_BUILD_BLOCKHASH_MISSING",
+                status_code=502,
+            )
+        last_valid_block_height = int(
+            self._parse_int(
+                blockhash_metadata.get("lastValidBlockHeight"),
+                "lastValidBlockHeight",
+            )
+        )
+        if last_valid_block_height <= 0:
+            raise JupiterSwapError(
+                "Jupiter /build con lastValidBlockHeight non positivo.",
+                code="JUPITER_BUILD_BLOCKHASH_INVALID",
+                status_code=502,
+            )
+
+        build_in_amount = int(
+            self._parse_int(build_payload.get("inAmount"), "inAmount")
+        )
+        build_out_amount = int(
+            self._parse_int(build_payload.get("outAmount"), "outAmount")
+        )
+        threshold = int(
+            self._parse_int(
+                build_payload.get("otherAmountThreshold"),
+                "otherAmountThreshold",
+            )
+        )
+        if build_in_amount <= 0 or build_out_amount <= 0 or threshold <= 0:
+            raise JupiterSwapError(
+                "Jupiter /build ha restituito importi non positivi.",
+                code="JUPITER_BUILD_AMOUNTS_INVALID",
+                status_code=502,
+            )
+
+        resolved_slippage = int(
+            self._parse_int(
+                build_payload.get("slippageBps", slippage_bps or 0),
+                "slippageBps",
+            )
+        )
+        build_vs_order_out_bps = (
+            ((build_out_amount / order_out_amount) - 1.0) * 10_000.0
+            if order_out_amount > 0
+            else 0.0
+        )
+        price_impact = build_payload.get(
+            "priceImpact",
+            build_payload.get(
+                "priceImpactPct",
+                order_payload.get(
+                    "priceImpact",
+                    order_payload.get("priceImpactPct"),
+                ),
+            ),
+        )
+        router = (
+            str(build_payload.get("router") or order_payload.get("router") or "metis")
+            .strip()
+            or "metis"
+        )
+
+        # Persist only evidence and counts, never raw instruction bytes.
+        evidence = {
+            "requestId": request_id,
+            "inAmount": str(build_in_amount),
+            "outAmount": str(build_out_amount),
+            "otherAmountThreshold": str(threshold),
+            "slippageBps": resolved_slippage,
+            "router": router,
+            "priceImpact": price_impact,
+            "quoteOnlyOutAmount": str(order_out_amount),
+            "buildVsOrderOutBps": round(build_vs_order_out_bps, 4),
+            "unsignedBuild": True,
+            "swapInstructionValid": True,
+            "setupInstructionCount": len(build_payload.get("setupInstructions") or []),
+            "computeBudgetInstructionCount": len(
+                build_payload.get("computeBudgetInstructions") or []
+            ),
+            "otherInstructionCount": len(build_payload.get("otherInstructions") or []),
+            "lookupTableCount": len(
+                build_payload.get("addressesByLookupTableAddress") or {}
+            ),
+            "endpointSequence": ["order", "build"],
+            "orderHadTaker": False,
+            "buildHadTaker": True,
+            "executeEndpointCalled": False,
+            "signedTransactionCreated": False,
+            "signatureCreated": False,
+        }
+
+        return JupiterOrderResult(
+            raw=evidence,
+            request_id=request_id,
+            transaction="UNSIGNED_INSTRUCTIONS_BUILT_NO_SIGNATURE",
+            in_amount=build_in_amount,
+            out_amount=build_out_amount,
+            slippage_bps=resolved_slippage,
+            router=router,
+            price_impact_percent=self._parse_float(price_impact, 0.0),
+            last_valid_block_height=str(last_valid_block_height),
+        )
+
     def execute_order(
         self,
         *,
@@ -620,4 +851,4 @@ def sanitize_jupiter_payload(
         if key in sanitized:
             sanitized[key] = "<omitted>"
 
-    return sanitized 
+    return sanitized

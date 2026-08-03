@@ -1,0 +1,105 @@
+M58-M60 FILE INVENTORY
+
+REPLACED FULL FILES
+.env.example
+backend/app/core/config.py
+backend/app/main.py
+backend/app/models/__init__.py
+backend/app/schemas/blockchain_integrity.py
+backend/app/services/blockchain_parser_gen4_forward_feed_service.py
+frontend/src/pages/Gen4Forward.jsx
+frontend/src/services/gen4ForwardApi.js
+
+CREATED FILES
+backend/app/models/gen4_copyability.py
+backend/app/services/blockchain_parser_gen4_copyability_service.py
+backend/app/services/gen4_copyability_runtime.py
+backend/app/workers/gen4_copyability_worker.py
+alembic/versions/b6f8d2e4c731_add_gen4_realtime_copyability.py
+frontend/src/components/gen4Forward/Gen4CopyabilityPanel.jsx
+scripts/configure_gen4_copyability_helius_webhook.py
+scripts/test_gen4_copyability_postgresql_migration.py
+scripts/verify_gen4_copyability_m58_m60.py
+tests/test_gen4_copyability_m58_m60.py
+tests/test_gen4_copyability_frontend_m58_m60.py
+README_GEN4_REALTIME_COPYABILITY_M58_M60.md
+TEST_RESULTS_GEN4_REALTIME_COPYABILITY_M58_M60.txt
+PATCH_FILES_GEN4_REALTIME_COPYABILITY_M58_M60.txt
+TEST_GEN4_REALTIME_COPYABILITY_M58_M60.ps1
+ROLLBACK_GEN4_REALTIME_COPYABILITY_M58_M60.ps1
+
+INSTALLER-ONLY FILES
+INSTALL_TEST_DEPLOY_GEN4_REALTIME_COPYABILITY_M58_M60.py
+INSTALL_TEST_DEPLOY_GEN4_REALTIME_COPYABILITY_M58_M60.ps1
+PACKAGE_MANIFEST_SHA256_GEN4_REALTIME_COPYABILITY_M58_M60.txt
+
+RUNTIME PATCH PERFORMED BY INSTALLER
+All historical tests containing an exact `scripts.get_heads()` assertion are updated
+to the new single Alembic head b6f8d2e4c731. Every changed test file is backed up.
+
+LOCAL .env VALUES
+The installer preserves unrelated values, rotates HELIUS_API_KEY, sets JUPITER_API_KEY,
+generates a high-entropy webhook Authorization value, generates a public quote taker,
+and freezes all M58-M60 policy values. Secrets are never committed.
+
+V3 definitive compatibility correction:
+- frontend/src/pages/Gen4Forward.jsx
+  Restores the exact historical safety copy `nessun paper / LIVE`.
+- tests/test_gen4_copyability_frontend_m58_m60.py
+  Adds a regression guard for the same M56-M57 safety contract.
+- INSTALL_TEST_DEPLOY_GEN4_REALTIME_COPYABILITY_M58_M60.py
+  Updates only the installer version identifier to V3.
+- README/TEST_RESULTS/PACKAGE_MANIFEST
+  Documents and hashes the correction.
+
+Unchanged in V3:
+- Alembic migration and roundtrip logic
+- backend copyability implementation
+- Helius/Jupiter integration
+- rollback script
+- existing Signal Quality campaign protections
+
+V4 definitive PostgreSQL roundtrip correction:
+- INSTALL_TEST_DEPLOY_GEN4_REALTIME_COPYABILITY_M58_M60.py
+  Resolves the effective local DATABASE_URL before changes, performs a redacted real PostgreSQL SELECT 1 preflight, and passes the exact URL through child-process environment to every Alembic/migration command and rollback.
+- scripts/test_gen4_copyability_postgresql_migration.py
+  Uses environment-first/.env-fallback resolution, normalizes PostgreSQL URLs, rejects non-PostgreSQL backends, and preserves the same URL for nested Alembic commands.
+- tests/test_gen4_copyability_m58_m60.py
+  Adds regression coverage for quoted .env resolution, environment precedence, SQLite rejection, explicit installer handoff, and preflight presence.
+- README/TEST_RESULTS/PACKAGE_MANIFEST updated.
+
+Unchanged in V4:
+- M58-M60 backend business logic, models, endpoints, webhook receiver, Jupiter shadow quoting, frontend behavior, Alembic revision content, PowerShell secret launcher, and rollback script.
+
+V5 portable PostgreSQL test correction:
+- tests/test_gen4_copyability_m58_m60.py now resolves the installed migration harness from Path(__file__).resolve().parents[1].
+- Removed the invalid assertion that expected the package installer Python file in the repository root.
+- Application payload, Alembic migration, secure PowerShell launcher and rollback remain unchanged from V4.
+
+backend/app/services/jupiter_swap_client.py
+PRECHECK_JUPITER_COPYABILITY_M58_M60_V6.py
+
+V6 definitive Jupiter balance-independent correction:
+- backend/app/services/jupiter_swap_client.py adds get_quote_and_unsigned_build(): quote-only /order without taker, then unsigned /build with the frozen public taker and mode=fast; no /execute.
+- backend/app/services/blockchain_parser_gen4_copyability_service.py uses that method in the real runtime while preserving dependency-injected fake compatibility.
+- PRECHECK_JUPITER_COPYABILITY_M58_M60_V6.py is the exact non-destructive live precheck already passed on Windows.
+- INSTALL_TEST_DEPLOY_GEN4_REALTIME_COPYABILITY_M58_M60.py runs the precheck before backups/tests and verifies the exact installed runtime path after OpenAPI.
+- tests and verifier enforce order -> build only, no signed artifacts, no raw instruction persistence and no execute call.
+
+V7 definitive Git whitespace correction:
+- backend/app/services/jupiter_swap_client.py removes the single trailing space after `return sanitized`; Python AST and runtime behavior remain identical.
+- Installer verifies package text hygiene before backups or repository mutation.
+- Both working-tree and staged Git whitespace checks capture and print exact diagnostics.
+- Runtime, migration, secure launcher, precheck and rollback are otherwise unchanged from V6.
+V7 pre-mutation exact-baseline Git sandbox:
+- Exports the real checked-out M57 HEAD with `git archive` into a temporary repository.
+- Applies the complete V7 payload and historical Alembic-head patches only inside that sandbox.
+- Requires both working-tree and staged Git whitespace checks to pass before any backup or repository mutation.
+- Preserves the effective core.autocrlf/core.safecrlf/core.whitespace settings.
+
+V8 definitive EOF and exact-baseline Git correction:
+- Normalizes every package text file to LF, removes trailing spaces/tabs, and enforces exactly one terminal newline.
+- Fixes the V7 `backend/app/main.py:5145: new blank line at EOF` failure.
+- Package hygiene now rejects missing final newlines, multiple terminal newlines, non-LF line endings and trailing whitespace before any backup or mutation.
+- The real repository receives an additional `git diff --check` immediately after payload copy, before tests and migration.
+- Runtime, models, endpoints, migration, secure PowerShell launcher, Jupiter order/build precheck and rollback remain semantically unchanged.

@@ -75,3 +75,27 @@ export function runGen4ForwardFeedPoll(
     getAutomationConfig(accessKey)
   );
 }
+
+const GEN4_COPYABILITY_BASE = "/integrity/parser-gen4-copyability";
+
+export function getGen4CopyabilityStatus(accessKey, recentLimit = 100) {
+  return api.get(
+    `${GEN4_COPYABILITY_BASE}/status`,
+    {
+      ...getAutomationConfig(accessKey),
+      params: { recent_limit: recentLimit },
+    }
+  );
+}
+
+export function processGen4CopyabilityQueue(accessKey, batchSize = 20) {
+  return api.post(
+    `${GEN4_COPYABILITY_BASE}/process`,
+    {
+      confirmation: "PROCESS_GEN4_COPYABILITY_QUEUE",
+      batch_size: batchSize,
+      observed_at: null,
+    },
+    getAutomationConfig(accessKey)
+  );
+}

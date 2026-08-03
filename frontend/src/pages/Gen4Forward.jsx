@@ -6,6 +6,7 @@ import {
 } from "react";
 
 import Gen4ForwardEquityChart from "../components/gen4Forward/Gen4ForwardEquityChart";
+import Gen4CopyabilityPanel from "../components/gen4Forward/Gen4CopyabilityPanel";
 import Gen4ForwardLaneCard from "../components/gen4Forward/Gen4ForwardLaneCard";
 import Gen4ForwardFeedPanel from "../components/gen4Forward/Gen4ForwardFeedPanel";
 import Gen4ForwardMetric from "../components/gen4Forward/Gen4ForwardMetric";
@@ -28,6 +29,7 @@ import {
   shortenGen4Address,
 } from "../components/gen4Forward/gen4ForwardFormatters";
 import {
+  getGen4CopyabilityStatus,
   getGen4ForwardCampaign,
   getGen4ForwardFeedStatus,
   getGen4ForwardStatus,
@@ -143,6 +145,7 @@ function Gen4Forward() {
   const [status, setStatus] = useState(null);
   const [campaign, setCampaign] = useState(null);
   const [feed, setFeed] = useState(null);
+  const [copyability, setCopyability] = useState(null);
   const [connecting, setConnecting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [cycleBusy, setCycleBusy] = useState(false);
@@ -161,6 +164,7 @@ function Gen4Forward() {
     setStatus(null);
     setCampaign(null);
     setFeed(null);
+    setCopyability(null);
     setError(reason);
   }, []);
 
@@ -194,6 +198,9 @@ function Gen4Forward() {
 
         const feedResponse = await getGen4ForwardFeedStatus(key);
         setFeed(feedResponse.data);
+
+        const copyabilityResponse = await getGen4CopyabilityStatus(key, 100);
+        setCopyability(copyabilityResponse.data);
 
         const campaignId =
           nextStatus.active_campaign_id ||
@@ -442,8 +449,10 @@ function Gen4Forward() {
             <span>API: {status?.policy_version ?? "N/D"}</span>
             <span>Runtime shadow: {status?.enabled ? "ON" : "OFF"}</span>
             <span>Feed automatico: {feed?.worker_running ? "RUNNING" : "STOPPED"}</span>
-            <span>Polling: {feed?.state?.interval_seconds ?? 0}s</span>
-            <span>Helius controllato / nessun paper / LIVE</span>
+            <span>Polling: {feed?.state?.interval_seconds ?? 0}s (recovery only)</span>
+            <span>Real-time: {copyability?.worker_running ? "RUNNING" : "STOPPED"}</span>
+            <span>Webhook: {copyability?.campaign?.webhook?.status ?? "N/D"}</span>
+            <span>Stato sicurezza: nessun paper / LIVE</span>
           </div>
         </div>
       </header>
@@ -477,6 +486,8 @@ function Gen4Forward() {
           </section>
         ) : (
           <>
+            <Gen4CopyabilityPanel status={copyability} />
+
             <Gen4ForwardFeedPanel feed={feed} />
 
             <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-6">

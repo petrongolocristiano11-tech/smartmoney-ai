@@ -1,0 +1,125 @@
+SMARTMONEY AI M58-M60 PACKAGE VALIDATION
+Generated: 2026-08-03
+
+STATIC/PACKAGE VALIDATION
+- Python compilation of new model/service/runtime/worker/migration/scripts: PASS
+- Targeted backend and frontend contract tests: 17 passed
+- No Jupiter execute_order call in M58-M60 service: PASS
+- No signer/private-key import in M58-M60 runtime path: PASS
+- Recovery-only evidence excluded by test: PASS
+- Native SOL plus existing WSOL base-delta reconstruction: PASS
+- Unrelated Helius webhooks preserved by default: PASS
+- Webhook idempotency and late-recovery non-promotion: PASS
+- Worker DB lease and retry ceiling: PASS
+- Frontend component/API/page wiring: PASS
+
+ENVIRONMENT LIMITATIONS OF PACKAGE BUILD CONTAINER
+- The reconstructed build container does not contain the optional/native `solders`
+  dependency required by older live-trading modules, so importing the complete FastAPI
+  application and running the historical full suite was not possible in the build container.
+- The user project requirements and the deployed Railway image include solders==0.28.0.
+- The installer therefore treats both the complete pytest suite and OpenAPI verifier as
+  mandatory local gates and aborts with a full file/database rollback if either fails.
+- The frontend package registry was unavailable in the build container. The installer runs
+  the existing local Node.js/npm installation and requires `npm run build` to succeed before
+  any Railway deployment.
+
+MANDATORY INSTALL-TIME GATES
+- compileall
+- targeted M47/M52-M57/M58-M60 tests
+- complete pytest suite
+- Vite production build
+- Alembic single-head verification
+- PostgreSQL upgrade/downgrade/upgrade roundtrip
+- M52-M53 active campaign preservation
+- OpenAPI route and safety verifier
+- Railway backend healthcheck
+- Helius webhook active/configured on exactly two frozen wallets
+- Real-time campaign independent anchor
+- zero signer/signed/submitted/paper/live side effects
+
+No full-suite pass count is claimed until the installer executes successfully on C:\smartmoney-ai.
+
+V2 SECURE SECRET HANDOFF VALIDATION
+- Root cause isolated before repository mutation: PASS
+- Read-Host -AsSecureString removed; masked paste dialog used: PASS
+- Masked paste dialog -> SecureString -> zeroed BSTR conversion: PASS
+- Child-only ProcessStartInfo environment; no secret command-line argument: PASS
+- Python consumes variables with os.environ.pop before any subprocess: PASS
+- UUID 36-character exact handoff using SHA-256 comparison: PASS
+- Leading/trailing whitespace normalization: PASS
+- Invalid one-character value rejected before repository/database/deploy operations: PASS
+- Synthetic secret absent from stdout/stderr: PASS
+- Rollback script byte-identical to V1: PASS
+
+V2 masked-dialog secret acquisition contract: PASS
+V2 child-only environment handoff and immediate cleanup contract: PASS
+V2 Helius error-path URL/key redaction contract: PASS
+
+V3 M56-M57 FRONTEND SAFETY COPY REGRESSION
+-------------------------------------------
+Observed failure reproduced from installation log:
+- tests/test_gen4_forward_feed_frontend_m56_m57.py::test_feed_safety_copy_is_explicit
+- required literal: nessun paper / LIVE
+- V2 payload literal: Nessun paper / LIVE
+
+Definitive correction:
+- dashboard literal changed to: Stato sicurezza: nessun paper / LIVE
+- M58-M60 frontend test now asserts the historical literal
+- rollback script unchanged byte-for-byte from V2
+- backend, Alembic migration, worker, webhook and Jupiter files unchanged
+
+Package-level regression validation: PASS
+Historical M56-M57 literal compatibility: PASS
+Manifest verification after archive extraction: PASS
+
+V4 POSTGRESQL EFFECTIVE URL HANDOFF
+- Root cause reproduced: Alembic loaded PostgreSQL from .env while the migration harness read only os.getenv("DATABASE_URL"), receiving an empty value.
+- Installer now resolves environment -> .env before any backup/change.
+- Redacted SELECT 1 PostgreSQL preflight added before repository mutation.
+- DATABASE_URL passed via child-process environment to Alembic upgrade/current/downgrade and migration roundtrip.
+- Migration harness independently falls back to .env and rejects non-PostgreSQL URLs.
+- Synthetic resolution tests: quoted .env URL, environment precedence, SQLite rejection: PASS.
+- Python AST/compile checks: PASS.
+- Manifest and ZIP extraction verification: PASS.
+- V3 user-side evidence retained: 55 targeted tests passed; 1301 full-suite tests passed; frontend production build passed.
+
+V5 PORTABLE TEST VALIDATION
+- V4 failure reproduced: package installer is intentionally absent from repository root.
+- Corrected test resolves scripts/test_gen4_copyability_postgresql_migration.py from the installed test file location.
+- Isolated DATABASE_URL environment/.env precedence, PostgreSQL normalization, SQLite rejection and child-process env cleanup: PASS.
+- V4 secure launcher, rollback, Alembic migration and application payload byte identity: verified during package build.
+
+V6_ADDITIONAL_GATES=ORDER_WITHOUT_TAKER_THEN_BUILD_EMPTY_WALLET; NO_EXECUTE; RUNTIME_PATH_MOCK_TEST; EARLY_PRECHECK_BEFORE_BACKUP
+
+V6 JUPITER BALANCE-INDEPENDENT RUNTIME CORRECTION
+- User-side V5 evidence: 56 targeted tests passed; 1302 full-suite tests passed; Vite production build passed; PostgreSQL upgrade/downgrade/upgrade passed; OpenAPI/safety verifier passed.
+- V5 failure reproduced: /order with a generated empty taker returned Insufficient funds.
+- Independent live precheck on the user's Windows environment: /order without taker PASS; /build with empty random public wallet PASS; no signature; no /execute.
+- Exact V6 client method mock: order -> build only, no taker on order, taker+mode=fast on build: PASS.
+- Exact V6 service runtime path mock: PASS.
+- Existing Jupiter client regression suite from reconstructed baseline: 3 passed.
+- Fake-client compatibility path retained for existing M58-M60 tests: PASS.
+- Secure Helius handoff self-test with synthetic UUID and output leak scan: PASS.
+- Package-contained Jupiter precheck self-test and early-gate ordering before backup: PASS.
+- Full V6 suite, migration roundtrip, OpenAPI, live Jupiter runtime path and Railway gates remain mandatory installer-time checks.
+
+V7 GIT WHITESPACE CORRECTION
+- Exact V6 failure reproduced from package bytes: backend/app/services/jupiter_swap_client.py:854 had one trailing ASCII space.
+- Exact line corrected; Python AST equivalence with V6: PASS.
+- Package-wide UTF-8 trailing-whitespace scan: PASS.
+- Synthetic working-tree `git diff --check` against V5 payload: PASS.
+- Synthetic staged `git diff --cached --check` for the complete V7 payload: PASS.
+- Installer pre-mutation package text hygiene gate: PASS.
+- V6 secure launcher, Jupiter live precheck, Alembic migration and rollback byte identity: PASS.
+- Exact-baseline sandbox gate implemented before backup/mutation: git archive HEAD -> temporary Git repository -> full payload -> head patches -> worktree check -> staged check.
+- Git local whitespace/autocrlf settings copied into sandbox: PASS.
+
+V8 EOF AND EXACT-BASELINE GIT CORRECTION
+- Exact V7 failure reproduced: backend/app/main.py ended with two LF bytes and Git reported `new blank line at EOF`.
+- All package text artifacts normalized to exactly one LF terminal newline and no trailing spaces/tabs.
+- V7 versus V8 application Python AST equivalence: PASS.
+- Package hygiene detects double EOF newline, missing newline, CRLF and trailing whitespace: PASS.
+- Exact main.py EOF regression repository: V7 rejected, V8 worktree check PASS, V8 staged check PASS.
+- Full payload synthetic Windows-style core.autocrlf=true worktree/staged/commit checks: PASS.
+- V7 launcher, rollback, migration and Jupiter live precheck byte identity: PASS.

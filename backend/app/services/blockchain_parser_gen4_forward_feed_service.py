@@ -17,6 +17,9 @@ from backend.app.services.blockchain_parser_gen4_forward_shadow_service import (
     GEN4_FORWARD_CYCLE_CONFIRMATION,
     run_gen4_forward_cycle,
 )
+from backend.app.services.blockchain_parser_gen4_copyability_service import (
+    record_gen4_copyability_recovery_events,
+)
 from backend.app.services.discovery_hydration_service import save_wallet_history_transactions
 from backend.app.services.helius import HeliusRequestError, get_wallet_history
 from backend.app.services.wallet_activity_service import ensure_aware
@@ -587,8 +590,20 @@ def run_gen4_forward_feed_poll(
         "trades_imported": 0,
         "trades_updated": 0,
         "parse_failures": 0,
+        "copyability_recovery_created": 0,
+        "copyability_recovery_existing": 0,
+        "copyability_recovery_ignored": 0,
     }
     for wallet in wallets:
+        recovery = record_gen4_copyability_recovery_events(
+            db,
+            wallet_address=wallet,
+            transactions=filtered_by_wallet.get(wallet, []),
+            observed_at=observed,
+        )
+        counters["copyability_recovery_created"] += int(recovery["created"])
+        counters["copyability_recovery_existing"] += int(recovery["existing"])
+        counters["copyability_recovery_ignored"] += int(recovery["ignored"])
         saved = save_wallet_history_transactions(
             db,
             wallet_address=wallet,
@@ -647,6 +662,12 @@ def run_gen4_forward_feed_poll(
             "observed_at": observed.isoformat(),
             "invalid_time_filtered": invalid_time_filtered,
             "maximum_ingestion_lag_seconds": max_lag_seconds,
+            "copyability_recovery": {
+                "created": counters["copyability_recovery_created"],
+                "existing": counters["copyability_recovery_existing"],
+                "ignored": counters["copyability_recovery_ignored"],
+                "counted_as_realtime": False,
+            },
         },
         safety=_safety(requests_used),
         started_at=state.last_poll_started_at or observed,

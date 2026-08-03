@@ -448,6 +448,36 @@ class CanonicalParserGen4ForwardFeedPollRequest(BaseModel):
 # END M56-M57 GEN4 FORWARD AUTOMATIC FEED
 
 
+# BEGIN M58-M60 GEN4 REAL-TIME COPYABILITY
+class CanonicalParserGen4CopyabilityStartRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=320)
+    anchor_at: datetime | None = None
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CanonicalParserGen4CopyabilityStopRequest(BaseModel):
+    campaign_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=320)
+    observed_at: datetime | None = None
+
+
+class CanonicalParserGen4CopyabilityWebhookConfigureRequest(BaseModel):
+    campaign_id: str = Field(min_length=36, max_length=36)
+    confirmation: str = Field(default="", max_length=320)
+    webhook_id: str = Field(min_length=1, max_length=80)
+    webhook_url: str = Field(min_length=8, max_length=500)
+    active: bool = True
+    observed_at: datetime | None = None
+
+
+class CanonicalParserGen4CopyabilityProcessRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=320)
+    batch_size: int | None = Field(default=None, ge=1, le=100)
+    observed_at: datetime | None = None
+# END M58-M60 GEN4 REAL-TIME COPYABILITY
+
+
 class CanonicalParserPermitBoundPaperExecutionRequest(BaseModel):
     permit_id: str = Field(min_length=36, max_length=36)
     decision_result_id: str = Field(min_length=36, max_length=36)
