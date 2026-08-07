@@ -456,6 +456,15 @@ class CanonicalParserGen4CopyabilityStartRequest(BaseModel):
     note: str | None = Field(default=None, max_length=500)
 
 
+class CanonicalParserGen4QualifiedCandidateStartRequest(BaseModel):
+    confirmation: str = Field(default="", max_length=320)
+    candidate_wallets: list[str] = Field(min_length=1, max_length=20)
+    selection_snapshot: dict = Field(default_factory=dict)
+    anchor_at: datetime | None = None
+    actor_label: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+
 class CanonicalParserGen4CopyabilityStopRequest(BaseModel):
     campaign_id: str = Field(min_length=36, max_length=36)
     confirmation: str = Field(default="", max_length=320)

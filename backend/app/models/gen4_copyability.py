@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -28,6 +29,14 @@ class CanonicalParserGen4CopyabilityCampaign(Base):
         CheckConstraint(
             "status IN ('ACTIVE','PAUSED','COMPLETED','FAILED')",
             name="ck_gen4_copy_campaign_status",
+        ),
+        CheckConstraint(
+            "campaign_role IN ('PRIMARY_FORWARD','QUALIFIED_CANDIDATE')",
+            name="ck_gen4_copy_campaign_role",
+        ),
+        CheckConstraint(
+            "length(candidate_key) = 64",
+            name="ck_gen4_copy_campaign_candidate_key",
         ),
         CheckConstraint(
             "verdict IN ('COLLECTING','NOT_EVALUABLE','NEGATIVE_EVIDENCE','PROMISING_NOT_PROVEN','PROFITABLE_EVIDENCE')",
@@ -56,11 +65,16 @@ class CanonicalParserGen4CopyabilityCampaign(Base):
             name="ck_gen4_copy_campaign_counts",
         ),
         UniqueConstraint("campaign_id", name="uq_gen4_copy_campaign_id"),
-        UniqueConstraint(
+        UniqueConstraint("candidate_key", name="uq_gen4_copy_campaign_candidate_key"),
+        Index(
+            "uq_gen4_copy_primary_forward",
             "forward_campaign_db_id",
-            name="uq_gen4_copy_campaign_forward",
+            unique=True,
+            postgresql_where=text("campaign_role = 'PRIMARY_FORWARD'"),
+            sqlite_where=text("campaign_role = 'PRIMARY_FORWARD'"),
         ),
         Index("ix_gen4_copy_campaign_status_anchor", "status", "anchor_at"),
+        Index("ix_gen4_copy_campaign_role_status", "campaign_role", "status"),
         Index("ix_gen4_copy_campaign_verdict_updated", "verdict", "updated_at"),
     )
 
@@ -75,11 +89,14 @@ class CanonicalParserGen4CopyabilityCampaign(Base):
         nullable=False,
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False)
+    campaign_role: Mapped[str] = mapped_column(String(32), nullable=False)
+    candidate_key: Mapped[str] = mapped_column(String(64), nullable=False)
     verdict: Mapped[str] = mapped_column(String(40), nullable=False)
     policy_version: Mapped[str] = mapped_column(String(120), nullable=False)
     policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     policy_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     frozen_wallets: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    selection_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
     anchor_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     minimum_complete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

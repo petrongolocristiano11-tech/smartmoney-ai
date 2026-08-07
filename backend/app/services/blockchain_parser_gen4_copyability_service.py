@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 import statistics
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -38,6 +39,11 @@ GEN4_COPYABILITY_START_CONFIRMATION = "START_GEN4_REALTIME_COPYABILITY"
 GEN4_COPYABILITY_STOP_CONFIRMATION = "STOP_GEN4_REALTIME_COPYABILITY"
 GEN4_COPYABILITY_PROCESS_CONFIRMATION = "PROCESS_GEN4_COPYABILITY_QUEUE"
 GEN4_COPYABILITY_WEBHOOK_CONFIRMATION = "CONFIGURE_GEN4_COPYABILITY_WEBHOOK"
+GEN4_QUALIFIED_CANDIDATE_START_CONFIRMATION = "START_GEN4_QUALIFIED_CANDIDATE_COPYABILITY"
+
+CAMPAIGN_ROLE_PRIMARY = "PRIMARY_FORWARD"
+CAMPAIGN_ROLE_CANDIDATE = "QUALIFIED_CANDIDATE"
+SOLANA_ADDRESS_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 
 SOURCE_WEBHOOK = "WEBHOOK"
 SOURCE_RECOVERY = "RECOVERY_ONLY"
@@ -224,10 +230,14 @@ def _policy_snapshot() -> dict[str, Any]:
     return snapshot
 
 
-def _safety() -> dict[str, Any]:
+def _safety(*, campaign_role: str = CAMPAIGN_ROLE_PRIMARY) -> dict[str, Any]:
     return {
         "scope": "GEN4_REALTIME_COPYABILITY_SHADOW",
-        "wallets": "FROZEN_FORWARD_CAMPAIGN_ONLY",
+        "wallets": (
+            "FROZEN_FORWARD_CAMPAIGN_ONLY"
+            if campaign_role == CAMPAIGN_ROLE_PRIMARY
+            else "RIGIDLY_VERIFIED_QUALIFIED_CANDIDATE_SET"
+        ),
         "helius_webhook": "RAW_CONFIRMED",
         "jupiter": "QUOTE_AND_UNSIGNED_BUILD_ONLY",
         "signer_access": False,
@@ -256,24 +266,106 @@ def _active_forward_campaign(db: Session) -> CanonicalParserGen4ForwardCampaign:
     return row
 
 
-def _active_copyability_campaign(
+def _active_copyability_campaigns(
+    db: Session,
+) -> list[CanonicalParserGen4CopyabilityCampaign]:
+    return list(
+        db.scalars(
+            select(CanonicalParserGen4CopyabilityCampaign)
+            .where(CanonicalParserGen4CopyabilityCampaign.status == "ACTIVE")
+            .order_by(
+                CanonicalParserGen4CopyabilityCampaign.started_at.asc(),
+                CanonicalParserGen4CopyabilityCampaign.id.asc(),
+            )
+        )
+    )
+
+
+def _campaign_by_id(
+    db: Session,
+    campaign_id: str,
+    *,
+    active_required: bool = False,
+) -> CanonicalParserGen4CopyabilityCampaign:
+    row = db.scalar(
+        select(CanonicalParserGen4CopyabilityCampaign).where(
+            CanonicalParserGen4CopyabilityCampaign.campaign_id == str(campaign_id).strip()
+        )
+    )
+    if row is None:
+        raise CanonicalParserGen4CopyabilityError(
+            "Campagna Gen4 copyability non trovata.",
+            code="GEN4_COPYABILITY_CAMPAIGN_NOT_FOUND",
+            status_code=404,
+        )
+    if active_required and row.status != "ACTIVE":
+        raise CanonicalParserGen4CopyabilityError(
+            "La campagna Gen4 copyability non è attiva.",
+            code="GEN4_COPYABILITY_CAMPAIGN_NOT_ACTIVE",
+            status_code=409,
+        )
+    return row
+
+
+def _primary_copyability_campaign(
     db: Session,
     *,
     required: bool = True,
 ) -> CanonicalParserGen4CopyabilityCampaign | None:
     row = db.scalar(
         select(CanonicalParserGen4CopyabilityCampaign)
-        .where(CanonicalParserGen4CopyabilityCampaign.status == "ACTIVE")
-        .order_by(desc(CanonicalParserGen4CopyabilityCampaign.anchor_at))
+        .where(
+            CanonicalParserGen4CopyabilityCampaign.status == "ACTIVE",
+            CanonicalParserGen4CopyabilityCampaign.campaign_role == CAMPAIGN_ROLE_PRIMARY,
+        )
+        .order_by(CanonicalParserGen4CopyabilityCampaign.id.asc())
         .limit(1)
     )
     if row is None and required:
         raise CanonicalParserGen4CopyabilityError(
-            "Nessuna campagna Gen4 copyability attiva.",
-            code="GEN4_COPYABILITY_CAMPAIGN_REQUIRED",
+            "Nessuna campagna Gen4 copyability primaria attiva.",
+            code="GEN4_COPYABILITY_PRIMARY_CAMPAIGN_REQUIRED",
             status_code=409,
         )
     return row
+
+
+def _normalize_candidate_wallets(wallets: Iterable[str]) -> list[str]:
+    normalized = sorted({str(wallet or "").strip() for wallet in wallets if str(wallet or "").strip()})
+    if not normalized or len(normalized) > 20:
+        raise CanonicalParserGen4CopyabilityError(
+            "Servono da 1 a 20 wallet candidati univoci.",
+            code="GEN4_QUALIFIED_CANDIDATE_WALLET_COUNT_INVALID",
+        )
+    invalid = [wallet for wallet in normalized if SOLANA_ADDRESS_RE.fullmatch(wallet) is None]
+    if invalid:
+        raise CanonicalParserGen4CopyabilityError(
+            "Uno o più wallet candidati non hanno un formato Solana valido.",
+            code="GEN4_QUALIFIED_CANDIDATE_WALLET_INVALID",
+        )
+    return normalized
+
+
+def _validate_selection_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    value = dict(snapshot or {})
+    required_passes = (
+        "activity_gate",
+        "buy_sell_parsing",
+        "quality_gate",
+        "observed_profitability",
+        "gen4_copyability",
+    )
+    missing = [name for name in required_passes if str(value.get(name) or "").upper() != "PASS"]
+    if missing:
+        raise CanonicalParserGen4CopyabilityError(
+            "Selection snapshot incompleto: " + ", ".join(missing),
+            code="GEN4_QUALIFIED_CANDIDATE_SELECTION_NOT_PROVEN",
+            status_code=409,
+        )
+    value["validated_by"] = "M61_RIGID_QUALIFIED_CANDIDATE_GATE"
+    value["historical_evidence_only"] = True
+    value["forward_proof_starts_at_webhook_activation"] = True
+    return value
 
 
 def start_gen4_copyability_campaign(
@@ -299,7 +391,8 @@ def start_gen4_copyability_campaign(
     forward = _active_forward_campaign(db)
     existing = db.scalar(
         select(CanonicalParserGen4CopyabilityCampaign).where(
-            CanonicalParserGen4CopyabilityCampaign.forward_campaign_db_id == forward.id
+            CanonicalParserGen4CopyabilityCampaign.forward_campaign_db_id == forward.id,
+            CanonicalParserGen4CopyabilityCampaign.campaign_role == CAMPAIGN_ROLE_PRIMARY,
         )
     )
     if existing is not None:
@@ -315,15 +408,29 @@ def start_gen4_copyability_campaign(
     observed = max(_aware(anchor_at), _aware(forward.anchor_at))
     policy = _policy_snapshot()
     minimum_days = int(policy["minimum_observation_days"])
+    frozen_wallets = list(forward.frozen_wallets or [])
+    candidate_key = _canonical_hash(
+        {
+            "campaign_role": CAMPAIGN_ROLE_PRIMARY,
+            "forward_campaign_id": forward.campaign_id,
+            "frozen_wallets": sorted(str(item) for item in frozen_wallets),
+        }
+    )
     row = CanonicalParserGen4CopyabilityCampaign(
         campaign_id=str(uuid4()),
         forward_campaign_db_id=forward.id,
         status="ACTIVE",
+        campaign_role=CAMPAIGN_ROLE_PRIMARY,
+        candidate_key=candidate_key,
         verdict="COLLECTING",
         policy_version=GEN4_COPYABILITY_POLICY_VERSION,
         policy_hash=_canonical_hash(policy),
         policy_snapshot=policy,
-        frozen_wallets=list(forward.frozen_wallets or []),
+        frozen_wallets=frozen_wallets,
+        selection_snapshot={
+            "source": "M52_M53_FORWARD_FROZEN_WALLETS",
+            "forward_campaign_id": forward.campaign_id,
+        },
         anchor_at=observed,
         minimum_complete_at=observed + timedelta(days=minimum_days),
         latest_observed_at=observed,
@@ -349,7 +456,7 @@ def start_gen4_copyability_campaign(
         last_webhook_at=None,
         metrics={},
         evidence_gaps=["WEBHOOK_NOT_CONFIGURED"],
-        safety=_safety(),
+        safety=_safety(campaign_role=CAMPAIGN_ROLE_PRIMARY),
         actor_label=(actor_label or "SYSTEM")[:80],
         note=_safe_message(note, 500) or None,
         technical_metadata={
@@ -364,6 +471,172 @@ def start_gen4_copyability_campaign(
     return _serialize_campaign(db, row)
 
 
+
+def start_gen4_qualified_candidate_campaign(
+    db: Session,
+    *,
+    confirmation: str,
+    candidate_wallets: Iterable[str],
+    selection_snapshot: dict[str, Any],
+    actor_label: str | None = None,
+    note: str | None = None,
+    anchor_at: datetime | None = None,
+) -> dict[str, Any]:
+    if not bool(getattr(settings, "CANONICAL_PARSER_GEN4_COPYABILITY_ENABLED", False)):
+        raise CanonicalParserGen4CopyabilityError(
+            "La validazione real-time copyability è disabilitata.",
+            code="GEN4_COPYABILITY_DISABLED",
+            status_code=409,
+        )
+    if str(confirmation or "").strip() != GEN4_QUALIFIED_CANDIDATE_START_CONFIRMATION:
+        raise CanonicalParserGen4CopyabilityError(
+            f"Conferma richiesta: {GEN4_QUALIFIED_CANDIDATE_START_CONFIRMATION}",
+            code="GEN4_QUALIFIED_CANDIDATE_CONFIRMATION_REQUIRED",
+        )
+
+    primary = _primary_copyability_campaign(db)
+    assert primary is not None
+    forward = db.get(
+        CanonicalParserGen4ForwardCampaign,
+        primary.forward_campaign_db_id,
+    )
+    if forward is None or forward.status != "ACTIVE":
+        raise CanonicalParserGen4CopyabilityError(
+            "La campagna forward collegata alla copyability primaria non è attiva.",
+            code="GEN4_QUALIFIED_CANDIDATE_PRIMARY_FORWARD_REQUIRED",
+            status_code=409,
+        )
+    wallets = _normalize_candidate_wallets(candidate_wallets)
+    snapshot = _validate_selection_snapshot(selection_snapshot)
+
+    policy = _policy_snapshot()
+    active_campaigns = _active_copyability_campaigns(db)
+
+    # POST retries are idempotent by candidate wallet set while the run is ACTIVE.
+    # Once a candidate run is archived, a future explicit start creates a fresh
+    # immutable run (new candidate_key/anchor) instead of resurrecting old proof.
+    same_active = next(
+        (
+            campaign
+            for campaign in active_campaigns
+            if campaign.campaign_role == CAMPAIGN_ROLE_CANDIDATE
+            and campaign.forward_campaign_db_id == forward.id
+            and sorted(str(item) for item in (campaign.frozen_wallets or [])) == wallets
+        ),
+        None,
+    )
+    if same_active is not None:
+        _refresh_campaign_metrics(db, same_active, observed_at=_aware(anchor_at))
+        return _serialize_campaign(db, same_active) | {"idempotent_replay": True}
+
+    occupied_wallets = {
+        str(wallet)
+        for campaign in active_campaigns
+        for wallet in (campaign.frozen_wallets or [])
+    }
+    overlap = sorted(set(wallets) & occupied_wallets)
+    if overlap:
+        raise CanonicalParserGen4CopyabilityError(
+            "I wallet candidati non possono duplicare wallet già monitorati da campagne attive.",
+            code="GEN4_QUALIFIED_CANDIDATE_OVERLAPS_ACTIVE_CAMPAIGN",
+            status_code=409,
+        )
+
+    historical_candidates = list(
+        db.scalars(
+            select(CanonicalParserGen4CopyabilityCampaign).where(
+                CanonicalParserGen4CopyabilityCampaign.forward_campaign_db_id == forward.id,
+                CanonicalParserGen4CopyabilityCampaign.campaign_role == CAMPAIGN_ROLE_CANDIDATE,
+            )
+        )
+    )
+    run_sequence = sum(
+        1
+        for campaign in historical_candidates
+        if sorted(str(item) for item in (campaign.frozen_wallets or [])) == wallets
+    )
+    selection_fingerprint = _canonical_hash(
+        {
+            "forward_campaign_id": forward.campaign_id,
+            "frozen_wallets": wallets,
+            "policy_hash": _canonical_hash(policy),
+            "selection_snapshot": snapshot,
+        }
+    )
+    candidate_key = _canonical_hash(
+        {
+            "campaign_role": CAMPAIGN_ROLE_CANDIDATE,
+            "selection_fingerprint": selection_fingerprint,
+            "run_sequence": run_sequence,
+        }
+    )
+
+    observed = max(_aware(anchor_at), _aware(forward.anchor_at))
+    minimum_days = int(policy["minimum_observation_days"])
+    row = CanonicalParserGen4CopyabilityCampaign(
+        campaign_id=str(uuid4()),
+        forward_campaign_db_id=forward.id,
+        status="ACTIVE",
+        campaign_role=CAMPAIGN_ROLE_CANDIDATE,
+        candidate_key=candidate_key,
+        verdict="COLLECTING",
+        policy_version=GEN4_COPYABILITY_POLICY_VERSION,
+        policy_hash=_canonical_hash(policy),
+        policy_snapshot=policy,
+        frozen_wallets=wallets,
+        selection_snapshot=snapshot,
+        anchor_at=observed,
+        minimum_complete_at=observed + timedelta(days=minimum_days),
+        latest_observed_at=observed,
+        started_at=observed,
+        completed_at=None,
+        minimum_observation_days=minimum_days,
+        minimum_closed_trades=int(policy["minimum_closed_trades"]),
+        proof_closed_trades=int(policy["proof_closed_trades"]),
+        simulated_input_lamports=int(policy["simulated_input_lamports"]),
+        slippage_bps=int(policy["slippage_bps"]),
+        max_signal_age_ms=int(policy["max_signal_age_ms"]),
+        max_quote_latency_ms=int(policy["max_quote_latency_ms"]),
+        max_price_impact_bps=int(policy["max_price_impact_bps"]),
+        max_price_deterioration_bps=int(policy["max_price_deterioration_bps"]),
+        estimated_network_fee_lamports=int(policy["estimated_network_fee_lamports"]),
+        minimum_webhook_coverage_percent=float(policy["minimum_webhook_coverage_percent"]),
+        minimum_profit_factor=float(policy["minimum_profit_factor"]),
+        maximum_drawdown_percent=float(policy["maximum_drawdown_percent"]),
+        webhook_id=None,
+        webhook_status="NOT_CONFIGURED",
+        webhook_url=None,
+        webhook_configured_at=None,
+        last_webhook_at=None,
+        metrics={},
+        evidence_gaps=["WEBHOOK_NOT_CONFIGURED"],
+        safety=_safety(campaign_role=CAMPAIGN_ROLE_CANDIDATE),
+        actor_label=(actor_label or "M61_QUALIFIED_CANDIDATE")[:80],
+        note=_safe_message(note, 500) or None,
+        technical_metadata={
+            "forward_campaign_id": forward.campaign_id,
+            "forward_anchor_at": _aware(forward.anchor_at).isoformat(),
+            "primary_copyability_campaign_id": primary.campaign_id,
+            "parallel_isolation": True,
+            "selection_fingerprint": selection_fingerprint,
+            "candidate_run_sequence": run_sequence,
+            "historical_selection_evidence_not_counted_as_forward_proof": True,
+        },
+    )
+    db.add(row)
+    try:
+        db.flush()
+    except IntegrityError as exception:
+        raise CanonicalParserGen4CopyabilityError(
+            "Conflitto durante la creazione della campagna candidata.",
+            code="GEN4_QUALIFIED_CANDIDATE_PERSISTENCE_CONFLICT",
+            status_code=409,
+        ) from exception
+    _ensure_worker_state(db)
+    _refresh_campaign_metrics(db, row, observed_at=observed)
+    return _serialize_campaign(db, row) | {"idempotent_replay": False}
+
+
 def stop_gen4_copyability_campaign(
     db: Session,
     *,
@@ -376,14 +649,7 @@ def stop_gen4_copyability_campaign(
             f"Conferma richiesta: {GEN4_COPYABILITY_STOP_CONFIRMATION}",
             code="GEN4_COPYABILITY_STOP_CONFIRMATION_REQUIRED",
         )
-    campaign = _active_copyability_campaign(db)
-    assert campaign is not None
-    if campaign.campaign_id != campaign_id:
-        raise CanonicalParserGen4CopyabilityError(
-            "La campagna richiesta non è quella attiva.",
-            code="GEN4_COPYABILITY_CAMPAIGN_MISMATCH",
-            status_code=409,
-        )
+    campaign = _campaign_by_id(db, campaign_id, active_required=True)
     observed = _aware(observed_at)
     _refresh_campaign_metrics(db, campaign, observed_at=observed)
     campaign.status = "COMPLETED"
@@ -407,14 +673,7 @@ def configure_gen4_copyability_webhook(
             f"Conferma richiesta: {GEN4_COPYABILITY_WEBHOOK_CONFIRMATION}",
             code="GEN4_COPYABILITY_WEBHOOK_CONFIRMATION_REQUIRED",
         )
-    campaign = _active_copyability_campaign(db)
-    assert campaign is not None
-    if campaign.campaign_id != campaign_id:
-        raise CanonicalParserGen4CopyabilityError(
-            "La campagna richiesta non è quella attiva.",
-            code="GEN4_COPYABILITY_CAMPAIGN_MISMATCH",
-            status_code=409,
-        )
+    campaign = _campaign_by_id(db, campaign_id, active_required=True)
     observed = _aware(observed_at)
     realtime_receipt_count = int(
         db.scalar(
@@ -556,15 +815,21 @@ def receive_gen4_copyability_webhook(
     payload: Any,
     received_at: datetime | None = None,
 ) -> dict[str, Any]:
-    campaign = _active_copyability_campaign(db, required=False)
-    if campaign is None:
-        return {"accepted": 0, "duplicates": 0, "ignored": 0, "reason": "NO_ACTIVE_CAMPAIGN"}
+    campaigns = _active_copyability_campaigns(db)
+    if not campaigns:
+        return {
+            "accepted": 0,
+            "duplicates": 0,
+            "ignored": 0,
+            "campaigns_touched": [],
+            "reason": "NO_ACTIVE_CAMPAIGN",
+        }
     observed = _aware(received_at)
     events = payload if isinstance(payload, list) else [payload]
     accepted = 0
     duplicates = 0
     ignored = 0
-    wallets = [str(item) for item in (campaign.frozen_wallets or []) if str(item).strip()]
+    touched: set[str] = set()
 
     for item in events:
         if not isinstance(item, dict):
@@ -574,91 +839,109 @@ def receive_gen4_copyability_webhook(
         if not signature:
             ignored += 1
             continue
-        matched = _matched_wallets(item, wallets)
-        if not matched:
-            ignored += 1
-            continue
-        existing = db.scalar(
-            select(CanonicalParserGen4WebhookReceipt).where(
-                CanonicalParserGen4WebhookReceipt.campaign_db_id == campaign.id,
-                CanonicalParserGen4WebhookReceipt.signature == signature,
-            )
-        )
-        if existing is not None:
-            existing.delivery_count += 1
-            existing.last_received_at = observed
-            if existing.source == SOURCE_WEBHOOK:
-                existing.raw_payload = _compact_raw_payload(item)
-                existing.event_hash = _canonical_hash(item)
-            else:
-                summary = dict(existing.parsed_summary or {})
-                summary["late_webhook_received_at"] = observed.isoformat()
-                summary["late_webhook_event_hash"] = _canonical_hash(item)
-                existing.parsed_summary = summary
-            duplicates += 1
-            continue
-
+        event_matched = False
+        event_hash = _canonical_hash(item)
+        compact_payload = _compact_raw_payload(item)
         block_time = _timestamp(item.get("blockTime"))
         slot_value = item.get("slot")
         try:
             slot = int(slot_value) if slot_value is not None else None
         except (TypeError, ValueError):
             slot = None
-        row = CanonicalParserGen4WebhookReceipt(
-            receipt_id=str(uuid4()),
-            campaign_db_id=campaign.id,
-            signature=signature,
-            event_hash=_canonical_hash(item),
-            source=SOURCE_WEBHOOK,
-            status=RECEIPT_RECEIVED,
-            auth_verified=True,
-            wallet_address=matched[0],
-            matched_wallets=matched,
-            slot=slot,
-            block_time=block_time,
-            received_at=observed,
-            first_received_at=observed,
-            last_received_at=observed,
-            delivery_count=1,
-            processing_attempts=0,
-            raw_payload=_compact_raw_payload(item),
-            parsed_summary={
-                "payload_storage": "REPLAY_SUBSET_V1",
-            },
-        )
-        try:
-            # A savepoint prevents one concurrent duplicate delivery from
-            # rolling back earlier accepted events in the same webhook batch.
-            with db.begin_nested():
-                db.add(row)
-                db.flush()
-            accepted += 1
-        except IntegrityError:
-            raced = db.scalar(
+
+        for campaign in campaigns:
+            wallets = [
+                str(value).strip()
+                for value in (campaign.frozen_wallets or [])
+                if str(value).strip()
+            ]
+            matched = _matched_wallets(item, wallets)
+            if not matched:
+                continue
+            event_matched = True
+            touched.add(campaign.campaign_id)
+            existing = db.scalar(
                 select(CanonicalParserGen4WebhookReceipt).where(
                     CanonicalParserGen4WebhookReceipt.campaign_db_id == campaign.id,
                     CanonicalParserGen4WebhookReceipt.signature == signature,
                 )
             )
-            if raced is not None:
-                raced.delivery_count += 1
-                raced.last_received_at = observed
-            duplicates += 1
+            if existing is not None:
+                existing.delivery_count += 1
+                existing.last_received_at = observed
+                if existing.source == SOURCE_WEBHOOK:
+                    existing.raw_payload = compact_payload
+                    existing.event_hash = event_hash
+                else:
+                    summary = dict(existing.parsed_summary or {})
+                    summary["late_webhook_received_at"] = observed.isoformat()
+                    summary["late_webhook_event_hash"] = event_hash
+                    existing.parsed_summary = summary
+                campaign.duplicate_receipt_count = max(
+                    0, int(campaign.duplicate_receipt_count or 0)
+                ) + 1
+                duplicates += 1
+                continue
 
-    campaign.last_webhook_at = observed
-    campaign.latest_observed_at = max(_aware(campaign.latest_observed_at), observed)
-    # Keep the public webhook path O(batch size): full metrics are refreshed by
-    # the one-second queue worker, not before the Helius acknowledgement.
-    campaign.receipt_count = max(0, int(campaign.receipt_count or 0)) + accepted
-    campaign.duplicate_receipt_count = (
-        max(0, int(campaign.duplicate_receipt_count or 0)) + duplicates
-    )
+            row = CanonicalParserGen4WebhookReceipt(
+                receipt_id=str(uuid4()),
+                campaign_db_id=campaign.id,
+                signature=signature,
+                event_hash=event_hash,
+                source=SOURCE_WEBHOOK,
+                status=RECEIPT_RECEIVED,
+                auth_verified=True,
+                wallet_address=matched[0],
+                matched_wallets=matched,
+                slot=slot,
+                block_time=block_time,
+                received_at=observed,
+                first_received_at=observed,
+                last_received_at=observed,
+                delivery_count=1,
+                processing_attempts=0,
+                raw_payload=compact_payload,
+                parsed_summary={
+                    "payload_storage": "REPLAY_SUBSET_V1",
+                    "campaign_role": campaign.campaign_role,
+                },
+            )
+            try:
+                with db.begin_nested():
+                    db.add(row)
+                    db.flush()
+                campaign.receipt_count = max(0, int(campaign.receipt_count or 0)) + 1
+                accepted += 1
+            except IntegrityError:
+                raced = db.scalar(
+                    select(CanonicalParserGen4WebhookReceipt).where(
+                        CanonicalParserGen4WebhookReceipt.campaign_db_id == campaign.id,
+                        CanonicalParserGen4WebhookReceipt.signature == signature,
+                    )
+                )
+                if raced is not None:
+                    raced.delivery_count += 1
+                    raced.last_received_at = observed
+                campaign.duplicate_receipt_count = max(
+                    0, int(campaign.duplicate_receipt_count or 0)
+                ) + 1
+                duplicates += 1
+
+        if not event_matched:
+            ignored += 1
+
+    for campaign in campaigns:
+        if campaign.campaign_id not in touched:
+            continue
+        campaign.last_webhook_at = observed
+        campaign.latest_observed_at = max(_aware(campaign.latest_observed_at), observed)
     db.flush()
     return {
         "accepted": accepted,
         "duplicates": duplicates,
         "ignored": ignored,
-        "campaign_id": campaign.campaign_id,
+        "campaigns_touched": sorted(touched),
+        "active_campaign_count": len(campaigns),
     }
 
 
@@ -669,65 +952,71 @@ def record_gen4_copyability_recovery_events(
     transactions: list[dict[str, Any]],
     observed_at: datetime | None = None,
 ) -> dict[str, int]:
-    campaign = _active_copyability_campaign(db, required=False)
-    if campaign is None or wallet_address not in (campaign.frozen_wallets or []):
+    campaigns = [
+        campaign
+        for campaign in _active_copyability_campaigns(db)
+        if wallet_address in (campaign.frozen_wallets or [])
+    ]
+    if not campaigns:
         return {"created": 0, "existing": 0, "ignored": len(transactions)}
     observed = _aware(observed_at)
     created = 0
     existing_count = 0
     ignored = 0
-    for item in transactions:
-        if not isinstance(item, dict):
-            ignored += 1
-            continue
-        signature = str(item.get("signature") or "").strip()[:128]
-        if not signature:
-            ignored += 1
-            continue
-        existing = db.scalar(
-            select(CanonicalParserGen4WebhookReceipt).where(
-                CanonicalParserGen4WebhookReceipt.campaign_db_id == campaign.id,
-                CanonicalParserGen4WebhookReceipt.signature == signature,
+    for campaign in campaigns:
+        for item in transactions:
+            if not isinstance(item, dict):
+                ignored += 1
+                continue
+            signature = str(item.get("signature") or "").strip()[:128]
+            if not signature:
+                ignored += 1
+                continue
+            existing = db.scalar(
+                select(CanonicalParserGen4WebhookReceipt).where(
+                    CanonicalParserGen4WebhookReceipt.campaign_db_id == campaign.id,
+                    CanonicalParserGen4WebhookReceipt.signature == signature,
+                )
             )
-        )
-        if existing is not None:
-            summary = dict(existing.parsed_summary or {})
-            summary["seen_by_recovery"] = True
-            summary["recovery_seen_at"] = observed.isoformat()
-            summary["recovery_transaction_type"] = item.get("type")
-            existing.parsed_summary = summary
-            existing_count += 1
-            continue
-        occurred = _timestamp(item.get("timestamp")) or observed
-        row = CanonicalParserGen4WebhookReceipt(
-            receipt_id=str(uuid4()),
-            campaign_db_id=campaign.id,
-            signature=signature,
-            event_hash=_canonical_hash({"source": SOURCE_RECOVERY, "transaction": item}),
-            source=SOURCE_RECOVERY,
-            status=RECEIPT_EXCLUDED_RECOVERY,
-            auth_verified=False,
-            wallet_address=wallet_address,
-            matched_wallets=[wallet_address],
-            slot=None,
-            block_time=occurred,
-            received_at=observed,
-            first_received_at=observed,
-            last_received_at=observed,
-            processed_at=observed,
-            delivery_count=1,
-            processing_attempts=0,
-            raw_payload={},
-            parsed_summary={
-                "transaction_type": item.get("type"),
-                "timestamp": item.get("timestamp"),
-                "excluded_reason": "RECOVERED_BY_120_SECOND_POLLING",
-            },
-        )
-        db.add(row)
-        db.flush()
-        created += 1
-    _refresh_campaign_metrics(db, campaign, observed_at=observed)
+            if existing is not None:
+                summary = dict(existing.parsed_summary or {})
+                summary["seen_by_recovery"] = True
+                summary["recovery_seen_at"] = observed.isoformat()
+                summary["recovery_transaction_type"] = item.get("type")
+                existing.parsed_summary = summary
+                existing_count += 1
+                continue
+            occurred = _timestamp(item.get("timestamp")) or observed
+            row = CanonicalParserGen4WebhookReceipt(
+                receipt_id=str(uuid4()),
+                campaign_db_id=campaign.id,
+                signature=signature,
+                event_hash=_canonical_hash({"source": SOURCE_RECOVERY, "transaction": item}),
+                source=SOURCE_RECOVERY,
+                status=RECEIPT_EXCLUDED_RECOVERY,
+                auth_verified=False,
+                wallet_address=wallet_address,
+                matched_wallets=[wallet_address],
+                slot=None,
+                block_time=occurred,
+                received_at=observed,
+                first_received_at=observed,
+                last_received_at=observed,
+                processed_at=observed,
+                delivery_count=1,
+                processing_attempts=0,
+                raw_payload={},
+                parsed_summary={
+                    "transaction_type": item.get("type"),
+                    "timestamp": item.get("timestamp"),
+                    "excluded_reason": "RECOVERED_BY_120_SECOND_POLLING",
+                },
+            )
+            db.add(row)
+            db.flush()
+            created += 1
+    for campaign in campaigns:
+        _refresh_campaign_metrics(db, campaign, observed_at=observed)
     return {"created": created, "existing": existing_count, "ignored": ignored}
 
 
@@ -1427,8 +1716,14 @@ def process_gen4_copyability_queue(
             code="GEN4_COPYABILITY_DISABLED",
             status_code=409,
         )
-    campaign = _active_copyability_campaign(db)
-    assert campaign is not None
+    campaigns = _active_copyability_campaigns(db)
+    if not campaigns:
+        raise CanonicalParserGen4CopyabilityError(
+            "Nessuna campagna Gen4 copyability attiva.",
+            code="GEN4_COPYABILITY_CAMPAIGN_REQUIRED",
+            status_code=409,
+        )
+    campaigns_by_id = {campaign.id: campaign for campaign in campaigns}
     state = _ensure_worker_state(db, lock=True)
     observed = _aware(observed_at)
     lease_expires = _aware(state.lease_expires_at) if state.lease_expires_at else None
@@ -1438,10 +1733,20 @@ def process_gen4_copyability_queue(
             "owner_id": state.lease_owner,
             "lease_expires_at": lease_expires.isoformat(),
             "summary": ProcessSummary().__dict__,
+            "campaign_ids": [campaign.campaign_id for campaign in campaigns],
         }
     state.lease_owner = owner_id[:120]
     state.lease_expires_at = observed + timedelta(
-        seconds=max(10, int(getattr(settings, "CANONICAL_PARSER_GEN4_COPYABILITY_WORKER_LEASE_SECONDS", 30)))
+        seconds=max(
+            10,
+            int(
+                getattr(
+                    settings,
+                    "CANONICAL_PARSER_GEN4_COPYABILITY_WORKER_LEASE_SECONDS",
+                    30,
+                )
+            ),
+        )
     )
     state.last_iteration_started_at = observed
     state.total_iterations += 1
@@ -1465,28 +1770,46 @@ def process_gen4_copyability_queue(
         db.scalars(
             select(CanonicalParserGen4WebhookReceipt)
             .where(
-                CanonicalParserGen4WebhookReceipt.campaign_db_id == campaign.id,
-                CanonicalParserGen4WebhookReceipt.status.in_([RECEIPT_RECEIVED, RECEIPT_FAILED]),
+                CanonicalParserGen4WebhookReceipt.campaign_db_id.in_(
+                    sorted(campaigns_by_id)
+                ),
+                CanonicalParserGen4WebhookReceipt.status.in_(
+                    [RECEIPT_RECEIVED, RECEIPT_FAILED]
+                ),
                 CanonicalParserGen4WebhookReceipt.processing_attempts < max_processing_attempts,
                 CanonicalParserGen4WebhookReceipt.source == SOURCE_WEBHOOK,
             )
-            .order_by(CanonicalParserGen4WebhookReceipt.received_at, CanonicalParserGen4WebhookReceipt.id)
+            .order_by(
+                CanonicalParserGen4WebhookReceipt.received_at,
+                CanonicalParserGen4WebhookReceipt.id,
+            )
             .limit(limit)
             .with_for_update(skip_locked=True)
         )
     )
     client = jupiter_client or JupiterSwapClient()
     summary = ProcessSummary()
+    touched_campaign_ids: set[int] = set()
+    per_campaign: dict[str, ProcessSummary] = {
+        campaign.campaign_id: ProcessSummary() for campaign in campaigns
+    }
+
     for receipt in receipts:
+        campaign = campaigns_by_id.get(receipt.campaign_db_id)
+        if campaign is None:
+            receipt.status = RECEIPT_IGNORED
+            receipt.error_code = "GEN4_COPYABILITY_CAMPAIGN_NOT_ACTIVE"
+            receipt.error_message = "Campagna non più attiva durante il processing."
+            receipt.processed_at = _aware(now_fn())
+            item_summary = ProcessSummary(receipts_processed=1, receipts_ignored=1)
+            summary = summary.merge(item_summary)
+            continue
+        touched_campaign_ids.add(campaign.id)
         receipt.status = RECEIPT_PROCESSING
         receipt.processing_started_at = _aware(now_fn())
         receipt.processing_attempts += 1
         receipt.error_code = None
         receipt.error_message = None
-        # Persist the attempt before opening a per-receipt savepoint. A malformed
-        # event or an unexpected database error can then roll back only the
-        # position/quote mutations for that receipt without poisoning the whole
-        # worker batch or losing the retry counter.
         db.flush()
         try:
             with db.begin_nested():
@@ -1512,6 +1835,7 @@ def process_gen4_copyability_queue(
                     "queue_latency_ms": queue_latency_ms,
                     "quote_attempted": False,
                     "quote_built": False,
+                    "campaign_role": campaign.campaign_role,
                 }
                 if signal.side == "BUY":
                     item_summary = _process_buy(
@@ -1532,16 +1856,16 @@ def process_gen4_copyability_queue(
                         now_fn=now_fn,
                     )
                 db.flush()
-            summary = summary.merge(item_summary)
         except CanonicalParserGen4CopyabilityError as error:
             receipt.status = RECEIPT_IGNORED
             receipt.error_code = error.code
             receipt.error_message = _safe_message(error)
             receipt.processed_at = _aware(now_fn())
-            receipt.parsed_summary = {"ignored_reason": error.code}
-            summary = summary.merge(
-                ProcessSummary(receipts_processed=1, receipts_ignored=1)
-            )
+            receipt.parsed_summary = {
+                "ignored_reason": error.code,
+                "campaign_role": campaign.campaign_role,
+            }
+            item_summary = ProcessSummary(receipts_processed=1, receipts_ignored=1)
         except Exception as error:  # noqa: BLE001
             receipt.status = RECEIPT_FAILED
             receipt.error_code = "GEN4_COPYABILITY_PROCESSING_FAILED"
@@ -1549,17 +1873,22 @@ def process_gen4_copyability_queue(
             receipt.processed_at = _aware(now_fn())
             parsed = dict(receipt.parsed_summary or {})
             parsed["processing_error"] = receipt.error_code
+            parsed["campaign_role"] = campaign.campaign_role
             receipt.parsed_summary = parsed
-            summary = summary.merge(
-                ProcessSummary(receipts_processed=1, failures=1)
-            )
+            item_summary = ProcessSummary(receipts_processed=1, failures=1)
+        summary = summary.merge(item_summary)
+        per_campaign[campaign.campaign_id] = per_campaign[campaign.campaign_id].merge(
+            item_summary
+        )
         db.flush()
 
     completed = _aware(now_fn())
     state.last_iteration_completed_at = completed
     state.last_status = "COMPLETED" if not summary.failures else "PARTIAL"
     state.last_error_code = None if not summary.failures else "GEN4_COPYABILITY_PARTIAL_FAILURE"
-    state.last_error_message = None if not summary.failures else "Uno o più eventi non sono stati elaborati."
+    state.last_error_message = (
+        None if not summary.failures else "Uno o più eventi non sono stati elaborati."
+    )
     state.total_receipts_processed += summary.receipts_processed
     state.total_quotes += summary.quotes_requested
     state.total_failures += summary.failures
@@ -1567,12 +1896,17 @@ def process_gen4_copyability_queue(
         state.last_success_at = completed
     state.lease_owner = None
     state.lease_expires_at = None
-    _refresh_campaign_metrics(db, campaign, observed_at=completed)
+    for campaign in campaigns:
+        if campaign.id in touched_campaign_ids or not receipts:
+            _refresh_campaign_metrics(db, campaign, observed_at=completed)
     db.flush()
     return {
         "status": state.last_status,
-        "campaign_id": campaign.campaign_id,
+        "campaign_ids": [campaign.campaign_id for campaign in campaigns],
         "summary": summary.__dict__,
+        "per_campaign": {
+            campaign_id: item.__dict__ for campaign_id, item in per_campaign.items()
+        },
         "worker_state": _serialize_worker_state(state),
     }
 
@@ -1897,12 +2231,15 @@ def _serialize_campaign(
     return {
         "campaign_id": campaign.campaign_id,
         "forward_campaign_db_id": campaign.forward_campaign_db_id,
+        "campaign_role": campaign.campaign_role,
+        "candidate_key": campaign.candidate_key,
         "status": campaign.status,
         "verdict": campaign.verdict,
         "policy_version": campaign.policy_version,
         "policy_hash": campaign.policy_hash,
         "policy_snapshot": campaign.policy_snapshot,
         "frozen_wallets": campaign.frozen_wallets,
+        "selection_snapshot": campaign.selection_snapshot,
         "anchor_at": campaign.anchor_at,
         "minimum_complete_at": campaign.minimum_complete_at,
         "latest_observed_at": campaign.latest_observed_at,
@@ -1946,25 +2283,29 @@ def get_gen4_copyability_status(
     *,
     observed_at: datetime | None = None,
     recent_limit: int = 100,
+    campaign_id: str | None = None,
 ) -> dict[str, Any]:
-    campaign = _active_copyability_campaign(db, required=False)
+    campaigns = _active_copyability_campaigns(db)
     worker = _ensure_worker_state(db) if bool(
         getattr(settings, "CANONICAL_PARSER_GEN4_COPYABILITY_ENABLED", False)
     ) else db.scalar(select(CanonicalParserGen4CopyabilityWorkerState).limit(1))
-    if campaign is None:
-        return {
-            "runtime_enabled": bool(
-                getattr(settings, "CANONICAL_PARSER_GEN4_COPYABILITY_ENABLED", False)
-            ),
-            "autostart": bool(
-                getattr(settings, "CANONICAL_PARSER_GEN4_COPYABILITY_AUTOSTART", False)
-            ),
-            "campaign": None,
-            "worker_state": _serialize_worker_state(worker),
-            "safety": _safety(),
-        }
-    _refresh_campaign_metrics(db, campaign, observed_at=observed_at)
+    for campaign in campaigns:
+        _refresh_campaign_metrics(db, campaign, observed_at=observed_at)
     db.flush()
+
+    selected: CanonicalParserGen4CopyabilityCampaign | None = None
+    if campaign_id:
+        selected = _campaign_by_id(db, campaign_id)
+    else:
+        selected = next(
+            (
+                campaign
+                for campaign in campaigns
+                if campaign.campaign_role == CAMPAIGN_ROLE_PRIMARY
+            ),
+            campaigns[0] if campaigns else None,
+        )
+
     return {
         "runtime_enabled": bool(
             getattr(settings, "CANONICAL_PARSER_GEN4_COPYABILITY_ENABLED", False)
@@ -1972,7 +2313,17 @@ def get_gen4_copyability_status(
         "autostart": bool(
             getattr(settings, "CANONICAL_PARSER_GEN4_COPYABILITY_AUTOSTART", False)
         ),
-        "campaign": _serialize_campaign(db, campaign, recent_limit=recent_limit),
+        "campaign": (
+            None
+            if selected is None
+            else _serialize_campaign(db, selected, recent_limit=recent_limit)
+        ),
+        "active_campaigns": [
+            _serialize_campaign(db, campaign, recent_limit=recent_limit)
+            for campaign in campaigns
+        ],
+        "active_campaign_count": len(campaigns),
         "worker_state": _serialize_worker_state(worker),
         "safety": _safety(),
+        "m61_parallel_candidate_support": True,
     }

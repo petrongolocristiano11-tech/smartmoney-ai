@@ -128,6 +128,7 @@ from backend.app.schemas.blockchain_integrity import (
     CanonicalParserGen4ForwardFeedConfigureRequest,
     CanonicalParserGen4ForwardFeedPollRequest,
     CanonicalParserGen4CopyabilityStartRequest,
+    CanonicalParserGen4QualifiedCandidateStartRequest,
     CanonicalParserGen4CopyabilityStopRequest,
     CanonicalParserGen4CopyabilityWebhookConfigureRequest,
     CanonicalParserGen4CopyabilityProcessRequest,
@@ -438,6 +439,7 @@ from backend.app.services.blockchain_parser_gen4_copyability_service import (
     process_gen4_copyability_queue,
     receive_gen4_copyability_webhook,
     start_gen4_copyability_campaign,
+    start_gen4_qualified_candidate_campaign,
     stop_gen4_copyability_campaign,
 )
 from backend.app.services.blockchain_parser_permit_bound_paper_execution_service import (
@@ -5026,9 +5028,14 @@ async def receive_gen4_copyability_webhook_endpoint(
 )
 def read_gen4_copyability_status_endpoint(
     recent_limit: int = Query(default=100, ge=1, le=500),
+    campaign_id: str | None = Query(default=None, min_length=36, max_length=36),
     db: Session = Depends(get_db),
 ):
-    result = get_gen4_copyability_status(db, recent_limit=recent_limit)
+    result = get_gen4_copyability_status(
+        db,
+        recent_limit=recent_limit,
+        campaign_id=campaign_id,
+    )
     result["worker_running"] = gen4_copyability_runtime.running
     db.commit()
     return result
@@ -5047,6 +5054,35 @@ def start_gen4_copyability_campaign_endpoint(
         result = start_gen4_copyability_campaign(
             db,
             confirmation=request.confirmation,
+            actor_label=request.actor_label,
+            note=request.note,
+            anchor_at=request.anchor_at,
+        )
+        db.commit()
+        return result
+    except CanonicalParserGen4CopyabilityError as exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=exception.status_code,
+            detail={"code": exception.code, "message": str(exception)},
+        ) from exception
+
+
+@app.post(
+    "/integrity/parser-gen4-copyability/start-qualified-candidate",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def start_gen4_qualified_candidate_campaign_endpoint(
+    request: CanonicalParserGen4QualifiedCandidateStartRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        result = start_gen4_qualified_candidate_campaign(
+            db,
+            confirmation=request.confirmation,
+            candidate_wallets=request.candidate_wallets,
+            selection_snapshot=request.selection_snapshot,
             actor_label=request.actor_label,
             note=request.note,
             anchor_at=request.anchor_at,

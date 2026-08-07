@@ -78,13 +78,40 @@ export function runGen4ForwardFeedPoll(
 
 const GEN4_COPYABILITY_BASE = "/integrity/parser-gen4-copyability";
 
-export function getGen4CopyabilityStatus(accessKey, recentLimit = 100) {
+export function getGen4CopyabilityStatus(
+  accessKey,
+  recentLimit = 100,
+  campaignId = null
+) {
   return api.get(
     `${GEN4_COPYABILITY_BASE}/status`,
     {
       ...getAutomationConfig(accessKey),
-      params: { recent_limit: recentLimit },
+      params: {
+        recent_limit: recentLimit,
+        campaign_id: campaignId || undefined,
+      },
     }
+  );
+}
+
+export function startGen4QualifiedCandidate(
+  accessKey,
+  candidateWallets,
+  selectionSnapshot,
+  note = null
+) {
+  return api.post(
+    `${GEN4_COPYABILITY_BASE}/start-qualified-candidate`,
+    {
+      confirmation: "START_GEN4_QUALIFIED_CANDIDATE_COPYABILITY",
+      candidate_wallets: candidateWallets,
+      selection_snapshot: selectionSnapshot,
+      actor_label: "M61_QUALIFIED_CANDIDATE",
+      note,
+      anchor_at: null,
+    },
+    getAutomationConfig(accessKey)
   );
 }
 

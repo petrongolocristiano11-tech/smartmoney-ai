@@ -123,16 +123,60 @@ def main() -> None:
             )
             campaign = started
 
-        campaign_id = str(campaign.get("campaign_id") or "").strip()
-        wallets = [
-            str(value).strip()
-            for value in (campaign.get("frozen_wallets") or [])
-            if str(value).strip()
-        ]
-        if not campaign_id or len(wallets) != 2:
-            raise SetupError(
-                "Campagna copyability non valida: servono campaign_id e i due wallet congelati."
-            )
+        # M61 keeps the primary M58-M60 campaign intact and may add isolated
+        # qualified-candidate campaigns. One exact Gen4 Raw Webhook monitors
+        # the union of all ACTIVE campaign wallets; the backend routes each
+        # receipt to its owning campaign. Before M61, this naturally reduces
+        # to the original single primary campaign with two frozen wallets.
+        active_campaigns = (
+            status.get("active_campaigns")
+            if isinstance(status, dict)
+            else None
+        )
+        if not isinstance(active_campaigns, list) or not active_campaigns:
+            active_campaigns = [campaign]
+
+        campaigns: list[dict[str, Any]] = []
+        wallet_owners: dict[str, str] = {}
+        for item in active_campaigns:
+            if not isinstance(item, dict):
+                continue
+            campaign_id = str(item.get("campaign_id") or "").strip()
+            item_wallets = [
+                str(value).strip()
+                for value in (item.get("frozen_wallets") or [])
+                if str(value).strip()
+            ]
+            if not campaign_id or not item_wallets:
+                raise SetupError(
+                    "Campagna copyability ACTIVE priva di campaign_id o frozen_wallets."
+                )
+            for wallet in item_wallets:
+                previous = wallet_owners.get(wallet)
+                if previous is not None and previous != campaign_id:
+                    raise SetupError(
+                        "Wallet duplicato tra campagne copyability ACTIVE; "
+                        "configurazione webhook rifiutata."
+                    )
+                wallet_owners[wallet] = campaign_id
+            campaigns.append(item)
+
+        if not campaigns:
+            raise SetupError("Nessuna campagna copyability ACTIVE valida.")
+
+        primary = next(
+            (
+                item
+                for item in campaigns
+                if item.get("campaign_role") in (None, "PRIMARY_FORWARD")
+            ),
+            None,
+        )
+        if primary is None:
+            raise SetupError("Campagna copyability primaria ACTIVE non trovata.")
+
+        wallets = sorted(wallet_owners)
+        campaign_ids = [str(item["campaign_id"]).strip() for item in campaigns]
 
         existing_raw = request_json(
             client,
@@ -237,20 +281,27 @@ def main() -> None:
             payload={"active": True},
         )
 
-        registered = backend_request(
-            client,
-            "POST",
-            backend_url,
-            "/integrity/parser-gen4-copyability/webhook/configure",
-            automation_key,
-            {
-                "campaign_id": campaign_id,
-                "confirmation": CONFIGURE_CONFIRMATION,
-                "webhook_id": configured_id,
-                "webhook_url": target_url,
-                "active": True,
-            },
-        )
+        registered_campaigns: list[dict[str, Any]] = []
+        for campaign_id in campaign_ids:
+            registered = backend_request(
+                client,
+                "POST",
+                backend_url,
+                "/integrity/parser-gen4-copyability/webhook/configure",
+                automation_key,
+                {
+                    "campaign_id": campaign_id,
+                    "confirmation": CONFIGURE_CONFIRMATION,
+                    "webhook_id": configured_id,
+                    "webhook_url": target_url,
+                    "active": True,
+                },
+            )
+            if not isinstance(registered, dict):
+                raise SetupError(
+                    "Backend non ha confermato la registrazione webhook per una campagna."
+                )
+            registered_campaigns.append(registered)
 
         verified = request_json(
             client,
@@ -269,8 +320,19 @@ def main() -> None:
         print(f"WEBHOOK_ID={configured_id}")
         print(f"WEBHOOK_URL={target_url}")
         print(f"WALLET_COUNT={len(wallets)}")
-        print(f"COPYABILITY_CAMPAIGN_ID={campaign_id}")
-        print(f"COPYABILITY_ANCHOR_AT={registered.get('anchor_at')}")
+        print(f"ACTIVE_CAMPAIGN_COUNT={len(campaign_ids)}")
+        print("COPYABILITY_CAMPAIGN_IDS=" + ",".join(campaign_ids))
+        primary_registered = next(
+            (
+                item
+                for item in registered_campaigns
+                if str(item.get("campaign_id") or "").strip()
+                == str(primary.get("campaign_id") or "").strip()
+            ),
+            registered_campaigns[0],
+        )
+        print(f"COPYABILITY_ANCHOR_AT={primary_registered.get('anchor_at')}")
+        print("M61_SINGLE_WEBHOOK_UNION_ROUTING=ENABLED")
         print("WEBHOOK_TYPE=raw")
         print("TXN_STATUS=success")
         print("AUTH_HEADER=CONFIGURED_REDACTED")

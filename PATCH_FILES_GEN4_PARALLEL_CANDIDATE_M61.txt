@@ -1,0 +1,45 @@
+M61 GEN4 PARALLEL QUALIFIED-CANDIDATE COPYABILITY
+
+ALEMBIC
+- alembic/versions/c8a1f3d6e942_add_gen4_parallel_candidate_copyability.py [NEW]
+
+BACKEND MODIFIED
+- backend/app/models/gen4_copyability.py
+- backend/app/services/blockchain_parser_gen4_copyability_service.py
+- backend/app/workers/gen4_copyability_worker.py
+- backend/app/schemas/blockchain_integrity.py
+- backend/app/main.py
+
+FRONTEND MODIFIED
+- frontend/src/components/gen4Forward/Gen4CopyabilityPanel.jsx
+- frontend/src/services/gen4ForwardApi.js
+- frontend/src/pages/Gen4Forward.jsx
+
+SCRIPTS
+- scripts/activate_gen4_parallel_candidate_m61.py [NEW]
+- scripts/configure_gen4_copyability_helius_webhook.py [MODIFIED, M61 union-aware]
+- scripts/deploy_gen4_parallel_candidate_m61.py [NEW]
+- scripts/rollback_gen4_parallel_candidate_m61.py [NEW]
+- scripts/test_gen4_parallel_candidate_postgresql_migration.py [NEW]
+- scripts/verify_gen4_parallel_candidate_m61.py [NEW]
+
+TESTS
+- tests/test_gen4_parallel_candidate_m61.py [NEW]
+- tests/test_gen4_parallel_candidate_frontend_m61.py [NEW]
+
+PACKAGE / OPERATIONS
+- BASELINE_M58_M60_V8_SHA256.json [NEW, package-only]
+- INSTALL_TEST_M61_LOCAL.py [NEW, package-only]
+- INSTALL_TEST_M61_LOCAL.ps1 [NEW, package-only]
+- DEPLOY_ACTIVATE_M61.ps1 [NEW, package-only]
+- ROLLBACK_M61_SAFE.ps1 [NEW, copied into repository]
+- README_GEN4_PARALLEL_CANDIDATE_M61.md [NEW]
+- TEST_RESULTS_GEN4_PARALLEL_CANDIDATE_M61.txt [NEW]
+- PATCH_FILES_GEN4_PARALLEL_CANDIDATE_M61.txt [NEW]
+- PACKAGE_MANIFEST_SHA256_M61.txt [NEW, package-only]
+
+NO MANUAL DATABASE TABLES.
+NO ALEMBIC STAMP.
+NO SIGNER / SIGNATURE / SUBMISSION.
+NO PAPER / LIVE ACTIVATION.
+PRIMARY M58-M60 CAMPAIGN MUST REMAIN UNCHANGED.

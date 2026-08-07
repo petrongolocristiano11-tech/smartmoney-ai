@@ -68,8 +68,16 @@ class Gen4CopyabilityWorker:
         with SessionLocal() as db:
             try:
                 status = get_gen4_copyability_status(db, recent_limit=1)
-                campaign = status.get("campaign")
-                if campaign is None:
+                campaigns = list(status.get("active_campaigns") or [])
+                primary = next(
+                    (
+                        item
+                        for item in campaigns
+                        if item.get("campaign_role") == "PRIMARY_FORWARD"
+                    ),
+                    None,
+                )
+                if primary is None:
                     if not bool(
                         getattr(
                             settings,

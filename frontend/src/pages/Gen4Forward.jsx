@@ -452,6 +452,7 @@ function Gen4Forward() {
             <span>Polling: {feed?.state?.interval_seconds ?? 0}s (recovery only)</span>
             <span>Real-time: {copyability?.worker_running ? "RUNNING" : "STOPPED"}</span>
             <span>Webhook: {copyability?.campaign?.webhook?.status ?? "N/D"}</span>
+            <span>Campagne copyability: {copyability?.active_campaign_count ?? 0}</span>
             <span>Stato sicurezza: nessun paper / LIVE</span>
           </div>
         </div>

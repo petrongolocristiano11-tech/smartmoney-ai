@@ -1,0 +1,128 @@
+SMARTMONEY AI — M61 GEN4 PARALLEL QUALIFIED-CANDIDATE COPYABILITY
+TEST RECORD — PACKAGE BUILD ENVIRONMENT
+
+DATE: 2026-08-07
+TARGET HEAD: c8a1f3d6e942
+PARENT HEAD: b6f8d2e4c731
+BASELINE M58-M60 V8 ZIP SHA256:
+f1a3fbd4e83225dfd423b2e1441537b7360242949576fb33916ce037dec92f07
+
+1. BASELINE HASH CONTRACT
+PASS
+All 9 M58-M60 V8 source files that M61 replaces were normalized and SHA-256 matched against the exact V8 package.
+
+2. PYTHON COMPILE
+PASS
+All M61 Python files compile successfully.
+
+3. M61 UNIT + FRONTEND CONTRACT TESTS
+PASS
+15 passed.
+
+Coverage includes:
+- primary/candidate isolation;
+- candidate binding to the exact PRIMARY_FORWARD lineage even if a newer unrelated Forward campaign exists;
+- active-run idempotency;
+- fresh immutable candidate run after archive;
+- rigid selection gate;
+- wallet overlap rejection;
+- one-webhook multi-campaign routing;
+- isolated per-campaign queue/positions;
+- backward-compatible primary status;
+- M61-aware legacy webhook configurator;
+- activation union update;
+- activation fail-safe for newly created candidate;
+- activation fail-safe for pre-existing but unmonitored partial candidate;
+- fail-safe conservativo quando lo stato webhook preesistente non è leggibile;
+- deploy resume contract;
+- frontend isolated campaign selector and no execution path.
+
+4. TARGETED M47-M61 REGRESSION SUITE
+PASS
+72 passed in package reconstruction environment.
+
+Included:
+- M47 profitability
+- M52-M53 forward shadow
+- M54-M55 forward dashboard
+- M56-M57 forward feed
+- M58-M60 realtime copyability
+- M61 parallel candidate backend/frontend
+
+5. ALEMBIC STATIC CHAIN
+PASS
+`python -m alembic heads` => exactly `c8a1f3d6e942 (head)`.
+Down revision is `b6f8d2e4c731`.
+
+6. M61 STRUCTURE/SAFETY VERIFIER
+PASS
+GEN4_PARALLEL_CANDIDATE_M61_CONTRACT=OK
+STRUCTURE_ONLY=YES
+ALEMBIC_HEAD=c8a1f3d6e942
+PRIMARY_CAMPAIGN_BACKWARD_COMPATIBILITY=YES
+MULTI_CAMPAIGN_ROUTING=ISOLATED
+SINGLE_HELIUS_WEBHOOK_UNION=YES
+RECOVERY_ONLY_EXCLUDED=YES
+JUPITER_MODE=QUOTE_AND_UNSIGNED_BUILD_ONLY
+SIGNER_ACCESS=NO
+PAPER_ORDERS=NO
+LIVE_ORDERS=NO
+
+7. FULL BACKEND SUITE IN PACKAGE BUILD CONTAINER
+NOT CLAIMED AS PASS.
+Collection is blocked by the package-build container missing the pre-existing project dependency `solders`.
+Observed: 57 collection errors, all rooted in `ModuleNotFoundError: No module named 'solders'` from existing live-trading modules.
+This is an environment limitation of the reconstruction container, not an M61 assertion failure.
+
+MANDATORY LOCAL GATE:
+`INSTALL_TEST_M61_LOCAL.py` runs the full backend suite using the user's existing C:\smartmoney-ai\.venv and refuses success unless the full suite passes.
+
+8. FRONTEND PRODUCTION BUILD IN PACKAGE BUILD CONTAINER
+NOT CLAIMED AS PASS.
+The synthetic reconstruction does not contain installed node_modules; `npm run build` stops with `vite: not found`.
+
+MANDATORY LOCAL GATE:
+The M61 local installer resolves the existing Windows Node/npm installation and runs `npm run build`; it refuses success unless the production build passes.
+
+9. REAL POSTGRESQL MIGRATION ROUNDTRIP IN PACKAGE BUILD CONTAINER
+NOT CLAIMED AS PASS because the user's actual PostgreSQL container/database is not available in this environment.
+
+MANDATORY LOCAL GATE:
+The local installer runs:
+- upgrade b6f8d2e4c731 -> c8a1f3d6e942
+- PostgreSQL schema assertions
+- primary snapshot preservation
+- downgrade -> b6f8d2e4c731 when no candidate evidence exists
+- re-upgrade -> c8a1f3d6e942
+and refuses success on any mismatch.
+
+10. NETWORK / EXECUTION DURING PACKAGE BUILD TESTS
+HELIUS LIVE REQUESTS: 0
+JUPITER LIVE REQUESTS: 0
+RAILWAY MODIFICATIONS: 0
+SIGNED TRANSACTIONS: 0
+SUBMITTED TRANSACTIONS: 0
+PAPER ACTIVATION: 0
+LIVE ACTIVATION: 0
+
+FINAL PACKAGE POLICY
+The package is ready for STEP 1 only: local install + full validation.
+Do not run deployment/activation until `M61_LOCAL_INSTALL_TEST=PASS` is obtained on C:\smartmoney-ai.
+
+V2_LOCAL_EMPTY_DATABASE_FIX=PASS
+LOCAL_PRIMARY_CAMPAIGN_REQUIRED=NO
+EMPTY_COPYABILITY_TABLE_SUPPORTED=YES
+TEST_CHILD_RUNTIME_DISABLED=YES
+PRODUCTION_PRIMARY_VALIDATION=DEPLOY_PREFLIGHT_ONLY
+
+V3 HARDENING
+- Root cause V2 failure reproduced exactly: backend/app/services/blockchain_parser_gen4_copyability_service.py:2330: new blank line at EOF.
+- Extra EOF blank removed; functional code unchanged.
+- Payload trailing whitespace scan: PASS.
+- Exact M58-M60 V8 tracked-file overlay + git diff --check: PASS.
+
+V4 installer regression fix:
+- V3 failure reproduced: capture(...).strip() removed the leading space from the first porcelain line, turning backend/app/main.py into ackend/app/main.py.
+- V4 uses a left-preserving capture plus strict porcelain=v1 parser.
+- Parser self-test covers unstaged, staged, untracked, CRLF, and rename records.
+- Final changed-path allowlist uses the exact parsed paths; no lstrip/strip is applied to porcelain records.

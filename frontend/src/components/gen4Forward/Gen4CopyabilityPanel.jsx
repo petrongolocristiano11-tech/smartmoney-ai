@@ -1,3 +1,5 @@
+import { useEffect, useMemo, useState } from "react";
+
 import {
   formatGen4Date,
   formatGen4Number,
@@ -150,7 +152,29 @@ function ReceiptRows({ receipts }) {
 }
 
 function Gen4CopyabilityPanel({ status }) {
-  const campaign = status?.campaign;
+  const campaigns = useMemo(
+    () => status?.active_campaigns ?? (status?.campaign ? [status.campaign] : []),
+    [status]
+  );
+  const primaryCampaign = campaigns.find(
+    (item) => item.campaign_role === "PRIMARY_FORWARD"
+  );
+  const [selectedCampaignId, setSelectedCampaignId] = useState(null);
+
+  useEffect(() => {
+    const stillExists = campaigns.some(
+      (item) => item.campaign_id === selectedCampaignId
+    );
+    if (!stillExists) {
+      setSelectedCampaignId(
+        primaryCampaign?.campaign_id ?? campaigns[0]?.campaign_id ?? null
+      );
+    }
+  }, [campaigns, primaryCampaign, selectedCampaignId]);
+
+  const campaign = campaigns.find(
+    (item) => item.campaign_id === selectedCampaignId
+  ) ?? primaryCampaign ?? campaigns[0] ?? null;
   const metrics = campaign?.metrics ?? {};
   const counts = campaign?.counts ?? {};
   const webhook = campaign?.webhook ?? {};
@@ -170,11 +194,11 @@ function Gen4CopyabilityPanel({ status }) {
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.22em] text-violet-400">
-              M58–M60 · prova separata
+              M58–M61 · campagne isolate
             </p>
-            <h2 className="mt-2 text-2xl font-black text-white">Real-Time Copyability</h2>
+            <h2 className="mt-2 text-2xl font-black text-white">Real-Time Copyability Multi-Campaign</h2>
             <p className="mt-2 max-w-4xl leading-7 text-slate-400">
-              Misura il prezzo realmente disponibile quando arriva il Raw Webhook Helius. Il polling da 120 secondi è soltanto riconciliazione e ogni evento <code className="text-amber-300">RECOVERY_ONLY</code> è escluso dal profitto copiabile.
+              Ogni campagna conserva wallet, anchor, ricevute, posizioni e PnL separati. Un unico Raw Webhook Helius monitora l’unione dei wallet; il routing interno impedisce che una campagna contamini l’altra. <code className="text-amber-300">RECOVERY_ONLY</code> resta escluso dalla prova.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -182,8 +206,30 @@ function Gen4CopyabilityPanel({ status }) {
             <Badge tone={status.worker_running ? "good" : "warn"}>Worker {status.worker_running ? "RUNNING" : "STOPPED"}</Badge>
             <Badge tone={webhook.status === "ACTIVE" ? "good" : "warn"}>Webhook {webhook.status || "NOT CONFIGURED"}</Badge>
             <Badge tone={campaign?.verdict === "PROFITABLE_EVIDENCE" ? "good" : "neutral"}>{campaign?.verdict || "WAITING"}</Badge>
+            <Badge tone="neutral">Campagne {status.active_campaign_count ?? campaigns.length}</Badge>
           </div>
         </div>
+
+        {campaigns.length > 1 && (
+          <div className="mt-5 flex flex-wrap gap-2">
+            {campaigns.map((item) => (
+              <button
+                key={item.campaign_id}
+                type="button"
+                onClick={() => setSelectedCampaignId(item.campaign_id)}
+                className={`rounded-xl border px-4 py-2 text-xs font-black transition ${
+                  item.campaign_id === campaign?.campaign_id
+                    ? "border-violet-500 bg-violet-950 text-violet-200"
+                    : "border-slate-700 bg-slate-950 text-slate-400 hover:border-slate-500"
+                }`}
+              >
+                {item.campaign_role === "PRIMARY_FORWARD" ? "Primaria" : "Candidata"}
+                {" · "}
+                {(item.frozen_wallets ?? []).map((wallet) => shortenGen4Address(wallet, 4, 4)).join(", ")}
+              </button>
+            ))}
+          </div>
+        )}
 
         {!campaign ? (
           <div className="mt-5 rounded-2xl border border-amber-800 bg-amber-950/30 p-4 text-sm text-amber-200">
@@ -191,7 +237,8 @@ function Gen4CopyabilityPanel({ status }) {
           </div>
         ) : (
           <>
-            <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-9">
+              <Metric label="Campagna" value={campaign.campaign_role === "PRIMARY_FORWARD" ? "Primaria" : "Candidata"} subtitle={`${campaign.frozen_wallets?.length ?? 0} wallet congelati`} />
               <Metric label="Età real-time" value={`${formatGen4Number(metrics.elapsed_days ?? 0, 2)} gg`} subtitle={`Anchor ${formatGen4Date(campaign.anchor_at)}`} />
               <Metric label="Chiusi copiabili" value={`${metrics.closed_copyable_trades ?? 0}/${campaign.minimum_closed_trades ?? 30}`} subtitle={`Proof ${campaign.proof_closed_trades ?? 100}`} />
               <Metric label="Rendimento netto" value={percent(metrics.net_return_percent)} subtitle={`${formatGen4Number(metrics.net_pnl_lamports ?? 0, 0)} lamport`} />
