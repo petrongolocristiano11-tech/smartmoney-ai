@@ -6,7 +6,9 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_HEAD = "b6f8d2e4c731"
+M58_M60_REVISION = "b6f8d2e4c731"
+M58_M60_DOWN_REVISION = "a5e7c1d4b926"
+EXPECTED_PROJECT_HEAD = "c8a1f3d6e942"
 
 
 def require_text(path: Path, *needles: str) -> str:
@@ -25,11 +27,21 @@ def main() -> None:
     config = Config(str(PROJECT_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(PROJECT_ROOT / "alembic"))
     scripts = ScriptDirectory.from_config(config)
-    if scripts.get_heads() != [EXPECTED_HEAD]:
-        raise AssertionError(f"Alembic head inattesa: {scripts.get_heads()}")
-    revision = scripts.get_revision(EXPECTED_HEAD)
-    if revision is None or revision.down_revision != "a5e7c1d4b926":
+
+    heads = scripts.get_heads()
+    if heads != [EXPECTED_PROJECT_HEAD]:
+        raise AssertionError(f"Alembic head inattesa: {heads}")
+
+    m58_m60_revision = scripts.get_revision(M58_M60_REVISION)
+    if (
+        m58_m60_revision is None
+        or m58_m60_revision.down_revision != M58_M60_DOWN_REVISION
+    ):
         raise AssertionError("Catena Alembic M58-M60 non consecutiva.")
+
+    project_head = scripts.get_revision(EXPECTED_PROJECT_HEAD)
+    if project_head is None or project_head.down_revision != M58_M60_REVISION:
+        raise AssertionError("Catena Alembic M58-M61 non consecutiva.")
 
     model_text = require_text(
         PROJECT_ROOT / "backend/app/models/gen4_copyability.py",
@@ -131,7 +143,9 @@ def main() -> None:
         raise AssertionError("Endpoint execute non consentito nel contratto M58-M60.")
 
     print("GEN4_COPYABILITY_M58_M60_CONTRACT=OK")
-    print(f"ALEMBIC_HEAD={EXPECTED_HEAD}")
+    print(f"ALEMBIC_M58_M60_REVISION={M58_M60_REVISION}")
+    print(f"ALEMBIC_HEAD={EXPECTED_PROJECT_HEAD}")
+    print("ALEMBIC_CHAIN_M58_M61=PASS")
     print("WEBHOOK_AUTH=AUTHORIZATION_COMPARE_DIGEST")
     print("RECOVERY_ONLY_EXCLUDED=YES")
     print("JUPITER_MODE=QUOTE_AND_UNSIGNED_BUILD_ONLY")

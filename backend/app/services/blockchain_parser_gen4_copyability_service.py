@@ -35,6 +35,7 @@ from backend.app.services.live_trading_errors import JupiterSwapError
 
 
 GEN4_COPYABILITY_POLICY_VERSION = "canonical-parser-gen4-realtime-copyability/1"
+GEN4_COPYABILITY_RAW_PARSER_VERSION = "canonical-parser-gen4-raw-balance-delta/2"
 GEN4_COPYABILITY_START_CONFIRMATION = "START_GEN4_REALTIME_COPYABILITY"
 GEN4_COPYABILITY_STOP_CONFIRMATION = "STOP_GEN4_REALTIME_COPYABILITY"
 GEN4_COPYABILITY_PROCESS_CONFIRMATION = "PROCESS_GEN4_COPYABILITY_QUEUE"
@@ -64,10 +65,18 @@ LAMPORTS_PER_SOL = 1_000_000_000
 
 
 class CanonicalParserGen4CopyabilityError(RuntimeError):
-    def __init__(self, message: str, *, code: str, status_code: int = 400):
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str,
+        status_code: int = 400,
+        evidence: dict[str, Any] | None = None,
+    ):
         super().__init__(message)
         self.code = code
         self.status_code = status_code
+        self.evidence = dict(evidence or {})
 
 
 @dataclass(frozen=True)
@@ -1126,6 +1135,7 @@ def parse_raw_copyability_signal(
             "Nessun wallet congelato presente nella transazione.",
             code="GEN4_COPYABILITY_RAW_WALLET_NOT_MATCHED",
         )
+    transaction_accounts = set(_account_keys(payload))
 
     candidates: list[tuple[str, str, dict[str, int]]] = []
     for wallet in matched:
@@ -1135,15 +1145,62 @@ def parse_raw_copyability_signal(
             delta = int(values.get("delta") or 0)
             if delta:
                 candidates.append((wallet, mint, values))
-    if len(candidates) != 1:
+    if not candidates:
+        wallet_deltas = []
+        for wallet in matched:
+            native_delta, fee = _native_delta(payload, wallet)
+            wallet_deltas.append(
+                {
+                    "wallet_address": wallet,
+                    "wallet_in_transaction_accounts": wallet in transaction_accounts,
+                    "native_delta_lamports": native_delta,
+                    "fee_lamports": fee,
+                }
+            )
+        raise CanonicalParserGen4CopyabilityError(
+            "La transazione raw non contiene delta di token speculativi del wallet.",
+            code="GEN4_COPYABILITY_RAW_NO_SPECULATIVE_TOKEN_DELTA",
+            evidence={
+                "raw_parser_version": GEN4_COPYABILITY_RAW_PARSER_VERSION,
+                "classification": "NO_SPECULATIVE_TOKEN_DELTA",
+                "matched_wallets": matched,
+                "candidate_count": 0,
+                "wallet_deltas": wallet_deltas,
+            },
+        )
+    if len(candidates) > 1:
         raise CanonicalParserGen4CopyabilityError(
             "La transazione raw non contiene un solo delta token speculativo non ambiguo.",
             code="GEN4_COPYABILITY_RAW_AMBIGUOUS_TOKEN_DELTAS",
+            evidence={
+                "raw_parser_version": GEN4_COPYABILITY_RAW_PARSER_VERSION,
+                "classification": "MULTIPLE_SPECULATIVE_TOKEN_DELTAS",
+                "matched_wallets": matched,
+                "candidate_count": len(candidates),
+                "candidate_wallets": sorted({item[0] for item in candidates}),
+                "candidate_mints": sorted({item[1] for item in candidates}),
+            },
         )
 
     wallet, mint, values = candidates[0]
     delta = int(values["delta"])
     side = "BUY" if delta > 0 else "SELL"
+    if wallet not in transaction_accounts:
+        raise CanonicalParserGen4CopyabilityError(
+            "Il wallet compare solo come owner di un token account e non come account della transazione.",
+            code="GEN4_COPYABILITY_RAW_WALLET_NOT_TRANSACTION_ACCOUNT",
+            evidence={
+                "raw_parser_version": GEN4_COPYABILITY_RAW_PARSER_VERSION,
+                "classification": "OWNER_ONLY_TOKEN_DELTA",
+                "matched_wallets": matched,
+                "candidate_count": 1,
+                "wallet_address": wallet,
+                "wallet_in_transaction_accounts": False,
+                "token_mint": mint,
+                "token_delta_raw": delta,
+                "side_from_token_delta": side,
+            },
+        )
     sol_equivalent_delta, native_delta, wsol_delta, fee = _sol_equivalent_delta(
         payload,
         wallet,
@@ -1152,6 +1209,17 @@ def parse_raw_copyability_signal(
         raise CanonicalParserGen4CopyabilityError(
             "Delta SOL/WSOL del wallet non disponibile.",
             code="GEN4_COPYABILITY_RAW_SOL_EQUIVALENT_DELTA_UNAVAILABLE",
+            evidence={
+                "raw_parser_version": GEN4_COPYABILITY_RAW_PARSER_VERSION,
+                "classification": "SOL_EQUIVALENT_DELTA_UNAVAILABLE",
+                "matched_wallets": matched,
+                "candidate_count": 1,
+                "wallet_address": wallet,
+                "wallet_in_transaction_accounts": True,
+                "token_mint": mint,
+                "token_delta_raw": delta,
+                "side_from_token_delta": side,
+            },
         )
     # This campaign deliberately proves only SOL-paired memecoin swaps. Token
     # transfers and stablecoin-routed swaps cannot be compared with a SOL quote.
@@ -1198,6 +1266,7 @@ def parse_raw_copyability_signal(
         wallet_effective_price_sol=effective_price,
         sell_fraction=sell_fraction,
         evidence={
+            "raw_parser_version": GEN4_COPYABILITY_RAW_PARSER_VERSION,
             "matched_wallets": matched,
             "fee_lamports": fee,
             "native_delta_lamports": native_delta,
@@ -1832,6 +1901,7 @@ def process_gen4_copyability_queue(
                     "side": signal.side,
                     "wallet_address": signal.wallet_address,
                     "token_mint": signal.token_mint,
+                    "raw_parser_version": signal.evidence.get("raw_parser_version"),
                     "queue_latency_ms": queue_latency_ms,
                     "quote_attempted": False,
                     "quote_built": False,
@@ -1864,6 +1934,11 @@ def process_gen4_copyability_queue(
             receipt.parsed_summary = {
                 "ignored_reason": error.code,
                 "campaign_role": campaign.campaign_role,
+                "raw_parser_version": error.evidence.get(
+                    "raw_parser_version",
+                    GEN4_COPYABILITY_RAW_PARSER_VERSION,
+                ),
+                "parser_evidence": error.evidence,
             }
             item_summary = ProcessSummary(receipts_processed=1, receipts_ignored=1)
         except Exception as error:  # noqa: BLE001
