@@ -513,6 +513,7 @@ def test_activation_uses_existing_webhook_union_and_preserves_primary(monkeypatc
                     "webhookID": "wh-1",
                     "webhookURL": "https://backend.test" + activation.WEBHOOK_PATH,
                     "accountAddresses": [PRIMARY_A, PRIMARY_B],
+                    "webhookType": "raw",
                     "active": True,
                 }
             ]
@@ -523,6 +524,7 @@ def test_activation_uses_existing_webhook_union_and_preserves_primary(monkeypatc
                 "webhookID": "wh-1",
                 "webhookURL": "https://backend.test" + activation.WEBHOOK_PATH,
                 "accountAddresses": [PRIMARY_A, PRIMARY_B, CANDIDATE],
+                "webhookType": "raw",
                 "active": True,
             }
         raise AssertionError((method, url, payload))
@@ -549,7 +551,12 @@ def test_activation_uses_existing_webhook_union_and_preserves_primary(monkeypatc
         for call in backend_calls
         if call[0] == "POST" and call[1] == activation.CONFIGURE_PATH
     }
-    assert configured_ids == {primary["campaign_id"], candidate_id}
+    assert configured_ids == {candidate_id}
+    assert all(
+        call[2]["campaign_id"] != primary["campaign_id"]
+        for call in backend_calls
+        if call[0] == "POST" and call[1] == activation.CONFIGURE_PATH
+    )
 
 
 def test_activation_failsafe_restores_webhook_and_stops_only_new_candidate(monkeypatch):

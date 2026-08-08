@@ -45,6 +45,20 @@ def configure_logging() -> None:
                     "level": "WARNING",
                     "propagate": False,
                 },
+                # httpx logs the complete request URL at INFO. Helius uses an
+                # api-key query parameter, so INFO logging would disclose the
+                # credential in Railway logs. Provider failures are surfaced by
+                # our service exceptions; suppress transport request lines.
+                "httpx": {
+                    "handlers": ["default"],
+                    "level": "WARNING",
+                    "propagate": False,
+                },
+                "httpcore": {
+                    "handlers": ["default"],
+                    "level": "WARNING",
+                    "propagate": False,
+                },
             },
         }
-    ) 
+    )

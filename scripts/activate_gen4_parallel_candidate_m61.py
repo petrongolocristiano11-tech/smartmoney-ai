@@ -44,8 +44,11 @@ class ActivationState:
     candidate_existed_before: bool = False
     candidate_was_monitored_before: bool | None = None
     webhook_id: str = ""
+    primary_webhook_id: str = ""
     original_addresses: list[str] | None = None
+    rollback_addresses: list[str] | None = None
     webhook_updated: bool = False
+    repaired_empty_webhook: bool = False
     primary_anchor_before: str = ""
     primary_counts_before: dict[str, Any] | None = None
 
@@ -188,7 +191,12 @@ def rollback_activation(
     target_url: str,
 ) -> None:
     errors: list[str] = []
-    if state.webhook_updated and state.webhook_id and state.original_addresses is not None:
+    restore_addresses = (
+        state.rollback_addresses
+        if state.rollback_addresses is not None
+        else state.original_addresses
+    )
+    if state.webhook_updated and state.webhook_id and restore_addresses is not None:
         try:
             helius_request(
                 client,
@@ -197,7 +205,7 @@ def rollback_activation(
                 helius_key,
                 desired_webhook_body(
                     target_url=target_url,
-                    addresses=state.original_addresses,
+                    addresses=restore_addresses,
                     webhook_secret=webhook_secret,
                 ),
             )
@@ -263,6 +271,69 @@ def activate(
     state.primary_anchor_before = str(primary.get("anchor_at") or "")
     state.primary_counts_before = dict(primary.get("counts") or {})
 
+    primary_webhook = primary.get("webhook") or {}
+    if str(primary_webhook.get("status") or "") != "ACTIVE":
+        raise ActivationError("Webhook primario non registrato ACTIVE nel database")
+    state.primary_webhook_id = str(primary_webhook.get("webhook_id") or "").strip()
+    primary_webhook_url = str(primary_webhook.get("url") or "").rstrip("/")
+    if not state.primary_webhook_id:
+        raise ActivationError("Webhook primario privo di ID nel database")
+    if primary_webhook_url and primary_webhook_url != target_url.rstrip("/"):
+        raise ActivationError("URL webhook primario nel database inatteso")
+
+    # Validate the provider object BEFORE creating/restarting a candidate. This
+    # prevents another archived candidate if the provider configuration itself
+    # is not safe to repair.
+    webhooks_raw = helius_request(client, "GET", HELIUS_WEBHOOK_API, helius_key)
+    webhooks = webhooks_raw if isinstance(webhooks_raw, list) else []
+    exact = next(
+        (
+            item
+            for item in webhooks
+            if isinstance(item, dict)
+            and str(item.get("webhookURL") or "").rstrip("/")
+            == target_url.rstrip("/")
+        ),
+        None,
+    )
+    if exact is None:
+        raise ActivationError("Webhook Gen4 esistente non trovato; M61 non ne crea uno nuovo")
+    state.webhook_id = webhook_id(exact)
+    if not state.webhook_id:
+        raise ActivationError("Webhook Gen4 esistente privo di ID")
+    if state.webhook_id != state.primary_webhook_id:
+        raise ActivationError("Webhook Helius non coincide con il webhook primario registrato")
+    if str(exact.get("webhookType") or "").lower() != "raw":
+        raise ActivationError("Webhook Gen4 esistente non è RAW")
+    if not bool(exact.get("active")):
+        raise ActivationError("Webhook Gen4 esistente non è attivo")
+
+    state.original_addresses = [
+        str(value).strip()
+        for value in (exact.get("accountAddresses") or [])
+        if str(value).strip()
+    ]
+    original_set = set(state.original_addresses)
+    union_set = EXPECTED_PRIMARY_WALLETS | {CANDIDATE_WALLET}
+    allowed_existing = (
+        set(),
+        EXPECTED_PRIMARY_WALLETS,
+        union_set,
+    )
+    if original_set not in allowed_existing:
+        raise ActivationError("Webhook Gen4 monitora indirizzi inattesi")
+
+    # The remote audit found the exact primary webhook active but with an empty
+    # address list. Empty is repairable ONLY because the webhook ID and URL
+    # already match the database-recorded primary webhook above. On any later
+    # failure, restore at least the two primary wallets rather than restoring
+    # the broken empty list.
+    state.repaired_empty_webhook = original_set == set()
+    state.rollback_addresses = sorted(
+        EXPECTED_PRIMARY_WALLETS if state.repaired_empty_webhook else original_set
+    )
+    state.candidate_was_monitored_before = CANDIDATE_WALLET in original_set
+
     existing_candidate = next(
         (
             item
@@ -283,10 +354,10 @@ def activate(
                 "candidate_wallets": [CANDIDATE_WALLET],
                 "selection_snapshot": selection_snapshot(),
                 "anchor_at": None,
-                "actor_label": "M61_INSTALLER",
+                "actor_label": "M61_INSTALLER_REPAIR",
                 "note": (
-                    "Campagna candidata parallela approvata dopo gate rigidi: "
-                    "attività, parsing BUY/SELL, qualità, PnL osservato e Jupiter 6/6."
+                    "Campagna candidata parallela riavviata dopo repair controllato "
+                    "del webhook Helius e gate anti-burn del forward feed."
                 ),
             },
         )
@@ -299,67 +370,38 @@ def activate(
     if not state.candidate_id:
         raise ActivationError("Candidate campaign ID non restituito")
 
-    webhooks_raw = helius_request(client, "GET", HELIUS_WEBHOOK_API, helius_key)
-    webhooks = webhooks_raw if isinstance(webhooks_raw, list) else []
-    exact = next(
-        (
-            item
-            for item in webhooks
-            if isinstance(item, dict)
-            and str(item.get("webhookURL") or "").rstrip("/")
-            == target_url.rstrip("/")
-        ),
-        None,
-    )
-    if exact is None:
-        raise ActivationError("Webhook Gen4 esistente non trovato; M61 non ne crea uno nuovo")
-    state.webhook_id = webhook_id(exact)
-    if not state.webhook_id:
-        raise ActivationError("Webhook Gen4 esistente privo di ID")
-    state.original_addresses = [
-        str(value).strip()
-        for value in (exact.get("accountAddresses") or [])
-        if str(value).strip()
-    ]
-    state.candidate_was_monitored_before = (
-        CANDIDATE_WALLET in set(state.original_addresses)
-    )
-    allowed_existing = (
-        EXPECTED_PRIMARY_WALLETS,
-        EXPECTED_PRIMARY_WALLETS | {CANDIDATE_WALLET},
-    )
-    if set(state.original_addresses) not in allowed_existing:
-        raise ActivationError("Webhook Gen4 monitora indirizzi inattesi")
-
-    union_wallets = sorted(EXPECTED_PRIMARY_WALLETS | {CANDIDATE_WALLET})
-    helius_request(
-        client,
-        "PUT",
-        f"{HELIUS_WEBHOOK_API}/{state.webhook_id}",
-        helius_key,
-        desired_webhook_body(
-            target_url=target_url,
-            addresses=union_wallets,
-            webhook_secret=webhook_secret,
-        ),
-    )
-    state.webhook_updated = True
-
-    for campaign_id in (EXPECTED_PRIMARY_CAMPAIGN_ID, state.candidate_id):
-        backend_request(
+    union_wallets = sorted(union_set)
+    if original_set != union_set:
+        helius_request(
             client,
-            "POST",
-            CONFIGURE_PATH,
-            automation_key,
-            {
-                "campaign_id": campaign_id,
-                "confirmation": CONFIGURE_CONFIRMATION,
-                "webhook_id": state.webhook_id,
-                "webhook_url": target_url,
-                "active": True,
-                "observed_at": None,
-            },
+            "PUT",
+            f"{HELIUS_WEBHOOK_API}/{state.webhook_id}",
+            helius_key,
+            desired_webhook_body(
+                target_url=target_url,
+                addresses=union_wallets,
+                webhook_secret=webhook_secret,
+            ),
         )
+        state.webhook_updated = True
+
+    # Primary DB metadata already points to this exact webhook and must not be
+    # rewritten. Configure only the fresh candidate, preserving the original
+    # primary anchor/configuration timestamp and counters.
+    backend_request(
+        client,
+        "POST",
+        CONFIGURE_PATH,
+        automation_key,
+        {
+            "campaign_id": state.candidate_id,
+            "confirmation": CONFIGURE_CONFIRMATION,
+            "webhook_id": state.webhook_id,
+            "webhook_url": target_url,
+            "active": True,
+            "observed_at": None,
+        },
+    )
 
     verified = helius_request(
         client,
@@ -369,7 +411,9 @@ def activate(
     )
     if not isinstance(verified, dict) or not bool(verified.get("active")):
         raise ActivationError("Webhook Helius M61 non attivo dopo l'update")
-    if set(verified.get("accountAddresses") or []) != set(union_wallets):
+    if str(verified.get("webhookType") or "").lower() != "raw":
+        raise ActivationError("Webhook Helius M61 non è RAW dopo l'update")
+    if set(verified.get("accountAddresses") or []) != union_set:
         raise ActivationError("Webhook Helius M61 non monitora esattamente l'unione attesa")
 
     after = backend_request(client, "GET", STATUS_PATH, automation_key)
@@ -388,6 +432,9 @@ def activate(
         raise ActivationError("Anchor della campagna primaria è cambiato")
     if set(primary_after.get("frozen_wallets") or []) != EXPECTED_PRIMARY_WALLETS:
         raise ActivationError("Wallet primari modificati")
+    primary_webhook_after = primary_after.get("webhook") or {}
+    if str(primary_webhook_after.get("webhook_id") or "") != state.primary_webhook_id:
+        raise ActivationError("Webhook ID primario nel database è cambiato")
     primary_counts_after = dict(primary_after.get("counts") or {})
     for key, before_value in (state.primary_counts_before or {}).items():
         try:
@@ -467,6 +514,8 @@ def main() -> int:
         + ("YES" if state.candidate_created_now else "NO_IDEMPOTENT")
     )
     print(f"WEBHOOK_ID={state.webhook_id}")
+    print("M61_EMPTY_PRIMARY_WEBHOOK_REPAIRED=" + ("YES" if state.repaired_empty_webhook else "NO_NOT_NEEDED"))
+    print("PRIMARY_DB_WEBHOOK_METADATA_REWRITTEN=NO")
     print("WEBHOOK_TYPE=raw")
     print("WEBHOOK_WALLET_COUNT=3")
     print("ACTIVE_COPYABILITY_CAMPAIGNS=2")

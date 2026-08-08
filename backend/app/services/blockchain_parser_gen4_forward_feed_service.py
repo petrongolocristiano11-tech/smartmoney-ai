@@ -13,6 +13,10 @@ from backend.app.models.gen4_forward_feed import (
     CanonicalParserGen4ForwardFeedState,
 )
 from backend.app.models.gen4_forward_shadow import CanonicalParserGen4ForwardCampaign
+from backend.app.models.gen4_copyability import (
+    CanonicalParserGen4CopyabilityCampaign,
+    CanonicalParserGen4WebhookReceipt,
+)
 from backend.app.services.blockchain_parser_gen4_forward_shadow_service import (
     GEN4_FORWARD_CYCLE_CONFIRMATION,
     run_gen4_forward_cycle,
@@ -197,6 +201,141 @@ def _daily_helius_requests(db: Session, campaign_id: int, observed: datetime) ->
         )
         or 0
     )
+
+
+def _webhook_gated_wallets(
+    db: Session,
+    *,
+    campaign: CanonicalParserGen4ForwardCampaign,
+    state: CanonicalParserGen4ForwardFeedState,
+    wallets: list[str],
+    observed: datetime,
+) -> tuple[list[str] | None, dict[str, Any]]:
+    """Gate expensive history calls behind fresh primary webhook receipts.
+
+    ``None`` preserves the legacy M56-M57 polling behavior if the M58+
+    real-time copyability layer is unavailable or not ACTIVE. An empty list
+    means the primary real-time webhook is active but no forward wallet had
+    a fresh delivery, so the scheduler must use zero Helius history calls.
+    """
+    primary = db.scalar(
+        select(CanonicalParserGen4CopyabilityCampaign)
+        .where(
+            CanonicalParserGen4CopyabilityCampaign.forward_campaign_db_id == campaign.id,
+            CanonicalParserGen4CopyabilityCampaign.status == "ACTIVE",
+            CanonicalParserGen4CopyabilityCampaign.campaign_role == "PRIMARY_FORWARD",
+        )
+        .order_by(CanonicalParserGen4CopyabilityCampaign.id.asc())
+        .limit(1)
+    )
+    if primary is None or primary.webhook_status != "ACTIVE":
+        return None, {
+            "acquisition_mode": "LEGACY_POLLING_FALLBACK",
+            "reason": "PRIMARY_REALTIME_WEBHOOK_NOT_ACTIVE",
+        }
+
+    floor_base = state.last_success_at or state.feed_started_at or campaign.anchor_at
+    receipt_floor = max(
+        _aware(campaign.anchor_at),
+        _aware(floor_base) - timedelta(seconds=int(state.overlap_seconds)),
+    )
+    rows = list(
+        db.scalars(
+            select(CanonicalParserGen4WebhookReceipt.wallet_address)
+            .where(
+                CanonicalParserGen4WebhookReceipt.campaign_db_id == primary.id,
+                CanonicalParserGen4WebhookReceipt.source == "WEBHOOK",
+                CanonicalParserGen4WebhookReceipt.received_at > receipt_floor,
+                CanonicalParserGen4WebhookReceipt.received_at <= observed,
+                CanonicalParserGen4WebhookReceipt.wallet_address.in_(wallets),
+            )
+            .distinct()
+        ).all()
+    )
+    triggered_set = {str(value).strip() for value in rows if str(value or "").strip()}
+    triggered = [wallet for wallet in wallets if wallet in triggered_set]
+    return triggered, {
+        "acquisition_mode": "WEBHOOK_GATED_RECOVERY",
+        "primary_copyability_campaign_id": primary.campaign_id,
+        "webhook_id": primary.webhook_id,
+        "receipt_floor": receipt_floor.isoformat(),
+        "triggered_wallets": triggered,
+        "configured_wallet_count": len(wallets),
+        "triggered_wallet_count": len(triggered),
+    }
+
+
+def _persist_webhook_idle_run(
+    db: Session,
+    *,
+    campaign: CanonicalParserGen4ForwardCampaign,
+    state: CanonicalParserGen4ForwardFeedState,
+    owner_id: str,
+    trigger: str,
+    observed: datetime,
+    gate_details: dict[str, Any],
+) -> CanonicalParserGen4ForwardFeedRun:
+    # Preserve the original M56-M57 cycle cadence while removing the idle
+    # provider call. This keeps forward decision time progression unchanged.
+    cycle_result = run_gen4_forward_cycle(
+        db,
+        campaign_id=campaign.campaign_id,
+        confirmation=GEN4_FORWARD_CYCLE_CONFIRMATION,
+        observed_at=observed,
+    )
+    cycle = dict(cycle_result.get("cycle") or {})
+    row = CanonicalParserGen4ForwardFeedRun(
+        run_id=str(uuid4()),
+        state_db_id=state.id,
+        campaign_db_id=campaign.id,
+        trigger=trigger,
+        status=STATUS_NOOP,
+        owner_id=owner_id,
+        observed_from_at=observed,
+        observed_to_at=observed,
+        wallet_count=0,
+        request_budget=0,
+        helius_requests=0,
+        transactions_found=0,
+        swaps_found=0,
+        trades_imported=0,
+        trades_updated=0,
+        parse_failures=0,
+        stale_transactions_filtered=0,
+        cycle_id=cycle.get("cycle_id"),
+        cycle_sequence=cycle.get("sequence"),
+        cycle_status=cycle.get("status"),
+        new_decisions=int(cycle.get("new_decision_count") or 0),
+        updated_decisions=int(cycle.get("updated_decision_count") or 0),
+        error_code=None,
+        error_message=None,
+        details={
+            **gate_details,
+            "provider_call_skipped": True,
+            "provider_call_reason": "NO_NEW_PRIMARY_WEBHOOK_RECEIPT",
+            "copyability_recovery": {
+                "created": 0,
+                "existing": 0,
+                "ignored": 0,
+                "counted_as_realtime": False,
+            },
+        },
+        safety=_safety(0),
+        started_at=state.last_poll_started_at or observed,
+        completed_at=observed,
+    )
+    db.add(row)
+    state.total_runs += 1
+    state.successful_runs += 1
+    state.last_status = STATUS_NOOP
+    state.last_error_code = None
+    state.last_error_message = None
+    state.last_poll_completed_at = observed
+    state.last_success_at = observed
+    state.next_poll_at = observed + timedelta(seconds=state.interval_seconds)
+    _release_lease(state)
+    db.flush()
+    return row
 
 
 def get_gen4_forward_feed_status(db: Session) -> dict[str, Any]:
@@ -505,6 +644,28 @@ def run_gen4_forward_feed_poll(
     source_floor = max(source_floor, _aware(campaign.anchor_at), _aware(state.feed_started_at))
 
     wallets = [str(item) for item in (campaign.frozen_wallets or []) if str(item).strip()]
+    gated_wallets, gate_details = _webhook_gated_wallets(
+        db,
+        campaign=campaign,
+        state=state,
+        wallets=wallets,
+        observed=observed,
+    )
+    if gated_wallets == []:
+        row = _persist_webhook_idle_run(
+            db,
+            campaign=campaign,
+            state=state,
+            owner_id=owner,
+            trigger=normalized_trigger,
+            observed=observed,
+            gate_details=gate_details,
+        )
+        return {
+            "run": _serialize_run(row),
+            "status": get_gen4_forward_feed_status(db),
+        }
+    acquisition_wallets = wallets if gated_wallets is None else gated_wallets
     request_budget = min(
         int(state.max_requests_per_run),
         max(0, daily_cap - daily_used),
@@ -514,8 +675,8 @@ def run_gen4_forward_feed_poll(
     wallet_details: list[dict[str, Any]] = []
     partial_errors: list[dict[str, str]] = []
 
-    for wallet_index, wallet in enumerate(wallets):
-        remaining_wallets = max(1, len(wallets) - wallet_index)
+    for wallet_index, wallet in enumerate(acquisition_wallets):
+        remaining_wallets = max(1, len(acquisition_wallets) - wallet_index)
         wallet_budget = max(1, (request_budget - requests_used) // remaining_wallets)
         before_signature: str | None = None
         wallet_transactions: list[dict[str, Any]] = []
@@ -568,7 +729,9 @@ def run_gen4_forward_feed_poll(
         if requests_used >= request_budget:
             break
 
-    filtered_by_wallet: dict[str, list[dict[str, Any]]] = {wallet: [] for wallet in wallets}
+    filtered_by_wallet: dict[str, list[dict[str, Any]]] = {
+        wallet: [] for wallet in acquisition_wallets
+    }
     stale_filtered = 0
     invalid_time_filtered = 0
     for wallet, item in all_transactions:
@@ -594,7 +757,7 @@ def run_gen4_forward_feed_poll(
         "copyability_recovery_existing": 0,
         "copyability_recovery_ignored": 0,
     }
-    for wallet in wallets:
+    for wallet in acquisition_wallets:
         recovery = record_gen4_copyability_recovery_events(
             db,
             wallet_address=wallet,
@@ -639,7 +802,7 @@ def run_gen4_forward_feed_poll(
         owner_id=owner,
         observed_from_at=source_floor,
         observed_to_at=observed,
-        wallet_count=len(wallets),
+        wallet_count=len(acquisition_wallets),
         request_budget=request_budget,
         helius_requests=requests_used,
         transactions_found=counters["transactions_found"],
@@ -656,12 +819,14 @@ def run_gen4_forward_feed_poll(
         error_code=("GEN4_FORWARD_FEED_PARTIAL_HELIUS_FAILURE" if partial_errors else None),
         error_message=("Uno o più wallet non sono stati acquisiti." if partial_errors else None),
         details={
+            **gate_details,
             "wallets": wallet_details,
             "partial_errors": partial_errors,
             "source_floor": source_floor.isoformat(),
             "observed_at": observed.isoformat(),
             "invalid_time_filtered": invalid_time_filtered,
             "maximum_ingestion_lag_seconds": max_lag_seconds,
+            "provider_call_skipped": False,
             "copyability_recovery": {
                 "created": counters["copyability_recovery_created"],
                 "existing": counters["copyability_recovery_existing"],
