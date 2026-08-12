@@ -91,11 +91,6 @@ def process_live_signature(
             "Wallet sorgente vuoto."
         )
 
-    provider = (
-        enhanced_transaction_provider
-        or get_enhanced_transaction
-    )
-
     executor = (
         order_executor
         or execute_source_trade
@@ -104,9 +99,16 @@ def process_live_signature(
     db: Session = session_factory()
 
     try:
-        transactions = provider(
-            normalized_signature
-        )
+        if enhanced_transaction_provider is None:
+            transactions = get_enhanced_transaction(
+                normalized_signature,
+                request_origin="LEGACY_LIVE_STREAM",
+                automatic=True,
+            )
+        else:
+            transactions = enhanced_transaction_provider(
+                normalized_signature
+            )
 
         if not isinstance(
             transactions,
@@ -236,4 +238,4 @@ def process_live_signature(
         raise
 
     finally:
-        db.close() 
+        db.close()

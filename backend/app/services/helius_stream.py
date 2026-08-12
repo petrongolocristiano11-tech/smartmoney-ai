@@ -154,7 +154,9 @@ def process_signature(
     try:
         transactions = (
             get_enhanced_transaction(
-                signature
+                signature,
+                request_origin="LEGACY_SCANNER_STREAM",
+                automatic=True,
             )
         )
 

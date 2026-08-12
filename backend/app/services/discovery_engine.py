@@ -135,7 +135,11 @@ def get_wallets_by_token(db: Session, token_mint: str):
 
 def discover_wallets_from_token_onchain(token_mint: str):
     try:
-        transactions = get_wallet_history(token_mint)
+        transactions = get_wallet_history(
+            token_mint,
+            request_origin="DISCOVERY_TOKEN_HISTORY",
+            automatic=True,
+        )
     except Exception as error:
         issue = _issue(stage="TOKEN_HISTORY", error=error, token_mint=token_mint)
         return {

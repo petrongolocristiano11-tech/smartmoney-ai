@@ -328,6 +328,16 @@ def load_policy_snapshot() -> PolicySnapshot:
                 "SOURCE_WALLETS_EMPTY"
             )
 
+        elif (
+            enabled
+            and not settings
+            .HELIUS_AUTOMATIC_ENHANCED_API_ENABLED
+        ):
+            enabled = False
+            blocked_reason = (
+                "HELIUS_AUTOMATIC_ENHANCED_DISABLED"
+            )
+
         if enabled:
             generation = (
                 max(
@@ -1371,6 +1381,7 @@ class HeliusLiveTradingWorker:
                         "KILL_SWITCH_ACTIVE",
                         "PAUSED_MAX_DAILY_ORDERS",
                         "PAUSED_MAX_DAILY_BUY",
+                        "HELIUS_AUTOMATIC_ENHANCED_DISABLED",
                     }
 
                     self.current_status = (
@@ -1596,4 +1607,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main() 
+    main()

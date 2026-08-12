@@ -22,7 +22,11 @@ def sync_wallet(db: Session, wallet_address: str):
         if wallet and not needs_sync(wallet):
             return calculate_smart_score(db, wallet_address)
 
-        swaps = get_wallet_swaps(wallet_address)
+        swaps = get_wallet_swaps(
+            wallet_address,
+            request_origin="AUTOMATIC_WALLET_SYNC",
+            automatic=True,
+        )
 
         for swap in swaps["swaps"]:
             trade = build_trade(swap)

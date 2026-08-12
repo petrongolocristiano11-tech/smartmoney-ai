@@ -94,6 +94,9 @@ def main() -> None:
     backend_url = required_env("GEN4_BACKEND_URL").rstrip("/")
     automation_key = required_env("AUTOMATION_API_KEY")
     replace_confirmation = str(os.getenv("GEN4_REPLACE_WEBHOOK_CONFIRMATION") or "").strip()
+    expected_exclusive_wallet = str(
+        os.getenv("GEN4_EXPECT_EXCLUSIVE_WALLET") or ""
+    ).strip()
     target_url = f"{backend_url}{WEBHOOK_PATH}"
 
     with httpx.Client(timeout=30.0, follow_redirects=True) as client:
@@ -172,10 +175,16 @@ def main() -> None:
             ),
             None,
         )
-        if primary is None:
-            raise SetupError("Campagna copyability primaria ACTIVE non trovata.")
+        # M63 may intentionally pause the historical primary campaign and keep
+        # one qualified candidate as the only ACTIVE campaign. In that case the
+        # candidate is the reference campaign for registration and verification.
+        reference_campaign = primary or campaigns[0]
 
         wallets = sorted(wallet_owners)
+        if expected_exclusive_wallet and wallets != [expected_exclusive_wallet]:
+            raise SetupError(
+                "La configurazione M63 richiede esattamente il wallet esclusivo atteso."
+            )
         campaign_ids = [str(item["campaign_id"]).strip() for item in campaigns]
 
         existing_raw = request_json(
@@ -327,12 +336,16 @@ def main() -> None:
                 item
                 for item in registered_campaigns
                 if str(item.get("campaign_id") or "").strip()
-                == str(primary.get("campaign_id") or "").strip()
+                == str(reference_campaign.get("campaign_id") or "").strip()
             ),
             registered_campaigns[0],
         )
         print(f"COPYABILITY_ANCHOR_AT={primary_registered.get('anchor_at')}")
         print("M61_SINGLE_WEBHOOK_UNION_ROUTING=ENABLED")
+        print(
+            "M63_EXCLUSIVE_CANDIDATE_WEBHOOK="
+            + ("YES" if primary is None and len(campaign_ids) == 1 else "NO")
+        )
         print("WEBHOOK_TYPE=raw")
         print("TXN_STATUS=success")
         print("AUTH_HEADER=CONFIGURED_REDACTED")

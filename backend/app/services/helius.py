@@ -14,6 +14,12 @@ from backend.app.services.raw_blockchain_capture_service import (
     RawCaptureContext,
     capture_raw_blockchain_payload_safely,
 )
+from backend.app.services.helius_credit_guard_service import (
+    CATEGORY_ENHANCED,
+    CATEGORY_RPC,
+    HeliusCreditGuardError,
+    reserve_helius_credits,
+)
 from backend.app.services.trade_engine import normalize_swap
 
 
@@ -104,6 +110,10 @@ def _request_json(
     json: Any = None,
     timeout: float | None = None,
     max_retries: int | None = None,
+    credit_category: str | None = None,
+    estimated_credits: int = 1,
+    request_origin: str = "UNSPECIFIED",
+    automatic: bool = False,
 ) -> Any:
     safe_endpoint = _safe_endpoint(url)
     retry_count = (
@@ -120,6 +130,23 @@ def _request_json(
 
     for attempt in range(1, max_attempts + 1):
         response: httpx.Response | None = None
+
+        if credit_category is not None:
+            try:
+                reserve_helius_credits(
+                    category=credit_category,
+                    estimated_credits=estimated_credits,
+                    origin=request_origin,
+                    automatic=automatic,
+                )
+            except HeliusCreditGuardError as error:
+                raise HeliusRequestError(
+                    message=error.message,
+                    endpoint=safe_endpoint,
+                    retryable=False,
+                    attempts=max(0, attempt - 1),
+                    error_code=error.code,
+                ) from None
 
         try:
             response = httpx.request(
@@ -347,6 +374,9 @@ def _rpc_capture_identity(
 def helius_rpc_call(
     method: str,
     params: list[Any] | None = None,
+    *,
+    request_origin: str = "MANUAL_RPC",
+    automatic: bool = False,
 ) -> Any:
     payload = {
         "jsonrpc": "2.0",
@@ -360,6 +390,10 @@ def helius_rpc_call(
         get_helius_rpc_url(),
         params={"api-key": settings.HELIUS_API_KEY},
         json=payload,
+        credit_category=CATEGORY_RPC,
+        estimated_credits=(10 if method == "getProgramAccounts" else 1),
+        request_origin=request_origin,
+        automatic=automatic,
     )
 
     observed_wallet, transaction_signature, commitment = (
@@ -394,16 +428,33 @@ def helius_rpc_call(
     return result
 
 
-def get_helius_health() -> Any:
-    return helius_rpc_call("getHealth")
+def get_helius_health(
+    *,
+    request_origin: str = "MANUAL_HEALTH",
+    automatic: bool = False,
+) -> Any:
+    return helius_rpc_call(
+        "getHealth",
+        request_origin=request_origin,
+        automatic=automatic,
+    )
 
 
-def get_enhanced_transaction(signature: str) -> list[dict[str, Any]]:
+def get_enhanced_transaction(
+    signature: str,
+    *,
+    request_origin: str = "MANUAL_ENHANCED_TRANSACTION",
+    automatic: bool = False,
+) -> list[dict[str, Any]]:
     result = _request_json(
         "POST",
         "https://api.helius.xyz/v0/transactions/",
         params={"api-key": settings.HELIUS_API_KEY},
         json={"transactions": [signature]},
+        credit_category=CATEGORY_ENHANCED,
+        estimated_credits=100,
+        request_origin=request_origin,
+        automatic=automatic,
     )
 
     if not isinstance(result, list):
@@ -438,6 +489,8 @@ def get_wallet_history(
     commitment: str = "finalized",
     token_accounts: str = "none",
     max_retries: int | None = None,
+    request_origin: str = "MANUAL_WALLET_HISTORY",
+    automatic: bool = False,
 ) -> list[dict[str, Any]]:
     endpoint = (
         "https://mainnet.helius-rpc.com/v0/addresses/"
@@ -464,6 +517,10 @@ def get_wallet_history(
         endpoint,
         params=params,
         max_retries=max_retries,
+        credit_category=CATEGORY_ENHANCED,
+        estimated_credits=100,
+        request_origin=request_origin,
+        automatic=automatic,
     )
 
     if not isinstance(result, list):
@@ -501,6 +558,8 @@ def get_wallet_swaps(
     limit: int = 100,
     gte_time: int | None = None,
     max_retries: int | None = None,
+    request_origin: str = "MANUAL_WALLET_SWAPS",
+    automatic: bool = False,
 ) -> dict[str, Any]:
     transactions = get_wallet_history(
         address,
@@ -510,6 +569,8 @@ def get_wallet_swaps(
         commitment="confirmed",
         token_accounts="balanceChanged",
         max_retries=max_retries,
+        request_origin=request_origin,
+        automatic=automatic,
     )
 
     swaps = [

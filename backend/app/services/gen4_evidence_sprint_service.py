@@ -444,6 +444,8 @@ def run_gen4_evidence_sprint(
                 commitment="confirmed",
                 token_accounts="balanceChanged",
                 max_retries=0,
+                request_origin="GEN4_EVIDENCE_COMPANION_DISCOVERY",
+                automatic=True,
             )
             requests_used += 1
             wallets = _extract_fee_payers(
@@ -532,6 +534,8 @@ def run_gen4_evidence_sprint(
                 commitment="confirmed",
                 token_accounts="balanceChanged",
                 max_retries=0,
+                request_origin="GEN4_EVIDENCE_CANDIDATE_PROBE",
+                automatic=True,
             )
             requests_used += 1
             probe = _probe_metrics(transactions)

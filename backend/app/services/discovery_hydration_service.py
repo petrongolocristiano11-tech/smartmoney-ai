@@ -305,6 +305,8 @@ def _hydrate_wallet(
             commitment="confirmed",
             token_accounts="balanceChanged",
             max_retries=0,
+            request_origin="DISCOVERY_WALLET_HYDRATION",
+            automatic=True,
         )
         counters = _save_transactions(
             db,

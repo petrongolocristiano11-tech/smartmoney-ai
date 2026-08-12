@@ -236,7 +236,7 @@ def test_token_onchain_failure_is_returned_as_safe_payload(monkeypatch):
     monkeypatch.setattr(
         discovery_engine,
         "get_wallet_history",
-        lambda _token: (_ for _ in ()).throw(
+        lambda _token, **_kwargs: (_ for _ in ()).throw(
             HeliusRequestError(
                 message=f"failed api-key={secret}",
                 endpoint="https://api.helius.xyz/v0/test",

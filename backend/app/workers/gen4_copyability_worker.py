@@ -69,15 +69,12 @@ class Gen4CopyabilityWorker:
             try:
                 status = get_gen4_copyability_status(db, recent_limit=1)
                 campaigns = list(status.get("active_campaigns") or [])
-                primary = next(
-                    (
-                        item
-                        for item in campaigns
-                        if item.get("campaign_role") == "PRIMARY_FORWARD"
-                    ),
-                    None,
-                )
-                if primary is None:
+                primary_campaigns = [
+                    item
+                    for item in campaigns
+                    if item.get("campaign_role") == "PRIMARY_FORWARD"
+                ]
+                if not campaigns:
                     if not bool(
                         getattr(
                             settings,
@@ -100,6 +97,15 @@ class Gen4CopyabilityWorker:
                     db.commit()
                     logger.info("gen4_copyability_campaign_autostarted")
                     return fallback
+
+                # M63 may intentionally keep only one qualified-candidate
+                # campaign active. Do not resurrect the obsolete primary
+                # campaign while an exclusive candidate is collecting proof.
+                if not primary_campaigns:
+                    logger.info(
+                        "gen4_copyability_candidate_only_runtime campaign_count=%s",
+                        len(campaigns),
+                    )
 
                 worker_state = dict(status.get("worker_state") or {})
                 interval = max(

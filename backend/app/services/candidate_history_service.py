@@ -423,6 +423,8 @@ def run_extended_candidate_history(
                     commitment="confirmed",
                     token_accounts="balanceChanged",
                     max_retries=0,
+                    request_origin="CANDIDATE_HISTORY_ACQUISITION",
+                    automatic=True,
                 )
             except HeliusRequestError as error:
                 continuation = str(error.continuation_signature or "").strip()

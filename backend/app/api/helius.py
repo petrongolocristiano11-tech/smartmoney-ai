@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from backend.app.core.discovery_security import require_automation_key
 from backend.app.database.session import get_db
 from backend.app.services.helius import (
     get_enhanced_transaction,
@@ -8,18 +9,27 @@ from backend.app.services.helius import (
     get_wallet_history,
     get_wallet_swaps,
 )
+from backend.app.services.helius_credit_guard_service import (
+    get_helius_credit_guard_status,
+)
 from backend.app.services.trade_engine import build_trade, build_trade_data
-from backend.app.services.trade_service import create_trade_if_not_exists 
+from backend.app.services.trade_service import create_trade_if_not_exists
 
 router = APIRouter(
     prefix="/helius",
     tags=["Helius"],
+    dependencies=[Depends(require_automation_key)],
 )
 
 
 @router.get("/health")
 def helius_health():
     return get_helius_health()
+
+
+@router.get("/credits/status")
+def helius_credit_status(db: Session = Depends(get_db)):
+    return get_helius_credit_guard_status(db)
 
 
 @router.get("/transaction/{signature}")
@@ -73,4 +83,4 @@ def import_wallet_swaps(
         "found": swaps["swaps_found"],
         "imported": len(imported),
         "trades": imported,
-    } 
+    }

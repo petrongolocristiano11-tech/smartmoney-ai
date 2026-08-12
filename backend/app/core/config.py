@@ -90,6 +90,37 @@ class Settings(BaseSettings):
         le=60.0,
     )
 
+    # Persistent credit containment. Reservations are stored in the existing
+    # Gen4 copyability worker state, so the budget survives Railway restarts
+    # without adding a migration. Raw webhook deliveries never pass through
+    # this outbound-request guard.
+    HELIUS_CREDIT_GUARD_ENABLED: bool = True
+
+    HELIUS_CREDIT_GUARD_ENFORCE_IN_NON_PRODUCTION: bool = False
+
+    HELIUS_APP_DAILY_CREDIT_CAP: int = Field(
+        default=20_000,
+        ge=100,
+        le=10_000_000,
+    )
+
+    HELIUS_ENHANCED_DAILY_CREDIT_CAP: int = Field(
+        default=10_000,
+        ge=0,
+        le=10_000_000,
+    )
+
+    HELIUS_RPC_DAILY_CREDIT_CAP: int = Field(
+        default=10_000,
+        ge=0,
+        le=10_000_000,
+    )
+
+    # The legacy logsSubscribe -> Enhanced Transaction path costs 100 credits
+    # for every observed signature. Gen4/M62 uses the Raw Webhook instead, so
+    # automatic Enhanced calls are fail-closed unless explicitly re-enabled.
+    HELIUS_AUTOMATIC_ENHANCED_API_ENABLED: bool = False
+
     # =========================
     # RAW BLOCKCHAIN CAPTURE
     # Passive shadow mode; disabled by default.

@@ -32,6 +32,9 @@ from backend.app.services.jupiter_swap_client import (
     sanitize_jupiter_payload,
 )
 from backend.app.services.live_trading_errors import JupiterSwapError
+from backend.app.services.helius_credit_guard_service import (
+    get_helius_credit_guard_status,
+)
 
 
 GEN4_COPYABILITY_POLICY_VERSION = "canonical-parser-gen4-realtime-copyability/1"
@@ -1029,6 +1032,401 @@ def record_gen4_copyability_recovery_events(
     return {"created": created, "existing": existing_count, "ignored": ignored}
 
 
+RECOVERY_GAP_METADATA_KEY = "m63_public_rpc_recovery_gap"
+
+
+def _recovery_gap_metadata(
+    campaign: CanonicalParserGen4CopyabilityCampaign,
+) -> dict[str, Any]:
+    metadata = dict(campaign.technical_metadata or {})
+    gap = metadata.get(RECOVERY_GAP_METADATA_KEY)
+    normalized = dict(gap) if isinstance(gap, dict) else {}
+    tokens = normalized.get("tokens")
+    normalized["tokens"] = dict(tokens) if isinstance(tokens, dict) else {}
+    return normalized
+
+
+def _recovery_gap_token_key(wallet_address: str, token_mint: str) -> str:
+    return f"{wallet_address}:{token_mint}"
+
+
+def _get_recovery_gap_token(
+    campaign: CanonicalParserGen4CopyabilityCampaign,
+    *,
+    wallet_address: str,
+    token_mint: str,
+) -> dict[str, Any] | None:
+    gap = _recovery_gap_metadata(campaign)
+    value = gap["tokens"].get(
+        _recovery_gap_token_key(wallet_address, token_mint)
+    )
+    return dict(value) if isinstance(value, dict) else None
+
+
+def _write_recovery_gap_metadata(
+    campaign: CanonicalParserGen4CopyabilityCampaign,
+    gap: dict[str, Any],
+) -> None:
+    metadata = dict(campaign.technical_metadata or {})
+    metadata[RECOVERY_GAP_METADATA_KEY] = gap
+    campaign.technical_metadata = metadata
+
+
+def _taint_recovery_gap_token(
+    campaign: CanonicalParserGen4CopyabilityCampaign,
+    *,
+    signal: ParsedRawSignal,
+    observed_at: datetime,
+) -> None:
+    gap = _recovery_gap_metadata(campaign)
+    tokens = dict(gap["tokens"])
+    key = _recovery_gap_token_key(signal.wallet_address, signal.token_mint)
+    current = tokens.get(key)
+    state = dict(current) if isinstance(current, dict) else {}
+    state.update(
+        {
+            "wallet_address": signal.wallet_address,
+            "token_mint": signal.token_mint,
+            "last_recovery_signature": signal.signature,
+            "last_recovery_side": signal.side,
+            "last_recovery_at": observed_at.isoformat(),
+            "reason": "BALANCE_CONTINUITY_INTERRUPTED_DURING_HELIUS_OUTAGE",
+        }
+    )
+    state.setdefault("first_recovery_signature", signal.signature)
+    state.setdefault("first_recovery_at", observed_at.isoformat())
+    tokens[key] = state
+    gap["tokens"] = tokens
+    gap["updated_at"] = observed_at.isoformat()
+    _write_recovery_gap_metadata(campaign, gap)
+
+
+def _clear_recovery_gap_token(
+    campaign: CanonicalParserGen4CopyabilityCampaign,
+    *,
+    wallet_address: str,
+    token_mint: str,
+    signature: str,
+    observed_at: datetime,
+) -> bool:
+    gap = _recovery_gap_metadata(campaign)
+    tokens = dict(gap["tokens"])
+    key = _recovery_gap_token_key(wallet_address, token_mint)
+    if key not in tokens:
+        return False
+    tokens.pop(key, None)
+    gap["tokens"] = tokens
+    gap["updated_at"] = observed_at.isoformat()
+    cleared = list(gap.get("recently_cleared") or [])
+    cleared.append(
+        {
+            "wallet_address": wallet_address,
+            "token_mint": token_mint,
+            "signature": signature,
+            "cleared_at": observed_at.isoformat(),
+        }
+    )
+    gap["recently_cleared"] = cleared[-20:]
+    _write_recovery_gap_metadata(campaign, gap)
+    return True
+
+
+def _quarantine_recovery_gap_positions(
+    db: Session,
+    *,
+    campaign: CanonicalParserGen4CopyabilityCampaign,
+    signal: ParsedRawSignal,
+    observed_at: datetime,
+) -> int:
+    positions = list(
+        db.scalars(
+            select(CanonicalParserGen4CopyabilityPosition).where(
+                CanonicalParserGen4CopyabilityPosition.campaign_db_id
+                == campaign.id,
+                CanonicalParserGen4CopyabilityPosition.wallet_address
+                == signal.wallet_address,
+                CanonicalParserGen4CopyabilityPosition.token_mint
+                == signal.token_mint,
+                CanonicalParserGen4CopyabilityPosition.status.in_(
+                    [POSITION_OPEN, POSITION_OPEN_PARTIAL]
+                ),
+            )
+        )
+    )
+    for position in positions:
+        evidence = dict(position.evidence or {})
+        quarantines = list(evidence.get("recovery_gap_quarantines") or [])
+        quarantines.append(
+            {
+                "signature": signal.signature,
+                "side": signal.side,
+                "observed_at": observed_at.isoformat(),
+                "reason": "HELIUS_OUTAGE_BALANCE_CONTINUITY_LOST",
+            }
+        )
+        evidence["recovery_gap_quarantines"] = quarantines[-20:]
+        position.evidence = evidence
+        position.status = POSITION_CLOSED
+        position.closed_at = observed_at
+        position.remaining_token_raw = 0
+        position.pnl_lamports = None
+        position.return_percent = None
+        position.close_reason = "RECOVERY_GAP_QUARANTINE"
+        position.exit_source = SOURCE_RECOVERY
+        position.last_exit_signature = signal.signature
+        position.exit_transaction_built = False
+        position.exit_copyable = False
+    return len(positions)
+
+
+def record_gen4_copyability_raw_recovery_events(
+    db: Session,
+    *,
+    wallet_address: str,
+    transactions: list[dict[str, Any]],
+    observed_at: datetime | None = None,
+) -> dict[str, int]:
+    """Persist a raw public-RPC gap without turning it into proof.
+
+    Recovery receipts are deliberately excluded from copyability metrics. Any
+    token touched while the webhook was unavailable is quarantined until a
+    complete wallet exit restores an unambiguous balance boundary.
+    """
+    campaigns = [
+        campaign
+        for campaign in _active_copyability_campaigns(db)
+        if wallet_address in (campaign.frozen_wallets or [])
+    ]
+    if not campaigns:
+        return {
+            "created": 0,
+            "existing": 0,
+            "ignored": len(transactions),
+            "parsed": 0,
+            "parse_failures": 0,
+            "positions_quarantined": 0,
+            "tokens_tainted": 0,
+            "tokens_cleared": 0,
+        }
+
+    observed = _aware(observed_at)
+    ordered = sorted(
+        [item for item in transactions if isinstance(item, dict)],
+        key=lambda item: (
+            float(item.get("blockTime") or 0),
+            int(item.get("slot") or 0),
+            _extract_signature(item),
+        ),
+    )
+    result = {
+        "created": 0,
+        "existing": 0,
+        "ignored": len(transactions) - len(ordered),
+        "parsed": 0,
+        "parse_failures": 0,
+        "positions_quarantined": 0,
+        "tokens_tainted": 0,
+        "tokens_cleared": 0,
+    }
+
+    for campaign in campaigns:
+        for item in ordered:
+            signature = _extract_signature(item)[:128]
+            if not signature:
+                result["ignored"] += 1
+                continue
+            existing = db.scalar(
+                select(CanonicalParserGen4WebhookReceipt).where(
+                    CanonicalParserGen4WebhookReceipt.campaign_db_id
+                    == campaign.id,
+                    CanonicalParserGen4WebhookReceipt.signature == signature,
+                )
+            )
+            if existing is not None:
+                summary = dict(existing.parsed_summary or {})
+                summary["seen_by_public_rpc_recovery"] = True
+                summary["public_rpc_recovery_seen_at"] = observed.isoformat()
+                existing.parsed_summary = summary
+                result["existing"] += 1
+                continue
+
+            compact_payload = _compact_raw_payload(item)
+            occurred = _timestamp(item.get("blockTime")) or observed
+            try:
+                slot = int(item.get("slot")) if item.get("slot") is not None else None
+            except (TypeError, ValueError):
+                slot = None
+            parsed_summary: dict[str, Any] = {
+                "excluded_reason": "RECOVERED_FROM_PUBLIC_SOLANA_RPC_GAP",
+                "raw_parser_version": GEN4_COPYABILITY_RAW_PARSER_VERSION,
+                "proof_eligible": False,
+            }
+            error_code: str | None = None
+            error_message: str | None = None
+            try:
+                signal = parse_raw_copyability_signal(
+                    compact_payload,
+                    frozen_wallets=campaign.frozen_wallets or [],
+                )
+                result["parsed"] += 1
+                parsed_summary.update(
+                    {
+                        "side": signal.side,
+                        "wallet_address": signal.wallet_address,
+                        "token_mint": signal.token_mint,
+                        "sell_fraction": signal.sell_fraction,
+                    }
+                )
+                previously_tainted = _get_recovery_gap_token(
+                    campaign,
+                    wallet_address=signal.wallet_address,
+                    token_mint=signal.token_mint,
+                )
+                _taint_recovery_gap_token(
+                    campaign,
+                    signal=signal,
+                    observed_at=occurred,
+                )
+                if previously_tainted is None:
+                    result["tokens_tainted"] += 1
+                quarantined = _quarantine_recovery_gap_positions(
+                    db,
+                    campaign=campaign,
+                    signal=signal,
+                    observed_at=occurred,
+                )
+                result["positions_quarantined"] += quarantined
+                parsed_summary["positions_quarantined"] = quarantined
+                if signal.side == "SELL" and (signal.sell_fraction or 0.0) >= 0.999:
+                    if _clear_recovery_gap_token(
+                        campaign,
+                        wallet_address=signal.wallet_address,
+                        token_mint=signal.token_mint,
+                        signature=signal.signature,
+                        observed_at=occurred,
+                    ):
+                        result["tokens_cleared"] += 1
+                        parsed_summary["token_quarantine_cleared"] = True
+            except CanonicalParserGen4CopyabilityError as error:
+                result["parse_failures"] += 1
+                error_code = error.code
+                error_message = _safe_message(error)
+                balance_gap_tokens: list[dict[str, Any]] = []
+                for mint, values in _wallet_token_deltas(
+                    compact_payload,
+                    wallet_address,
+                ).items():
+                    if mint in GEN4_MANDATORY_EXCLUDED_PRICE_MINTS:
+                        continue
+                    delta = int(values.get("delta") or 0)
+                    if delta == 0:
+                        continue
+                    pre_raw = max(0, int(values.get("pre") or 0))
+                    fallback_signal = ParsedRawSignal(
+                        signature=signature,
+                        slot=slot,
+                        block_time=occurred,
+                        wallet_address=wallet_address,
+                        side="BUY" if delta > 0 else "SELL",
+                        token_mint=mint,
+                        token_decimals=max(0, int(values.get("decimals") or 0)),
+                        token_delta_raw=delta,
+                        token_pre_raw=pre_raw,
+                        sol_equivalent_delta_lamports=None,
+                        wallet_effective_price_sol=None,
+                        sell_fraction=(
+                            min(1.0, abs(delta) / pre_raw)
+                            if delta < 0 and pre_raw > 0
+                            else None
+                        ),
+                        evidence={
+                            "classification": "RECOVERY_BALANCE_CONTINUITY_ONLY"
+                        },
+                    )
+                    previously_tainted = _get_recovery_gap_token(
+                        campaign,
+                        wallet_address=wallet_address,
+                        token_mint=mint,
+                    )
+                    _taint_recovery_gap_token(
+                        campaign,
+                        signal=fallback_signal,
+                        observed_at=occurred,
+                    )
+                    if previously_tainted is None:
+                        result["tokens_tainted"] += 1
+                    quarantined = _quarantine_recovery_gap_positions(
+                        db,
+                        campaign=campaign,
+                        signal=fallback_signal,
+                        observed_at=occurred,
+                    )
+                    result["positions_quarantined"] += quarantined
+                    cleared = False
+                    if (
+                        fallback_signal.side == "SELL"
+                        and (fallback_signal.sell_fraction or 0.0) >= 0.999
+                    ):
+                        cleared = _clear_recovery_gap_token(
+                            campaign,
+                            wallet_address=wallet_address,
+                            token_mint=mint,
+                            signature=signature,
+                            observed_at=occurred,
+                        )
+                        if cleared:
+                            result["tokens_cleared"] += 1
+                    balance_gap_tokens.append(
+                        {
+                            "token_mint": mint,
+                            "side": fallback_signal.side,
+                            "positions_quarantined": quarantined,
+                            "token_quarantine_cleared": cleared,
+                        }
+                    )
+                parsed_summary.update(
+                    {
+                        "classification": "NON_COPYABLE_RECOVERY_EVENT",
+                        "parser_evidence": error.evidence,
+                        "recovery_balance_gap_tokens": balance_gap_tokens,
+                    }
+                )
+
+            row = CanonicalParserGen4WebhookReceipt(
+                receipt_id=str(uuid4()),
+                campaign_db_id=campaign.id,
+                signature=signature,
+                event_hash=_canonical_hash(
+                    {"source": "PUBLIC_SOLANA_RPC", "transaction": item}
+                ),
+                source=SOURCE_RECOVERY,
+                status=RECEIPT_EXCLUDED_RECOVERY,
+                auth_verified=False,
+                wallet_address=wallet_address,
+                matched_wallets=[wallet_address],
+                slot=slot,
+                block_time=occurred,
+                received_at=observed,
+                first_received_at=observed,
+                last_received_at=observed,
+                processed_at=observed,
+                delivery_count=1,
+                processing_attempts=0,
+                error_code=error_code,
+                error_message=error_message,
+                raw_payload=compact_payload,
+                parsed_summary=parsed_summary,
+            )
+            db.add(row)
+            db.flush()
+            result["created"] += 1
+
+        gap = _recovery_gap_metadata(campaign)
+        result["active_quarantined_tokens"] = len(gap["tokens"])
+        _refresh_campaign_metrics(db, campaign, observed_at=observed)
+    return result
+
+
 def _raw_amount(item: dict[str, Any]) -> tuple[int, int]:
     amount_info = item.get("uiTokenAmount") if isinstance(item.get("uiTokenAmount"), dict) else {}
     raw = amount_info.get("amount")
@@ -1907,7 +2305,41 @@ def process_gen4_copyability_queue(
                     "quote_built": False,
                     "campaign_role": campaign.campaign_role,
                 }
-                if signal.side == "BUY":
+                recovery_gap_token = _get_recovery_gap_token(
+                    campaign,
+                    wallet_address=signal.wallet_address,
+                    token_mint=signal.token_mint,
+                )
+                if recovery_gap_token is not None:
+                    cleared = False
+                    if (
+                        signal.side == "SELL"
+                        and (signal.sell_fraction or 0.0) >= 0.999
+                    ):
+                        cleared = _clear_recovery_gap_token(
+                            campaign,
+                            wallet_address=signal.wallet_address,
+                            token_mint=signal.token_mint,
+                            signature=signal.signature,
+                            observed_at=_aware(now_fn()),
+                        )
+                    receipt.status = RECEIPT_IGNORED
+                    receipt.processed_at = _aware(now_fn())
+                    receipt.parsed_summary.update(
+                        {
+                            "ignored_reason": (
+                                "RECOVERY_GAP_TOKEN_QUARANTINE_CLEARED"
+                                if cleared
+                                else "RECOVERY_GAP_TOKEN_QUARANTINED"
+                            ),
+                            "recovery_gap": recovery_gap_token,
+                        }
+                    )
+                    item_summary = ProcessSummary(
+                        receipts_processed=1,
+                        receipts_ignored=1,
+                    )
+                elif signal.side == "BUY":
                     item_summary = _process_buy(
                         db,
                         campaign=campaign,
@@ -2017,10 +2449,14 @@ def _refresh_campaign_metrics(
         row.status in {RECEIPT_IGNORED, RECEIPT_EXCLUDED_RECOVERY} for row in receipts
     )
     campaign.buy_signal_count = sum(
-        str((row.parsed_summary or {}).get("side") or "") == "BUY" for row in receipts
+        row.source == SOURCE_WEBHOOK
+        and str((row.parsed_summary or {}).get("side") or "") == "BUY"
+        for row in receipts
     )
     campaign.sell_signal_count = sum(
-        str((row.parsed_summary or {}).get("side") or "") == "SELL" for row in receipts
+        row.source == SOURCE_WEBHOOK
+        and str((row.parsed_summary or {}).get("side") or "") == "SELL"
+        for row in receipts
     )
     campaign.executable_entry_count = sum(row.entry_copyable for row in positions)
     campaign.rejected_entry_count = sum(row.status == POSITION_REJECTED for row in positions)
@@ -2399,6 +2835,7 @@ def get_gen4_copyability_status(
         ],
         "active_campaign_count": len(campaigns),
         "worker_state": _serialize_worker_state(worker),
+        "helius_credit_guard": get_helius_credit_guard_status(db),
         "safety": _safety(),
         "m61_parallel_candidate_support": True,
     }

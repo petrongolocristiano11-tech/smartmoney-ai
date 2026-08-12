@@ -359,6 +359,9 @@ def get_gen4_forward_feed_status(db: Session) -> dict[str, Any]:
         "autostart_enabled": bool(
             getattr(settings, "CANONICAL_PARSER_GEN4_FORWARD_FEED_AUTOSTART", False)
         ),
+        "automatic_enhanced_enabled": bool(
+            getattr(settings, "HELIUS_AUTOMATIC_ENHANCED_API_ENABLED", False)
+        ),
         "campaign_id": campaign.campaign_id,
         "frozen_wallets": list(campaign.frozen_wallets or []),
         "state": {
@@ -665,6 +668,27 @@ def run_gen4_forward_feed_poll(
             "run": _serialize_run(row),
             "status": get_gen4_forward_feed_status(db),
         }
+    if not bool(
+        getattr(settings, "HELIUS_AUTOMATIC_ENHANCED_API_ENABLED", False)
+    ):
+        row = _persist_skipped_run(
+            db,
+            campaign=campaign,
+            state=state,
+            owner_id=owner,
+            trigger=normalized_trigger,
+            status=STATUS_SKIPPED_BUDGET,
+            observed=observed,
+            error_code="HELIUS_AUTOMATIC_ENHANCED_DISABLED",
+            error_message=(
+                "Recovery Enhanced automatico disabilitato; il Raw Webhook "
+                "resta il feed real-time autorizzato."
+            ),
+        )
+        return {
+            "run": _serialize_run(row),
+            "status": get_gen4_forward_feed_status(db),
+        }
     acquisition_wallets = wallets if gated_wallets is None else gated_wallets
     request_budget = min(
         int(state.max_requests_per_run),
@@ -693,6 +717,8 @@ def run_gen4_forward_feed_poll(
                     commitment="confirmed",
                     token_accounts="balanceChanged",
                     max_retries=0,
+                    request_origin="GEN4_FORWARD_RECOVERY",
+                    automatic=True,
                 )
                 requests_used += 1
                 pages += 1

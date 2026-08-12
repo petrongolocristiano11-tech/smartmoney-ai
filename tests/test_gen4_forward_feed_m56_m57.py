@@ -51,6 +51,7 @@ def feed_settings(monkeypatch):
         "CANONICAL_PARSER_GEN4_FORWARD_FEED_LEASE_SECONDS": 180,
         "CANONICAL_PARSER_GEN4_FORWARD_FEED_DAILY_REQUEST_CAP": 2000,
         "CANONICAL_PARSER_GEN4_FORWARD_MAX_INGESTION_LAG_SECONDS": 300,
+        "HELIUS_AUTOMATIC_ENHANCED_API_ENABLED": True,
     }
     for key, value in values.items():
         monkeypatch.setattr(feed_service.settings, key, value)

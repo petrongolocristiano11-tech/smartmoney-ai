@@ -306,6 +306,11 @@ def test_worker_pauses_after_daily_order_limit(
         "JUPITER_API_KEY",
         "test-jupiter",
     )
+    monkeypatch.setattr(
+        settings,
+        "HELIUS_AUTOMATIC_ENHANCED_API_ENABLED",
+        True,
+    )
 
     db = session_factory()
 
