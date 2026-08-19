@@ -1,0 +1,6 @@
+NEW backend/app/services/gen4_paid_candidate_economic_triage_service.py
+NEW scripts/run_m79_paid_candidate_zero_helius_triage.py
+NEW scripts/verify_m79_paid_candidate_zero_helius_triage.py
+NEW tests/test_m79_paid_candidate_zero_helius_triage.py
+NEW README_M79_PAID_CANDIDATE_ZERO_HELIUS_TRIAGE.md
+NEW PATCH_FILES_M79_PAID_CANDIDATE_ZERO_HELIUS_TRIAGE.txt

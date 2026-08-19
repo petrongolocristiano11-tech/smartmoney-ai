@@ -27,6 +27,7 @@ from backend.app.schemas.discovered_wallet import (
     DiscoveredWalletResponse,
     CandidateExitabilityGateResponse,
     CandidateDiscoveryFunnelResponse,
+    Gen4CopyabilityAwareDiscoveryPreviewResponse,
 )
 from backend.app.services.candidate_backtest_service import (
     get_latest_candidate_backtest,
@@ -67,6 +68,11 @@ from backend.app.services.candidate_discovery_funnel_service import (
 from backend.app.services.discovery_hydration_service import (
     HydrationAlreadyRunningError,
     run_controlled_discovery_hydration,
+)
+from backend.app.services.gen4_copyability_aware_discovery_service import (
+    M66_DEFAULT_POLICY,
+    build_cached_discovery_snapshot,
+    evaluate_copyability_aware_discovery,
 )
 
 
@@ -519,6 +525,31 @@ def read_latest_candidate_discovery_funnel(
             detail="Candidate funnel non trovato",
         )
     return run
+
+
+@router.get(
+    "/definitive-discovery/preview",
+    response_model=Gen4CopyabilityAwareDiscoveryPreviewResponse,
+)
+def preview_gen4_copyability_aware_discovery(
+    limit: int = Query(default=500, ge=1, le=500),
+    maximum_selected_wallets: int = Query(default=3, ge=1, le=3),
+    db: Session = Depends(get_db),
+):
+    """M66 cached-only preview: GET, zero writes and zero provider calls."""
+    policy = {
+        **M66_DEFAULT_POLICY,
+        "maximum_selected_wallets": maximum_selected_wallets,
+    }
+    snapshot = build_cached_discovery_snapshot(
+        db,
+        limit=limit,
+        policy=policy,
+    )
+    return evaluate_copyability_aware_discovery(
+        snapshot,
+        policy=policy,
+    )
 
 
 @router.get("/{wallet_address}", response_model=DiscoveredWalletResponse)

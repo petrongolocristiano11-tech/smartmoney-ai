@@ -1,0 +1,21 @@
+{
+  "canary": {
+    "closed_trades": 10,
+    "entry_attempts": 20,
+    "hours": 24,
+    "max_reject_rate_percent": 20,
+    "unsigned_build_coverage_percent": 100,
+    "webhook_coverage_percent": 95
+  },
+  "helius_credits": 0,
+  "helius_requests": 0,
+  "micro_live_m35": {
+    "maximum_order_budget_sol": 0.01,
+    "maximum_order_count": 3,
+    "maximum_total_budget_sol": 0.05,
+    "maximum_validity_minutes": 15
+  },
+  "minimum_independent_wallets": 2,
+  "network_requests": 0,
+  "version": "canonical-parser-gen4-zero-helius-final-pre-micro-live/1"
+}

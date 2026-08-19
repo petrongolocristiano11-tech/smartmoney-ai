@@ -381,7 +381,7 @@ def test_models_and_migration_extend_single_head():
     scripts = ScriptDirectory.from_config(config)
     revision = scripts.get_revision("b6f8d2e4c731")
     assert revision.down_revision == "a5e7c1d4b926"
-    assert scripts.get_heads() == ["c8a1f3d6e942"]
+    assert scripts.get_heads() == ["d9b2e4f7a153"]
 
 
 def test_campaign_is_frozen_from_forward_and_clock_starts_on_webhook_activation(db):

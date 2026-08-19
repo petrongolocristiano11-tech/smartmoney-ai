@@ -1227,6 +1227,34 @@ class Settings(BaseSettings):
     CANONICAL_PARSER_GEN4_COPYABILITY_MAX_DRAWDOWN_PERCENT: float = Field(
         default=20.0, ge=0.0, le=100.0
     )
+    # =========================
+    # M117D GEN4 PROCESSED WSS FAST-PATH SHADOW
+    # Shadow-only. Never signs, submits, creates paper orders, or mutates M114/M117.
+    # =========================
+
+    CANONICAL_PARSER_GEN4_FASTPATH_SHADOW_ENABLED: bool = False
+    CANONICAL_PARSER_GEN4_FASTPATH_PING_INTERVAL_SECONDS: int = Field(
+        default=30, ge=10, le=300
+    )
+    CANONICAL_PARSER_GEN4_FASTPATH_PING_TIMEOUT_SECONDS: int = Field(
+        default=20, ge=5, le=120
+    )
+    CANONICAL_PARSER_GEN4_FASTPATH_RECONNECT_BASE_SECONDS: float = Field(
+        default=1.0, ge=0.25, le=30.0
+    )
+    CANONICAL_PARSER_GEN4_FASTPATH_RECONNECT_MAX_SECONDS: float = Field(
+        default=15.0, ge=1.0, le=120.0
+    )
+    CANONICAL_PARSER_GEN4_FASTPATH_WALLET_REFRESH_SECONDS: int = Field(
+        default=15, ge=5, le=300
+    )
+    CANONICAL_PARSER_GEN4_FASTPATH_MAX_INFLIGHT: int = Field(
+        default=4, ge=1, le=32
+    )
+    CANONICAL_PARSER_GEN4_FASTPATH_MAX_MESSAGE_BYTES: int = Field(
+        default=4_000_000, ge=100_000, le=16_000_000
+    )
+
     # END M58-M60 GEN4 REAL-TIME COPYABILITY
 
     # =========================

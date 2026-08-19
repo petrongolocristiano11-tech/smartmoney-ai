@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from statistics import median
-from typing import Any
+from typing import Any, Iterable
 
 from sqlalchemy.orm import Session
 
@@ -116,15 +116,18 @@ def _quality_score(
         score -= min(15.0, (top_token_concentration - 0.75) / 0.25 * 15.0)
     if one_sided_pattern:
         score -= 25.0
-    if sample_swaps >= QUALITY_SUSPICIOUS_MIN_SAMPLE and dust_ratio >= QUALITY_SUSPICIOUS_DUST_RATIO:
+    if (
+        sample_swaps >= QUALITY_SUSPICIOUS_MIN_SAMPLE
+        and dust_ratio >= QUALITY_SUSPICIOUS_DUST_RATIO
+    ):
         score -= 30.0
 
     return round(clamp(score), 4)
 
 
-def analyze_wallet_quality(
-    db: Session,
+def analyze_wallet_quality_from_trades(
     wallet_address: str,
+    recent_trades: Iterable[Trade],
     *,
     smart_score: float,
     activity: dict[str, Any],
@@ -132,15 +135,18 @@ def analyze_wallet_quality(
 ) -> dict[str, Any]:
     calculated_at = ensure_aware(now) or utc_now()
     cutoff = calculated_at - timedelta(days=QUALITY_LOOKBACK_DAYS)
-
-    trades = (
-        db.query(Trade)
-        .filter(Trade.wallet_address == wallet_address)
-        .filter(Trade.success.is_(True))
-        .filter(Trade.block_time.isnot(None))
-        .filter(Trade.block_time >= cutoff)
-        .order_by(Trade.block_time.asc(), Trade.id.asc())
-        .all()
+    trades = sorted(
+        (
+            trade
+            for trade in recent_trades
+            if bool(trade.success)
+            and ensure_aware(trade.block_time) is not None
+            and ensure_aware(trade.block_time) >= cutoff
+        ),
+        key=lambda trade: (
+            ensure_aware(trade.block_time),
+            int(trade.id or 0),
+        ),
     )
 
     amounts: list[float] = []
@@ -172,7 +178,9 @@ def analyze_wallet_quality(
     meaningful_swaps = sum(
         1 for amount in amounts if amount >= QUALITY_MEANINGFUL_THRESHOLD_SOL
     )
-    dust_swaps = sum(1 for amount in amounts if 0 < amount <= QUALITY_DUST_THRESHOLD_SOL)
+    dust_swaps = sum(
+        1 for amount in amounts if 0 < amount <= QUALITY_DUST_THRESHOLD_SOL
+    )
     size_compatible_swaps = sum(
         1
         for amount in amounts
@@ -351,3 +359,31 @@ def analyze_wallet_quality(
         "invalid_amount_swaps_7d": invalid_amounts,
         "target_copy_size_sol": QUALITY_TARGET_COPY_SIZE_SOL,
     }
+
+
+def analyze_wallet_quality(
+    db: Session,
+    wallet_address: str,
+    *,
+    smart_score: float,
+    activity: dict[str, Any],
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    calculated_at = ensure_aware(now) or utc_now()
+    cutoff = calculated_at - timedelta(days=QUALITY_LOOKBACK_DAYS)
+    trades = (
+        db.query(Trade)
+        .filter(Trade.wallet_address == wallet_address)
+        .filter(Trade.success.is_(True))
+        .filter(Trade.block_time.isnot(None))
+        .filter(Trade.block_time >= cutoff)
+        .order_by(Trade.block_time.asc(), Trade.id.asc())
+        .all()
+    )
+    return analyze_wallet_quality_from_trades(
+        wallet_address,
+        trades,
+        smart_score=smart_score,
+        activity=activity,
+        now=calculated_at,
+    )

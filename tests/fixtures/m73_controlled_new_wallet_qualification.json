@@ -1,0 +1,65 @@
+{
+  "scope": "M73_CONTROLLED_NEW_WALLET_QUALIFICATION_FIXTURE",
+  "version": "canonical-parser-gen4-controlled-new-wallet-qualification/1",
+  "documents": [
+    {
+      "candidate_wallet": "77777777777777777777777777777777",
+      "copyability_score": 88.0
+    },
+    {
+      "wallet_address": "88888888888888888888888888888888",
+      "score": 72.0
+    },
+    {
+      "wallet": "99999999999999999999999999999999",
+      "activity_score": 64.0
+    }
+  ],
+  "excluded": [
+    "F2BnACAArM3Wiz3wKF3xDpNZeRVH8MSZCzFnsaCi6qQg"
+  ],
+  "classification_cases": [
+    {
+      "wallet_address": "77777777777777777777777777777777",
+      "history_complete": true,
+      "transaction_count": 240,
+      "parsed_event_count": 180,
+      "metrics": {
+        "buy_signals": 110,
+        "sell_signals": 105,
+        "closed_trade_count": 100,
+        "open_positions": 0
+      },
+      "economic_gate_passed": true,
+      "expected": "QUALIFIED_PENDING_SHORT_CANARY"
+    },
+    {
+      "wallet_address": "88888888888888888888888888888888",
+      "history_complete": false,
+      "transaction_count": 500,
+      "parsed_event_count": 250,
+      "metrics": {
+        "buy_signals": 90,
+        "sell_signals": 80,
+        "closed_trade_count": 70,
+        "open_positions": 2
+      },
+      "economic_gate_passed": false,
+      "expected": "OBSERVE_ONLY"
+    },
+    {
+      "wallet_address": "99999999999999999999999999999999",
+      "history_complete": true,
+      "transaction_count": 120,
+      "parsed_event_count": 60,
+      "metrics": {
+        "buy_signals": 0,
+        "sell_signals": 60,
+        "closed_trade_count": 0,
+        "open_positions": 0
+      },
+      "economic_gate_passed": false,
+      "expected": "REJECTED_FROM_PROMOTION"
+    }
+  ]
+}

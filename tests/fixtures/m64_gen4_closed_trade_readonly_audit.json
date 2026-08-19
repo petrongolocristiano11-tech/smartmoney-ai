@@ -1,0 +1,219 @@
+{
+  "scope": "M64_SANITIZED_PUBLIC_RPC_FIXTURE",
+  "wallet": "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd",
+  "policy": {
+    "simulated_input_lamports": 10000000,
+    "slippage_bps": 300,
+    "estimated_network_fee_lamports": 100000
+  },
+  "transactions": [
+    {
+      "signature": "m64-buy-a-full-signature",
+      "slot": 440000001,
+      "blockTime": 1786400001,
+      "transaction": {
+        "signatures": ["m64-buy-a-full-signature"],
+        "message": {
+          "accountKeys": [
+            "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd",
+            "TokenAccountM64AAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+          ]
+        }
+      },
+      "meta": {
+        "err": null,
+        "fee": 100000,
+        "preBalances": [1000000000, 2039280],
+        "postBalances": [989900000, 2039280],
+        "preTokenBalances": [
+          {
+            "accountIndex": 1,
+            "owner": "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd",
+            "mint": "61BtvdXLEWT52BBsGh6qrsuwoGUcE3cuuS3EC8Mjpump",
+            "uiTokenAmount": {"amount": "0", "decimals": 6}
+          }
+        ],
+        "postTokenBalances": [
+          {
+            "accountIndex": 1,
+            "owner": "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd",
+            "mint": "61BtvdXLEWT52BBsGh6qrsuwoGUcE3cuuS3EC8Mjpump",
+            "uiTokenAmount": {"amount": "100000000", "decimals": 6}
+          }
+        ],
+        "loadedAddresses": {"writable": [], "readonly": []}
+      }
+    },
+    {
+      "signature": "m64-sell-a-half-full-signature",
+      "slot": 440000002,
+      "blockTime": 1786400061,
+      "transaction": {
+        "signatures": ["m64-sell-a-half-full-signature"],
+        "message": {
+          "accountKeys": [
+            "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd",
+            "TokenAccountM64AAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+          ]
+        }
+      },
+      "meta": {
+        "err": null,
+        "fee": 100000,
+        "preBalances": [989900000, 2039280],
+        "postBalances": [994900000, 2039280],
+        "preTokenBalances": [
+          {
+            "accountIndex": 1,
+            "owner": "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd",
+            "mint": "61BtvdXLEWT52BBsGh6qrsuwoGUcE3cuuS3EC8Mjpump",
+            "uiTokenAmount": {"amount": "100000000", "decimals": 6}
+          }
+        ],
+        "postTokenBalances": [
+          {
+            "accountIndex": 1,
+            "owner": "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd",
+            "mint": "61BtvdXLEWT52BBsGh6qrsuwoGUcE3cuuS3EC8Mjpump",
+            "uiTokenAmount": {"amount": "50000000", "decimals": 6}
+          }
+        ],
+        "loadedAddresses": {"writable": [], "readonly": []}
+      }
+    },
+    {
+      "signature": "m64-sell-a-rest-full-signature",
+      "slot": 440000003,
+      "blockTime": 1786400121,
+      "transaction": {
+        "signatures": ["m64-sell-a-rest-full-signature"],
+        "message": {
+          "accountKeys": [
+            "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd",
+            "TokenAccountM64AAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+          ]
+        }
+      },
+      "meta": {
+        "err": null,
+        "fee": 100000,
+        "preBalances": [994900000, 2039280],
+        "postBalances": [1000900000, 2039280],
+        "preTokenBalances": [
+          {
+            "accountIndex": 1,
+            "owner": "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd",
+            "mint": "61BtvdXLEWT52BBsGh6qrsuwoGUcE3cuuS3EC8Mjpump",
+            "uiTokenAmount": {"amount": "50000000", "decimals": 6}
+          }
+        ],
+        "postTokenBalances": [
+          {
+            "accountIndex": 1,
+            "owner": "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd",
+            "mint": "61BtvdXLEWT52BBsGh6qrsuwoGUcE3cuuS3EC8Mjpump",
+            "uiTokenAmount": {"amount": "0", "decimals": 6}
+          }
+        ],
+        "loadedAddresses": {"writable": [], "readonly": []}
+      }
+    },
+    {
+      "signature": "m64-buy-b-full-signature",
+      "slot": 440000004,
+      "blockTime": 1786400181,
+      "transaction": {
+        "signatures": ["m64-buy-b-full-signature"],
+        "message": {
+          "accountKeys": [
+            "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd",
+            "TokenAccountM64BBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+          ]
+        }
+      },
+      "meta": {
+        "err": null,
+        "fee": 100000,
+        "preBalances": [1000900000, 2039280],
+        "postBalances": [990800000, 2039280],
+        "preTokenBalances": [
+          {
+            "accountIndex": 1,
+            "owner": "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd",
+            "mint": "GnzqboS9akb8VDMdazHRxQHtPsBgQAWUnQTBaZ5CxkyD",
+            "uiTokenAmount": {"amount": "0", "decimals": 6}
+          }
+        ],
+        "postTokenBalances": [
+          {
+            "accountIndex": 1,
+            "owner": "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd",
+            "mint": "GnzqboS9akb8VDMdazHRxQHtPsBgQAWUnQTBaZ5CxkyD",
+            "uiTokenAmount": {"amount": "100000000", "decimals": 6}
+          }
+        ],
+        "loadedAddresses": {"writable": [], "readonly": []}
+      }
+    },
+    {
+      "signature": "m64-sell-b-full-signature",
+      "slot": 440000005,
+      "blockTime": 1786400241,
+      "transaction": {
+        "signatures": ["m64-sell-b-full-signature"],
+        "message": {
+          "accountKeys": [
+            "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd",
+            "TokenAccountM64BBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+          ]
+        }
+      },
+      "meta": {
+        "err": null,
+        "fee": 100000,
+        "preBalances": [990800000, 2039280],
+        "postBalances": [998800000, 2039280],
+        "preTokenBalances": [
+          {
+            "accountIndex": 1,
+            "owner": "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd",
+            "mint": "GnzqboS9akb8VDMdazHRxQHtPsBgQAWUnQTBaZ5CxkyD",
+            "uiTokenAmount": {"amount": "100000000", "decimals": 6}
+          }
+        ],
+        "postTokenBalances": [
+          {
+            "accountIndex": 1,
+            "owner": "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd",
+            "mint": "GnzqboS9akb8VDMdazHRxQHtPsBgQAWUnQTBaZ5CxkyD",
+            "uiTokenAmount": {"amount": "0", "decimals": 6}
+          }
+        ],
+        "loadedAddresses": {"writable": [], "readonly": []}
+      }
+    },
+    {
+      "signature": "m64-native-only-rejected-full-signature",
+      "slot": 440000006,
+      "blockTime": 1786400301,
+      "transaction": {
+        "signatures": ["m64-native-only-rejected-full-signature"],
+        "message": {
+          "accountKeys": [
+            "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd",
+            "11111111111111111111111111111111"
+          ]
+        }
+      },
+      "meta": {
+        "err": null,
+        "fee": 5000,
+        "preBalances": [998800000, 1],
+        "postBalances": [998795000, 1],
+        "preTokenBalances": [],
+        "postTokenBalances": [],
+        "loadedAddresses": {"writable": [], "readonly": []}
+      }
+    }
+  ]
+}

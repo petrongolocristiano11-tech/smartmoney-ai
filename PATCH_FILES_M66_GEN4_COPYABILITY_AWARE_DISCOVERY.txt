@@ -1,0 +1,44 @@
+M66 — file completi
+
+MODIFICATI
+- backend/app/api/discovered_wallets.py
+- backend/app/schemas/discovered_wallet.py
+- backend/app/services/helius.py
+- backend/app/services/wallet_activity_service.py
+- backend/app/services/wallet_quality_service.py
+
+CREATI
+- backend/app/services/gen4_copyability_aware_discovery_service.py
+- backend/app/services/gen4_controlled_helius_discovery_service.py
+- scripts/run_m66_gen4_copyability_aware_discovery.py
+- scripts/run_m66_controlled_helius_discovery.py
+- scripts/verify_m66_gen4_copyability_aware_discovery.py
+- tests/fixtures/m66_gen4_copyability_aware_discovery.json
+- tests/test_m66_gen4_copyability_aware_discovery.py
+- tests/test_m66_gen4_copyability_aware_discovery_api.py
+- tests/test_m66_controlled_helius_discovery.py
+- RUN_M66_GEN4_COPYABILITY_AWARE_DISCOVERY.ps1
+- RUN_M66_CONTROLLED_HELIUS_DISCOVERY.ps1
+- TEST_M66_GEN4_COPYABILITY_AWARE_DISCOVERY.ps1
+- README_M66_GEN4_COPYABILITY_AWARE_DISCOVERY.md
+- PATCH_FILES_M66_GEN4_COPYABILITY_AWARE_DISCOVERY.txt
+
+HOTFIX CACHED TRADE ENRICHMENT
+- il report production M66 iniziale mostrava 30 wallet ma zero campi cached
+  utilizzabili; la preview ora deriva attività e qualità in memoria dai record
+  Trade già presenti, con due query bulk aggiuntive e zero crediti;
+- nessuna metrica economica viene inferita dai semplici swap;
+- solo i wallet che superano il pre-screen strutturale gratuito possono essere
+  proposti per lo storico mirato, che resta non eseguito automaticamente.
+
+MIGRAZIONE ALEMBIC
+- non richiesta; head invariata c8a1f3d6e942
+
+ATTIVAZIONI
+- Discovery cron: NO
+- Helius automatico: NO
+- Helius manuale controllato: disponibile, mai avviato dall'installer
+- campagna primaria: NO
+- vecchio forward feed: NO
+- signer / paper / LIVE: NO
+- commit / push / deploy: NO

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from math import log1p
-from typing import Any
+from typing import Any, Iterable
 
 from sqlalchemy.orm import Session
 
@@ -156,33 +156,28 @@ def _activity_score(
     return round(clamp(score), 4)
 
 
-def analyze_wallet_activity(
-    db: Session,
+def analyze_wallet_activity_from_trades(
     wallet_address: str,
+    recent_trades: Iterable[Trade],
     *,
+    latest_trade_at: datetime | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     calculated_at = ensure_aware(now) or utc_now()
     cutoff_24h = calculated_at - timedelta(hours=24)
     cutoff_7d = calculated_at - timedelta(days=7)
-
-    latest_trade = (
-        db.query(Trade)
-        .filter(Trade.wallet_address == wallet_address)
-        .filter(Trade.success.is_(True))
-        .filter(Trade.block_time.isnot(None))
-        .order_by(Trade.block_time.desc(), Trade.id.desc())
-        .first()
-    )
-
-    recent_trades = (
-        db.query(Trade)
-        .filter(Trade.wallet_address == wallet_address)
-        .filter(Trade.success.is_(True))
-        .filter(Trade.block_time.isnot(None))
-        .filter(Trade.block_time >= cutoff_7d)
-        .order_by(Trade.block_time.asc(), Trade.id.asc())
-        .all()
+    rows = sorted(
+        (
+            trade
+            for trade in recent_trades
+            if bool(trade.success)
+            and ensure_aware(trade.block_time) is not None
+            and ensure_aware(trade.block_time) >= cutoff_7d
+        ),
+        key=lambda trade: (
+            ensure_aware(trade.block_time),
+            int(trade.id or 0),
+        ),
     )
 
     swaps_24h = 0
@@ -195,7 +190,7 @@ def analyze_wallet_activity(
     active_days: set = set()
     timestamps: list[datetime] = []
 
-    for trade in recent_trades:
+    for trade in rows:
         block_time = ensure_aware(trade.block_time)
         if block_time is None:
             continue
@@ -220,13 +215,15 @@ def analyze_wallet_activity(
             elif side == "SELL":
                 sells_24h += 1
 
-    swaps_7d = len(recent_trades)
+    swaps_7d = len(rows)
     active_days_7d = len(active_days)
     average_swaps_per_active_day_7d = (
         round(swaps_7d / active_days_7d, 4) if active_days_7d else 0.0
     )
     average_minutes_between_swaps_7d = _average_minutes_between_swaps(timestamps)
-    last_swap_at = ensure_aware(latest_trade.block_time) if latest_trade else None
+    last_swap_at = ensure_aware(latest_trade_at)
+    if last_swap_at is None and rows:
+        last_swap_at = ensure_aware(rows[-1].block_time)
 
     classification = _classify_activity(
         now=calculated_at,
@@ -278,10 +275,47 @@ def analyze_wallet_activity(
         "activity_score": activity_score,
         "activity_classification": classification,
         "activity_eligible": classification
-        not in {ACTIVITY_CLASS_INACTIVE, ACTIVITY_CLASS_HYPERACTIVE},
+        not in {
+            ACTIVITY_CLASS_INACTIVE,
+            ACTIVITY_CLASS_HYPERACTIVE,
+        },
         "activity_reasons": reasons,
         "activity_calculated_at": calculated_at,
     }
+
+
+def analyze_wallet_activity(
+    db: Session,
+    wallet_address: str,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    calculated_at = ensure_aware(now) or utc_now()
+    cutoff_7d = calculated_at - timedelta(days=7)
+
+    latest_trade = (
+        db.query(Trade)
+        .filter(Trade.wallet_address == wallet_address)
+        .filter(Trade.success.is_(True))
+        .filter(Trade.block_time.isnot(None))
+        .order_by(Trade.block_time.desc(), Trade.id.desc())
+        .first()
+    )
+    recent_trades = (
+        db.query(Trade)
+        .filter(Trade.wallet_address == wallet_address)
+        .filter(Trade.success.is_(True))
+        .filter(Trade.block_time.isnot(None))
+        .filter(Trade.block_time >= cutoff_7d)
+        .order_by(Trade.block_time.asc(), Trade.id.asc())
+        .all()
+    )
+    return analyze_wallet_activity_from_trades(
+        wallet_address,
+        recent_trades,
+        latest_trade_at=latest_trade.block_time if latest_trade else None,
+        now=calculated_at,
+    )
 
 
 def build_discovery_ranking(

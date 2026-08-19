@@ -16,6 +16,12 @@ from backend.app.services.gen4_forward_feed_runtime import (
 from backend.app.services.gen4_copyability_runtime import (
     gen4_copyability_runtime,
 )
+from backend.app.services.gen4_fastpath_shadow_runtime import (
+    gen4_fastpath_shadow_runtime,
+)
+from backend.app.services.gen4_fastpath_shadow_service import (
+    get_gen4_fastpath_shadow_status,
+)
 from datetime import (
     datetime,
     timezone,
@@ -715,11 +721,13 @@ async def lifespan(
     await live_position_monitor_runtime.start()
     await gen4_forward_feed_runtime.start()
     await gen4_copyability_runtime.start()
+    await gen4_fastpath_shadow_runtime.start()
 
     try:
         yield
 
     finally:
+        await gen4_fastpath_shadow_runtime.stop()
         await gen4_copyability_runtime.stop()
         await gen4_forward_feed_runtime.stop()
         await live_position_monitor_runtime.stop()
@@ -5019,6 +5027,21 @@ async def receive_gen4_copyability_webhook_endpoint(
             status_code=exception.status_code,
             detail={"code": exception.code, "message": str(exception)},
         ) from exception
+
+
+@app.get(
+    "/integrity/parser-gen4-fastpath-shadow/status",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_gen4_fastpath_shadow_status_endpoint(
+    recent_limit: int = Query(default=50, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    result = get_gen4_fastpath_shadow_status(db, recent_limit=recent_limit)
+    result["runtime"] = gen4_fastpath_shadow_runtime.status
+    db.commit()
+    return result
 
 
 @app.get(

@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import settings
 from backend.app.core.constants import (
     GEN4_MANDATORY_EXCLUDED_PRICE_MINTS,
+    MIN_SOL_SPENT_FOR_ROI,
     SOL_MINT,
 )
 from backend.app.models.gen4_copyability import (
@@ -38,7 +39,7 @@ from backend.app.services.helius_credit_guard_service import (
 
 
 GEN4_COPYABILITY_POLICY_VERSION = "canonical-parser-gen4-realtime-copyability/1"
-GEN4_COPYABILITY_RAW_PARSER_VERSION = "canonical-parser-gen4-raw-balance-delta/2"
+GEN4_COPYABILITY_RAW_PARSER_VERSION = "canonical-parser-gen4-raw-balance-delta/4"
 GEN4_COPYABILITY_START_CONFIRMATION = "START_GEN4_REALTIME_COPYABILITY"
 GEN4_COPYABILITY_STOP_CONFIRMATION = "STOP_GEN4_REALTIME_COPYABILITY"
 GEN4_COPYABILITY_PROCESS_CONFIRMATION = "PROCESS_GEN4_COPYABILITY_QUEUE"
@@ -1475,6 +1476,76 @@ def _native_delta(payload: dict[str, Any], wallet: str) -> tuple[int | None, int
         return None, int(meta.get("fee") or 0)
 
 
+def _closed_wallet_token_account_reclaim_lamports(
+    payload: dict[str, Any],
+    *,
+    wallet: str,
+) -> tuple[int, list[dict[str, Any]]]:
+    """Conservatively identify rent tied to wallet-owned token-account closures.
+
+    A token account whose lamport balance moves from positive to zero in the
+    same transaction has been deallocated. For ordinary SPL/Token-2022
+    accounts, those lamports are rent reserve. For WSOL, the account lamports
+    also contain the wrapped SOL principal; only the excess above the pre-token
+    raw amount is treated as rent. We subtract this amount from the wallet's
+    native SOL delta before economic swap classification. If the close
+    destination is not the wallet this can only make the model more
+    conservative (higher BUY cost / lower SELL proceeds), never inflate PnL.
+    """
+    meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+    pre_balances = meta.get("preBalances") or []
+    post_balances = meta.get("postBalances") or []
+    seen_indexes: set[int] = set()
+    reclaimed = 0
+    closures: list[dict[str, Any]] = []
+    for item in meta.get("preTokenBalances") or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("owner") or "").strip() != wallet:
+            continue
+        try:
+            index = int(item.get("accountIndex"))
+        except (TypeError, ValueError):
+            continue
+        if index in seen_indexes:
+            continue
+        if index < 0 or index >= len(pre_balances) or index >= len(post_balances):
+            continue
+        try:
+            pre_lamports = int(pre_balances[index])
+            post_lamports = int(post_balances[index])
+        except (TypeError, ValueError):
+            continue
+        if pre_lamports <= 0 or post_lamports != 0:
+            continue
+        mint = str(item.get("mint") or "").strip()
+        pre_raw, decimals = _raw_amount(item)
+        rent_lamports = pre_lamports
+        if mint == SOL_MINT:
+            if decimals == 9:
+                wrapped_principal = max(0, pre_raw)
+            elif 0 <= decimals < 9:
+                wrapped_principal = max(0, pre_raw) * (10 ** (9 - decimals))
+            else:
+                wrapped_principal = 0
+            rent_lamports = max(0, pre_lamports - wrapped_principal)
+        if rent_lamports <= 0:
+            continue
+        seen_indexes.add(index)
+        reclaimed += rent_lamports
+        closures.append(
+            {
+                "account_index": index,
+                "mint": mint,
+                "pre_lamports": pre_lamports,
+                "post_lamports": post_lamports,
+                "pre_token_raw": pre_raw,
+                "token_decimals": decimals,
+                "conservative_rent_reclaim_lamports": rent_lamports,
+            }
+        )
+    return reclaimed, closures
+
 def _sol_equivalent_delta(
     payload: dict[str, Any],
     wallet: str,
@@ -1599,6 +1670,32 @@ def parse_raw_copyability_signal(
                 "side_from_token_delta": side,
             },
         )
+    wallet_token_deltas = _wallet_token_deltas(payload, wallet)
+    non_sol_quote_deltas = {
+        quote_mint: int(quote_values.get("delta") or 0)
+        for quote_mint, quote_values in wallet_token_deltas.items()
+        if quote_mint in GEN4_MANDATORY_EXCLUDED_PRICE_MINTS
+        and quote_mint != SOL_MINT
+        and int(quote_values.get("delta") or 0) != 0
+    }
+    if non_sol_quote_deltas:
+        raise CanonicalParserGen4CopyabilityError(
+            "La transazione modifica un asset di quotazione non-SOL del wallet.",
+            code="GEN4_COPYABILITY_RAW_NON_SOL_QUOTE_ASSET_DELTA",
+            evidence={
+                "raw_parser_version": GEN4_COPYABILITY_RAW_PARSER_VERSION,
+                "classification": "NON_SOL_QUOTE_ASSET_DELTA",
+                "matched_wallets": matched,
+                "candidate_count": 1,
+                "wallet_address": wallet,
+                "wallet_in_transaction_accounts": True,
+                "token_mint": mint,
+                "token_delta_raw": delta,
+                "side_from_token_delta": side,
+                "non_sol_quote_asset_deltas_raw": non_sol_quote_deltas,
+            },
+        )
+
     sol_equivalent_delta, native_delta, wsol_delta, fee = _sol_equivalent_delta(
         payload,
         wallet,
@@ -1619,13 +1716,66 @@ def parse_raw_copyability_signal(
                 "side_from_token_delta": side,
             },
         )
+    unadjusted_sol_equivalent_delta = int(sol_equivalent_delta)
+    token_account_reclaim_lamports, closed_token_accounts = (
+        _closed_wallet_token_account_reclaim_lamports(
+            payload,
+            wallet=wallet,
+        )
+    )
+    if token_account_reclaim_lamports > 0:
+        sol_equivalent_delta = (
+            int(sol_equivalent_delta) - int(token_account_reclaim_lamports)
+        )
+        if side == "SELL" and int(sol_equivalent_delta) <= 0:
+            raise CanonicalParserGen4CopyabilityError(
+                "Il presunto SELL è spiegato da lamport di token-account closure/rent, non da proventi SOL/WSOL verificabili.",
+                code="GEN4_COPYABILITY_RAW_SELL_TOKEN_ACCOUNT_RENT_RECLAIM_ONLY",
+                evidence={
+                    "raw_parser_version": GEN4_COPYABILITY_RAW_PARSER_VERSION,
+                    "classification": "TOKEN_ACCOUNT_RENT_RECLAIM_ONLY",
+                    "wallet_address": wallet,
+                    "token_mint": mint,
+                    "token_delta_raw": delta,
+                    "unadjusted_sol_equivalent_delta_lamports": unadjusted_sol_equivalent_delta,
+                    "token_account_rent_reclaim_lamports": token_account_reclaim_lamports,
+                    "adjusted_sol_equivalent_delta_lamports": int(sol_equivalent_delta),
+                    "native_delta_lamports": native_delta,
+                    "wsol_delta_lamports": wsol_delta,
+                    "fee_lamports": fee,
+                    "closed_token_accounts": closed_token_accounts,
+                },
+            )
+
     # This campaign deliberately proves only SOL-paired memecoin swaps. Token
     # transfers and stablecoin-routed swaps cannot be compared with a SOL quote.
-    if side == "BUY" and sol_equivalent_delta >= -max(1, fee):
-        raise CanonicalParserGen4CopyabilityError(
-            "Il BUY non mostra una spesa SOL/WSOL verificabile.",
-            code="GEN4_COPYABILITY_RAW_NOT_SOL_PAIRED_BUY",
+    if side == "BUY":
+        spent_lamports = max(0, abs(int(sol_equivalent_delta)) - max(0, int(fee)))
+        minimum_spent_lamports = max(
+            1,
+            int(round(float(MIN_SOL_SPENT_FOR_ROI) * LAMPORTS_PER_SOL)),
         )
+        if (
+            sol_equivalent_delta >= -max(1, fee)
+            or spent_lamports < minimum_spent_lamports
+        ):
+            raise CanonicalParserGen4CopyabilityError(
+                "Il BUY non mostra una spesa SOL/WSOL materiale e verificabile.",
+                code="GEN4_COPYABILITY_RAW_NOT_SOL_PAIRED_BUY",
+                evidence={
+                    "raw_parser_version": GEN4_COPYABILITY_RAW_PARSER_VERSION,
+                    "classification": "INSUFFICIENT_SOL_PAIRED_BUY_INPUT",
+                    "wallet_address": wallet,
+                    "token_mint": mint,
+                    "token_delta_raw": delta,
+                    "sol_equivalent_delta_lamports": sol_equivalent_delta,
+                    "native_delta_lamports": native_delta,
+                    "wsol_delta_lamports": wsol_delta,
+                    "fee_lamports": fee,
+                    "net_spent_lamports": spent_lamports,
+                    "minimum_net_spent_lamports": minimum_spent_lamports,
+                },
+            )
     if side == "SELL" and sol_equivalent_delta <= 0:
         raise CanonicalParserGen4CopyabilityError(
             "Il SELL non mostra un incasso SOL/WSOL verificabile.",
@@ -1670,6 +1820,9 @@ def parse_raw_copyability_signal(
             "native_delta_lamports": native_delta,
             "wsol_delta_lamports": wsol_delta,
             "sol_equivalent_delta_lamports": sol_equivalent_delta,
+            "unadjusted_sol_equivalent_delta_lamports": unadjusted_sol_equivalent_delta,
+            "token_account_rent_reclaim_lamports": token_account_reclaim_lamports,
+            "closed_token_accounts": closed_token_accounts,
             "raw_token_pre": int(values.get("pre") or 0),
             "raw_token_post": int(values.get("post") or 0),
             "raw_token_delta": delta,

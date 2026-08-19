@@ -631,7 +631,7 @@ def test_m63_adds_no_migration_and_preserves_head():
     config = Config("alembic.ini")
     config.set_main_option("script_location", "alembic")
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["c8a1f3d6e942"]
+    assert scripts.get_heads() == ["d9b2e4f7a153"]
 
 
 def test_candidate_only_worker_preserves_m61_role_contract_without_primary_restart():

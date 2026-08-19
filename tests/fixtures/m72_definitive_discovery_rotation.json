@@ -1,0 +1,102 @@
+{
+  "scope": "M72_DEFINITIVE_DISCOVERY_ROTATION_FIXTURE",
+  "version": "canonical-parser-gen4-definitive-discovery-rotation/1",
+  "active_candidates": [
+    {
+      "wallet_address": "ATXuKMwQGfXKpbSaAWAj8k6t58kGAa8QB4Jts29TdW9",
+      "history_complete": true,
+      "transaction_count": 233,
+      "parsed_event_count": 31,
+      "buy_events": 22,
+      "sell_events": 9,
+      "closed_trade_count": 0,
+      "open_positions": 5,
+      "net_pnl_sol": 0.0,
+      "net_equity_pnl_sol": -0.02504541,
+      "profit_factor": 0.0,
+      "win_rate_percent": 0.0,
+      "maximum_drawdown_percent": 2.504541,
+      "history_span_days": 12.85,
+      "expected_disposition": "OBSERVE_ONLY",
+      "expected_reason": "COMPLETE_HISTORY_ZERO_CLOSED_POSITIONS_OBSERVE_ONLY"
+    },
+    {
+      "wallet_address": "F2BnACAArM3Wiz3wKF3xDpNZeRVH8MSZCzFnsaCi6qQg",
+      "history_complete": true,
+      "transaction_count": 101,
+      "parsed_event_count": 33,
+      "buy_events": 22,
+      "sell_events": 11,
+      "closed_trade_count": 2,
+      "open_positions": 5,
+      "net_pnl_sol": -0.00654641,
+      "net_equity_pnl_sol": -0.110740057,
+      "profit_factor": 0.85418574,
+      "win_rate_percent": 50.0,
+      "maximum_drawdown_percent": 11.0740057,
+      "history_span_days": 22.87,
+      "expected_disposition": "OBSERVE_ONLY",
+      "expected_reason": "COMPLETE_HISTORY_INSUFFICIENT_CLOSED_SAMPLE_NEGATIVE_ECONOMICS"
+    },
+    {
+      "wallet_address": "2sZakWdUc2vRQ4YU7jBZC8wQmPwx3uuBPfG9QWyRgZh4",
+      "history_complete": true,
+      "transaction_count": 217,
+      "parsed_event_count": 63,
+      "buy_events": 0,
+      "sell_events": 63,
+      "closed_trade_count": 0,
+      "open_positions": 0,
+      "expected_disposition": "RETIRED_FROM_PROMOTION",
+      "expected_reason": "COMPLETE_HISTORY_NON_COPYABLE_SELL_ONLY"
+    },
+    {
+      "wallet_address": "5N6iyRrhDfnwx4sRW8147b12ENnJ7MtUqf3cadEWWXPn",
+      "history_complete": true,
+      "transaction_count": 58,
+      "parsed_event_count": 6,
+      "buy_events": 0,
+      "sell_events": 6,
+      "closed_trade_count": 0,
+      "open_positions": 0,
+      "expected_disposition": "RETIRED_FROM_PROMOTION",
+      "expected_reason": "COMPLETE_HISTORY_NON_COPYABLE_SELL_ONLY"
+    },
+    {
+      "wallet_address": "4jkL4dNkY2UbpYrTgLA3u5FqKwKs1LM46RcE6FQU3qXi",
+      "history_complete": false,
+      "transaction_count": 150,
+      "parsed_event_count": 104,
+      "buy_events": 1,
+      "sell_events": 103,
+      "closed_trade_count": 0,
+      "open_positions": 0,
+      "expected_disposition": "RETIRED_FROM_PROMOTION",
+      "expected_reason": "INCOMPLETE_HISTORY_DEFINITIVE_SELL_ONLY_DISTRIBUTION_PATTERN"
+    },
+    {
+      "wallet_address": "DBqGkPg4zTgBXcqDckDdZtoGbtfART5Jjbh62N8h9m4h",
+      "history_complete": false,
+      "transaction_count": 150,
+      "parsed_event_count": 1,
+      "buy_events": 1,
+      "sell_events": 0,
+      "closed_trade_count": 0,
+      "open_positions": 1,
+      "expected_disposition": "RETIRED_FROM_PROMOTION",
+      "expected_reason": "INCOMPLETE_HISTORY_DEFINITIVE_LOW_CANONICAL_PARSER_YIELD"
+    }
+  ],
+  "expected_summary": {
+    "active_wallets_reviewed": 6,
+    "qualified_pending_short_canary": 0,
+    "observe_only": 2,
+    "retired_from_promotion": 4,
+    "research_only_locked": 1,
+    "existing_inventory_exhausted_for_micro_live": true
+  },
+  "research_only_wallet": "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd",
+  "integrity": {
+    "fixture_sha256": "95cb2d2e9e17ca17baacab43fa4e0445b35cca0bb039aa4c1268b8d2e489b1fd"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "scope": "M65_SANITIZED_CURRENT_CANDIDATE_REGRESSION",
+  "wallet": "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd",
+  "official_pnl_lamports": [-1488474, -848634, 1799214, 1815327, 1072473, 4517313, 36160206, 35847133, 2490803, -307035, 692508, 3846713, -4201994, -2342401, 94887, 36887, 1859717, -3955718, -1609841, -2831880, -5660756, -1285499, -843101, -1944127, -5171911, -4810425, -3576342, -3134658, 1176728, -2160452, -333009, -1167186, -1860299, -501243, -1886777, -4018499, -2130396, -3617326, -1577370, -3390694, -2315117, -130712, -1296854, -452894, 4325747, -1185779, -2027002, 9273715, -17526, 1592464, -321634, -1347399, -1361221, -1947303, -1846969, -1449515, -1584092, -1626091, 2575010, 3222979, -953817, -1303438, 282216, 230395, 2459361, 11249446, 7751794, 11154154, -3925864, -3210927, 1464472, 9179409, -946724, 545611, -4382649, -2638696, -2342378, -742500, -5063095, 1197949, -3582986, -1851556, -9084277],
+  "official_token_ids": [20, 20, 20, 20, 20, 20, 26, 26, 17, 19, 19, 19, 20, 20, 20, 20, 20, 19, 19, 19, 19, 25, 14, 20, 2, 2, 2, 2, 2, 2, 2, 7, 20, 10, 4, 22, 22, 22, 22, 22, 22, 5, 18, 18, 18, 22, 1, 18, 3, 18, 26, 12, 12, 12, 12, 12, 12, 12, 9, 9, 21, 21, 21, 21, 21, 3, 3, 3, 5, 24, 8, 8, 5, 16, 3, 3, 3, 13, 23, 11, 21, 15, 6],
+  "reconstructed_pnl_lamports": [251160, 1250103, -1564108, -2496279, 6470110, -636177, 2687538, 121942, -1083465, 452274, -581434, -2334140, -5052967, -4020666, -4007534, -2575636, -745684],
+  "reconstructed_token_ids": [3, 3, 15, 3, 18, 21, 18, 10, 10, 10, 10, 10, 18, 18, 18, 18, 18],
+  "supplemental_pnl_lamports": [1527944, 1640226, 1613352],
+  "supplemental_token_ids": [18, 18, 18],
+  "reconstructed_total_cost_impact_lamports": 13300971,
+  "reconstructed_slippage_impact_lamports": 10013675,
+  "reconstructed_fee_impact_lamports": 3287296,
+  "open_position_count": 4,
+  "official_entry_reject_rate_percent": 9.57446809,
+  "expected": {
+    "official_net_pnl_lamports": 32319569,
+    "reconstructed_net_pnl_lamports": -13864963,
+    "combined_net_pnl_lamports": 18454606,
+    "combined_profit_factor": 1.1224648,
+    "combined_win_rate_percent": 34.0,
+    "complete_batch_profit_factor": 1.15419498,
+    "verdict": "FAIL_ECONOMIC",
+    "required_failure_reasons": [
+      "BEST_TRADE_DEPENDENCY_EXCESSIVE",
+      "COMBINED_PROFIT_FACTOR_BELOW_MINIMUM",
+      "COMPLETE_BATCH_PROFIT_FACTOR_BELOW_MINIMUM",
+      "OPEN_POSITIONS_PRESENT",
+      "RECENT_NET_PNL_NOT_POSITIVE",
+      "RECENT_PROFIT_FACTOR_BELOW_MINIMUM"
+    ]
+  }
+}

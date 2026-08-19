@@ -353,3 +353,65 @@ class CanonicalParserGen4CopyabilityWorkerState(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+class CanonicalParserGen4FastpathShadowEvent(Base):
+    __tablename__ = "canonical_parser_gen4_fastpath_shadow_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "signature",
+            "wallet_address",
+            name="uq_gen4_fastpath_signature_wallet",
+        ),
+        Index("ix_gen4_fastpath_received", "fast_received_at"),
+        Index("ix_gen4_fastpath_reconciled", "webhook_reconciled_at"),
+        Index("ix_gen4_fastpath_wallet_received", "wallet_address", "fast_received_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
+    signature: Mapped[str] = mapped_column(String(128), nullable=False)
+    slot: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    wallet_address: Mapped[str] = mapped_column(String(64), nullable=False)
+    matched_wallets: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    campaign_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    commitment: Mapped[str] = mapped_column(String(16), nullable=False, default="processed")
+
+    fast_received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    fast_parse_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fast_quote_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fast_quote_received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fast_prequote_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fast_quote_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fast_end_to_quote_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    side: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    token_mint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    token_decimals: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    wallet_effective_price_sol: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fast_price_deterioration_bps: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fast_price_impact_bps: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fast_out_amount: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    fast_transaction_built: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    fast_provisional_copyable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    fast_provisional_rejection_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    parse_error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    quote_error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+    webhook_received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    webhook_block_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    webhook_reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fast_lead_vs_webhook_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    confirmed_path_quote_received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    confirmed_path_end_to_quote_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fast_reconciled_copyable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    fast_reconciled_rejection_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    delivery_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

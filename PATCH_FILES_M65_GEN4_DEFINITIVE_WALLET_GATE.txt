@@ -1,0 +1,10 @@
+README_M65_GEN4_DEFINITIVE_WALLET_GATE.md
+RUN_M65_FULL_READONLY_AUDIT_AND_GATE.ps1
+RUN_M65_GEN4_DEFINITIVE_WALLET_GATE.ps1
+TEST_M65_GEN4_DEFINITIVE_WALLET_GATE.ps1
+PATCH_FILES_M65_GEN4_DEFINITIVE_WALLET_GATE.txt
+backend/app/services/gen4_definitive_wallet_gate_service.py
+scripts/run_m65_gen4_definitive_wallet_gate.py
+scripts/verify_m65_gen4_definitive_wallet_gate.py
+tests/fixtures/m65_gen4_definitive_wallet_gate.json
+tests/test_m65_gen4_definitive_wallet_gate.py

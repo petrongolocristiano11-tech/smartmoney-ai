@@ -49,6 +49,7 @@ class JupiterSwapClient:
             httpx.BaseTransport
             | None
         ) = None,
+        persistent_http: bool = False,
     ):
         self.api_key = (
             api_key
@@ -100,6 +101,20 @@ class JupiterSwapClient:
 
         self.sleep_fn = sleep_fn or time.sleep
         self.transport = transport
+        self.persistent_http = bool(persistent_http)
+        self._persistent_client = (
+            httpx.Client(
+                timeout=self.timeout_seconds,
+                transport=self.transport,
+            )
+            if self.persistent_http
+            else None
+        )
+
+    def close(self) -> None:
+        if self._persistent_client is not None:
+            self._persistent_client.close()
+            self._persistent_client = None
 
     def _headers(self) -> dict[str, str]:
         if not self.api_key:
@@ -207,17 +222,26 @@ class JupiterSwapClient:
             )
 
             try:
-                with httpx.Client(
-                    timeout=self.timeout_seconds,
-                    transport=self.transport,
-                ) as client:
-                    response = client.request(
+                if self._persistent_client is not None:
+                    response = self._persistent_client.request(
                         method,
                         f"{self.base_url}{path}",
                         headers=self._headers(),
                         params=params,
                         json=json,
                     )
+                else:
+                    with httpx.Client(
+                        timeout=self.timeout_seconds,
+                        transport=self.transport,
+                    ) as client:
+                        response = client.request(
+                            method,
+                            f"{self.base_url}{path}",
+                            headers=self._headers(),
+                            params=params,
+                            json=json,
+                        )
 
             except httpx.TimeoutException as exception:
                 if has_next_attempt:

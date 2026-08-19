@@ -51,6 +51,7 @@ PURE_FUNCTIONS = {
     "_raw_amount",
     "_wallet_token_deltas",
     "_native_delta",
+    "_closed_wallet_token_account_reclaim_lamports",
     "_sol_equivalent_delta",
     "parse_raw_copyability_signal",
 }
@@ -88,9 +89,10 @@ def load_parser_namespace() -> dict[str, Any]:
         "dataclass": dataclass,
         "datetime": datetime,
         "timezone": timezone,
-        "GEN4_COPYABILITY_RAW_PARSER_VERSION": "canonical-parser-gen4-raw-balance-delta/2",
+        "GEN4_COPYABILITY_RAW_PARSER_VERSION": "canonical-parser-gen4-raw-balance-delta/4",
         "GEN4_MANDATORY_EXCLUDED_PRICE_MINTS": EXCLUDED_MINTS,
         "SOL_MINT": SOL_MINT,
+        "MIN_SOL_SPENT_FOR_ROI": 0.001,
         "LAMPORTS_PER_SOL": 1_000_000_000,
     }
     module = ast.Module(body=selected, type_ignores=[])
@@ -241,7 +243,7 @@ def main() -> int:
     valid = parse(valid_buy_payload(), frozen_wallets=[CANDIDATE_WALLET])
     assert valid.side == "BUY"
     assert valid.sol_equivalent_delta_lamports == -10_100_000
-    assert valid.evidence["raw_parser_version"] == "canonical-parser-gen4-raw-balance-delta/2"
+    assert valid.evidence["raw_parser_version"] == "canonical-parser-gen4-raw-balance-delta/4"
 
     ambiguous = expect_error(
         parse,

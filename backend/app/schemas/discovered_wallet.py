@@ -237,3 +237,22 @@ class CandidateDiscoveryFunnelResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class Gen4CopyabilityAwareDiscoveryPreviewResponse(BaseModel):
+    discovery: str
+    scope: str
+    discovery_version: str
+    evaluated_at_utc: str
+    source: dict
+    policy: dict
+    policy_sha256: str
+    summary: dict
+    selected_wallets: list[dict]
+    candidate_results: list[dict]
+    acquisition_plan: dict
+    short_canary_contract: dict
+    multi_wallet_consensus_readiness: dict
+    activation: dict
+    safety: dict
+    integrity: dict

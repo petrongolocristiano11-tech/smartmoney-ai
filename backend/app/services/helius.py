@@ -34,6 +34,19 @@ RETRYABLE_STATUS_CODES = {
 }
 
 
+HELIUS_RPC_CREDIT_COSTS: dict[str, int] = {
+    "getTransactionsForAddress": 50,
+    "getTransfersByAddress": 10,
+    # Keep the existing application-side conservative accounting for this
+    # method even though provider pricing may be lower on some plans.
+    "getProgramAccounts": 10,
+}
+
+
+def helius_rpc_credit_cost(method: str) -> int:
+    return max(1, int(HELIUS_RPC_CREDIT_COSTS.get(str(method or ""), 1)))
+
+
 @dataclass(slots=True)
 class HeliusRequestError(RuntimeError):
     """Errore Helius sicuro da registrare nei log.
@@ -391,7 +404,7 @@ def helius_rpc_call(
         params={"api-key": settings.HELIUS_API_KEY},
         json=payload,
         credit_category=CATEGORY_RPC,
-        estimated_credits=(10 if method == "getProgramAccounts" else 1),
+        estimated_credits=helius_rpc_credit_cost(method),
         request_origin=request_origin,
         automatic=automatic,
     )
@@ -491,6 +504,7 @@ def get_wallet_history(
     max_retries: int | None = None,
     request_origin: str = "MANUAL_WALLET_HISTORY",
     automatic: bool = False,
+    capture_response: bool = True,
 ) -> list[dict[str, Any]]:
     endpoint = (
         "https://mainnet.helius-rpc.com/v0/addresses/"
@@ -532,22 +546,23 @@ def get_wallet_history(
             error_code="HELIUS_INVALID_PAYLOAD",
         )
 
-    _capture_helius_payload(
-        result,
-        event_type="WALLET_HISTORY_RESPONSE",
-        observed_wallet=address,
-        commitment=commitment,
-        technical_metadata={
-            "endpoint": _safe_endpoint(endpoint),
-            "transaction_type": (
-                str(transaction_type).upper()
-                if transaction_type
-                else None
-            ),
-            "requested_limit": params["limit"],
-            "has_before_signature": bool(before_signature),
-        },
-    )
+    if capture_response:
+        _capture_helius_payload(
+            result,
+            event_type="WALLET_HISTORY_RESPONSE",
+            observed_wallet=address,
+            commitment=commitment,
+            technical_metadata={
+                "endpoint": _safe_endpoint(endpoint),
+                "transaction_type": (
+                    str(transaction_type).upper()
+                    if transaction_type
+                    else None
+                ),
+                "requested_limit": params["limit"],
+                "has_before_signature": bool(before_signature),
+            },
+        )
 
     return [item for item in result if isinstance(item, dict)]
 

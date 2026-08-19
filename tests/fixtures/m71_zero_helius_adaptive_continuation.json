@@ -1,0 +1,90 @@
+{
+  "scope": "M71_ZERO_HELIUS_ADAPTIVE_CONTINUATION_FIXTURE",
+  "evaluated_at_utc": "2026-08-15T12:00:00+00:00",
+  "active_candidates": [
+    {
+      "wallet_address": "4jkL4dNkY2UbpYrTgLA3u5FqKwKs1LM46RcE6FQU3qXi",
+      "transactions_7d": 90,
+      "transactions_30d": 90,
+      "active_days_7d": 3,
+      "deep_history": {
+        "signature_count": 150,
+        "transaction_count": 150,
+        "parsed_event_count": 104,
+        "buy_events": 1,
+        "sell_events": 103,
+        "closed_trade_count": 0,
+        "open_positions": 1,
+        "history_complete": false
+      },
+      "expected_action": "DEPRIORITIZED_SELL_ONLY_OR_DISTRIBUTION_PATTERN"
+    },
+    {
+      "wallet_address": "ATXuKMwQGfXKpbSaAWAj8k6t58kGAa8QB4Jts29TdW9",
+      "transactions_7d": 73,
+      "transactions_30d": 73,
+      "active_days_7d": 8,
+      "deep_history": {
+        "signature_count": 150,
+        "transaction_count": 150,
+        "parsed_event_count": 21,
+        "buy_events": 16,
+        "sell_events": 5,
+        "closed_trade_count": 0,
+        "open_positions": 5,
+        "history_complete": false
+      },
+      "expected_action": "EXTEND_INCOMPLETE_POSITION_HISTORY"
+    },
+    {
+      "wallet_address": "DBqGkPg4zTgBXcqDckDdZtoGbtfART5Jjbh62N8h9m4h",
+      "transactions_7d": 91,
+      "transactions_30d": 91,
+      "active_days_7d": 4,
+      "deep_history": {
+        "signature_count": 150,
+        "transaction_count": 150,
+        "parsed_event_count": 1,
+        "buy_events": 1,
+        "sell_events": 0,
+        "closed_trade_count": 0,
+        "open_positions": 1,
+        "history_complete": false
+      },
+      "expected_action": "DEPRIORITIZED_LOW_CANONICAL_PARSER_YIELD"
+    },
+    {
+      "wallet_address": "F2BnACAArM3Wiz3wKF3xDpNZeRVH8MSZCzFnsaCi6qQg",
+      "transactions_7d": 30,
+      "transactions_30d": 30,
+      "active_days_7d": 6,
+      "deep_history": null,
+      "expected_action": "NEW_ACTIVE_CANDIDATE_DEEP_SCAN"
+    },
+    {
+      "wallet_address": "2sZakWdUc2vRQ4YU7jBZC8wQmPwx3uuBPfG9QWyRgZh4",
+      "transactions_7d": 35,
+      "transactions_30d": 35,
+      "active_days_7d": 3,
+      "deep_history": null,
+      "expected_action": "NEW_ACTIVE_CANDIDATE_DEEP_SCAN"
+    },
+    {
+      "wallet_address": "5N6iyRrhDfnwx4sRW8147b12ENnJ7MtUqf3cadEWWXPn",
+      "transactions_7d": 11,
+      "transactions_30d": 11,
+      "active_days_7d": 3,
+      "deep_history": null,
+      "expected_action": "NEW_ACTIVE_CANDIDATE_DEEP_SCAN"
+    }
+  ],
+  "expected_selected_wallets": [
+    "ATXuKMwQGfXKpbSaAWAj8k6t58kGAa8QB4Jts29TdW9",
+    "F2BnACAArM3Wiz3wKF3xDpNZeRVH8MSZCzFnsaCi6qQg",
+    "2sZakWdUc2vRQ4YU7jBZC8wQmPwx3uuBPfG9QWyRgZh4",
+    "5N6iyRrhDfnwx4sRW8147b12ENnJ7MtUqf3cadEWWXPn"
+  ],
+  "integrity": {
+    "fixture_sha256": "b46765e4fd615d00d2d34e981d0b22c5008104b25741d4043a7803c456e0fac0"
+  }
+}

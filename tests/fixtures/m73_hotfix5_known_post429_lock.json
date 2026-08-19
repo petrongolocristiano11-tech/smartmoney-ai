@@ -1,0 +1,18 @@
+{
+  "automatic_rearm": false,
+  "helius_credit_cap": 600,
+  "helius_maximum_requests": 6,
+  "helius_retries": 0,
+  "hotfix4_recovery_contract": "EXACT_PLAN_EXACT_HOTFIX3_RECOVERY_LOCK_NO_NEW_M66_M73_OUTPUTS",
+  "hotfix4_recovery_reason": "M63_CREDIT_GUARD_NOT_ENFORCED_BEFORE_FIRST_HELIUS_REQUEST",
+  "hotfix4_recovery_started_at_utc": "2026-08-15T17:09:35.145743+00:00",
+  "hotfix4_recovery_used": true,
+  "m72_plan_file_sha256": "328abe2296e8b91700756376175337d24cffd598c3cf12e9bb49872c69405bd8",
+  "recovery_contract": "EXACT_PLAN_EXACT_STARTED_LOCK_NO_NEW_M66_M73_OUTPUTS",
+  "recovery_reason": "DATABASE_PUBLIC_URL_MISSING_BEFORE_M66_NETWORK_PREFLIGHT",
+  "recovery_started_at_utc": "2026-08-15T16:39:01.202832+00:00",
+  "recovery_used": true,
+  "scope": "M73_ONE_SHOT_EXECUTION_LOCK_FAIL_CLOSED",
+  "started_at_utc": "2026-08-15T14:35:19.966926+00:00",
+  "state": "RECOVERING_PRENETWORK_CREDIT_GUARD_NOT_ENFORCED_HOTFIX3"
+}
