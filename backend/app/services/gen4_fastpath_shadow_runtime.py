@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from contextlib import suppress
+from datetime import datetime, timezone
 from typing import Any
 
 from websockets.asyncio.client import connect
@@ -37,6 +38,7 @@ class EmbeddedGen4FastpathShadowRuntime:
         self._candidate_connected = False
         self._candidate_messages = 0
         self._candidate_errors = 0
+        self._reconcile_task: asyncio.Task | None = None
 
     @property
     def enabled(self) -> bool:
@@ -132,6 +134,11 @@ class EmbeddedGen4FastpathShadowRuntime:
         self._candidate_task = None
         self._candidate_connected = False
         self._candidate_subscription_id = None
+        if self._reconcile_task is not None:
+            self._reconcile_task.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await self._reconcile_task
+        self._reconcile_task = None
         if self._jupiter is not None:
             await asyncio.to_thread(self._jupiter.close)
         self._jupiter = None
@@ -145,12 +152,17 @@ class EmbeddedGen4FastpathShadowRuntime:
         with SessionLocal() as db:
             return active_fastpath_wallets(db)
 
-    def _record(self, message: dict[str, Any]) -> None:
+    def _record(self, message: dict[str, Any], received_at: datetime) -> None:
         if self._jupiter is None:
             return
         with SessionLocal() as db:
             try:
-                record_fastpath_notification(db, message=message, jupiter_client=self._jupiter)
+                record_fastpath_notification(
+                    db,
+                    message=message,
+                    jupiter_client=self._jupiter,
+                    received_at=received_at,
+                )
                 db.commit()
             except Exception:
                 db.rollback()
@@ -159,7 +171,7 @@ class EmbeddedGen4FastpathShadowRuntime:
     def _candidate_wallets(self) -> list[str]:
         return configured_fastpath_candidate_wallets()
 
-    def _record_candidate(self, message: dict[str, Any]) -> None:
+    def _record_candidate(self, message: dict[str, Any], received_at: datetime) -> None:
         if self._candidate_jupiter is None:
             return
         with SessionLocal() as db:
@@ -168,6 +180,7 @@ class EmbeddedGen4FastpathShadowRuntime:
                     db,
                     message=message,
                     jupiter_client=self._candidate_jupiter,
+                    received_at=received_at,
                 )
                 db.commit()
             except Exception:
@@ -183,10 +196,32 @@ class EmbeddedGen4FastpathShadowRuntime:
                 db.rollback()
                 raise
 
-    async def _handle(self, message: dict[str, Any], semaphore: asyncio.Semaphore) -> None:
+    async def _reconcile_background(self) -> None:
+        try:
+            await asyncio.to_thread(self._reconcile)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self._errors += 1
+            logger.exception("gen4_fastpath_shadow_reconcile_failed")
+
+    def _schedule_reconcile(self) -> None:
+        if self._reconcile_task is not None and not self._reconcile_task.done():
+            return
+        self._reconcile_task = asyncio.create_task(
+            self._reconcile_background(),
+            name="gen4-fastpath-reconcile",
+        )
+
+    async def _handle(
+        self,
+        message: dict[str, Any],
+        semaphore: asyncio.Semaphore,
+        received_at: datetime,
+    ) -> None:
         async with semaphore:
             try:
-                await asyncio.to_thread(self._record, message)
+                await asyncio.to_thread(self._record, message, received_at)
             except Exception:
                 self._errors += 1
                 logger.exception("gen4_fastpath_shadow_event_failed")
@@ -195,10 +230,15 @@ class EmbeddedGen4FastpathShadowRuntime:
         self,
         message: dict[str, Any],
         semaphore: asyncio.Semaphore,
+        received_at: datetime,
     ) -> None:
         async with semaphore:
             try:
-                await asyncio.to_thread(self._record_candidate, message)
+                await asyncio.to_thread(
+                    self._record_candidate,
+                    message,
+                    received_at,
+                )
             except Exception:
                 self._candidate_errors += 1
                 logger.exception("gen4_fastpath_candidate_shadow_event_failed")
@@ -276,12 +316,13 @@ class EmbeddedGen4FastpathShadowRuntime:
                         try:
                             raw = await asyncio.wait_for(ws.recv(), timeout=refresh_seconds)
                         except asyncio.TimeoutError:
-                            await asyncio.to_thread(self._reconcile)
+                            self._schedule_reconcile()
                             current = tuple(await asyncio.to_thread(self._wallets))
                             if current != last_wallets:
                                 logger.info("gen4_fastpath_shadow_wallet_set_changed reconnecting")
                                 break
                             continue
+                        received_at = datetime.now(timezone.utc)
                         message = json.loads(raw)
                         if message.get("id") == request_id and message.get("result") is not None:
                             try:
@@ -293,9 +334,11 @@ class EmbeddedGen4FastpathShadowRuntime:
                         if message.get("method") != "transactionNotification":
                             continue
                         self._messages += 1
-                        asyncio.create_task(self._handle(message, semaphore))
+                        asyncio.create_task(
+                            self._handle(message, semaphore, received_at)
+                        )
                         if self._messages % 10 == 0:
-                            await asyncio.to_thread(self._reconcile)
+                            self._schedule_reconcile()
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -398,6 +441,7 @@ class EmbeddedGen4FastpathShadowRuntime:
                                 )
                                 break
                             continue
+                        received_at = datetime.now(timezone.utc)
                         message = json.loads(raw)
                         if (
                             message.get("id") == request_id
@@ -416,7 +460,11 @@ class EmbeddedGen4FastpathShadowRuntime:
                             continue
                         self._candidate_messages += 1
                         asyncio.create_task(
-                            self._handle_candidate(message, semaphore)
+                            self._handle_candidate(
+                                message,
+                                semaphore,
+                                received_at,
+                            )
                         )
             except asyncio.CancelledError:
                 raise
