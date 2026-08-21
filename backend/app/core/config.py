@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from typing import Literal, Self
 from urllib.parse import urlparse
@@ -1255,6 +1256,15 @@ class Settings(BaseSettings):
         default=4_000_000, ge=100_000, le=16_000_000
     )
 
+    # M117E isolated candidate entry-copyability watchlist. The candidate path
+    # uses its own processed-WSS connection and writes only M117D shadow audit
+    # rows. It never creates/modifies a copyability campaign or execution state.
+    CANONICAL_PARSER_GEN4_FASTPATH_CANDIDATE_WATCHLIST_ENABLED: bool = False
+    CANONICAL_PARSER_GEN4_FASTPATH_CANDIDATE_WALLETS: str = ""
+    CANONICAL_PARSER_GEN4_FASTPATH_CANDIDATE_MAX_WALLETS: int = Field(
+        default=5, ge=1, le=20
+    )
+
     # END M58-M60 GEN4 REAL-TIME COPYABILITY
 
     # =========================
@@ -2102,6 +2112,55 @@ class Settings(BaseSettings):
                     "JUPITER_API_KEY è obbligatoria quando M58-M60 è abilitato."
                 )
 
+        return self
+
+    @model_validator(
+        mode="after"
+    )
+    def validate_gen4_fastpath_candidate_watchlist(
+        self,
+    ) -> Self:
+        if not self.CANONICAL_PARSER_GEN4_FASTPATH_CANDIDATE_WATCHLIST_ENABLED:
+            return self
+
+        if not self.CANONICAL_PARSER_GEN4_FASTPATH_SHADOW_ENABLED:
+            raise ValueError(
+                "La candidate watchlist M117E richiede "
+                "CANONICAL_PARSER_GEN4_FASTPATH_SHADOW_ENABLED=true."
+            )
+        if not self.CANONICAL_PARSER_GEN4_COPYABILITY_ENABLED:
+            raise ValueError(
+                "La candidate watchlist M117E richiede "
+                "CANONICAL_PARSER_GEN4_COPYABILITY_ENABLED=true."
+            )
+
+        wallets = sorted(
+            {
+                item.strip()
+                for item in re.split(
+                    r"[\s,;]+",
+                    self.CANONICAL_PARSER_GEN4_FASTPATH_CANDIDATE_WALLETS.strip(),
+                )
+                if item.strip()
+            }
+        )
+        if not wallets:
+            raise ValueError(
+                "La candidate watchlist M117E è abilitata ma non contiene wallet."
+            )
+        if len(wallets) > self.CANONICAL_PARSER_GEN4_FASTPATH_CANDIDATE_MAX_WALLETS:
+            raise ValueError(
+                "La candidate watchlist M117E supera il numero massimo di wallet."
+            )
+        invalid = [
+            wallet
+            for wallet in wallets
+            if re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{32,44}", wallet) is None
+        ]
+        if invalid:
+            raise ValueError(
+                "La candidate watchlist M117E contiene un indirizzo Solana non valido."
+            )
         return self
 
     @model_validator(
