@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
 import httpx
@@ -561,12 +562,13 @@ class JupiterSwapClient:
         slippage_bps: int | None = None,
         mode: str = "fast",
     ) -> JupiterOrderResult:
-        """Quote without a taker, then validate unsigned /build instructions.
+        """Quote and validate unsigned /build instructions concurrently.
 
-        This method never signs, submits, or calls Jupiter /execute.  The
-        returned ``transaction`` value is a non-transaction marker used by the
-        copyability shadow to record that valid unsigned build instructions
-        existed at detection time.
+        The /order price observation and the /build executable-instruction
+        request are independent for this read-only copyability shadow. Running
+        them concurrently preserves both evidence streams and every existing
+        fail-closed validation while removing their avoidable serial latency.
+        This method never signs, submits, or calls Jupiter /execute.
         """
         if amount_raw <= 0:
             raise JupiterSwapError(
@@ -599,14 +601,40 @@ class JupiterSwapClient:
         if slippage_bps is not None:
             common_params["slippageBps"] = str(slippage_bps)
 
-        # Price observation is deliberately quote-only: no taker means Jupiter
-        # returns no assembled transaction and performs no wallet balance gate.
-        order_payload = self._request_json(
-            "GET",
-            "/order",
-            params=dict(common_params),
-            retryable=True,
-        )
+        build_params = dict(common_params)
+        build_params["taker"] = normalized_taker
+        build_params["mode"] = normalized_mode
+
+        # Both requests are required.  /order preserves the Meta-Aggregator
+        # price observation and price-impact fallback; /build preserves the
+        # exact executable unsigned-instruction evidence.  They do not depend
+        # on each other's response, so serial execution only adds latency.
+        with ThreadPoolExecutor(
+            max_workers=2,
+            thread_name_prefix="jupiter-shadow",
+        ) as executor:
+            order_future = executor.submit(
+                self._request_json,
+                "GET",
+                "/order",
+                params=dict(common_params),
+                retryable=True,
+            )
+            build_future = executor.submit(
+                self._request_json,
+                "GET",
+                "/build",
+                params=build_params,
+                retryable=True,
+            )
+            try:
+                order_payload = order_future.result()
+                build_payload = build_future.result()
+            except BaseException:
+                order_future.cancel()
+                build_future.cancel()
+                raise
+
         request_id = str(order_payload.get("requestId") or "").strip()
         if not request_id:
             raise JupiterSwapError(
@@ -632,16 +660,6 @@ class JupiterSwapClient:
                 code="JUPITER_ORDER_AMOUNTS_INVALID",
                 status_code=502,
             )
-
-        build_params = dict(common_params)
-        build_params["taker"] = normalized_taker
-        build_params["mode"] = normalized_mode
-        build_payload = self._request_json(
-            "GET",
-            "/build",
-            params=build_params,
-            retryable=True,
-        )
 
         forbidden_artifacts = (
             "signedTransaction",
