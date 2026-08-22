@@ -29,6 +29,9 @@ from backend.app.services.blockchain_parser_gen4_copyability_service import (
 )
 from backend.app.services.jupiter_swap_client import JupiterSwapClient
 from backend.app.services.live_trading_errors import JupiterSwapError
+from backend.app.services.pump_bonding_curve_shadow import (
+    quote_pump_buy_exact_sol_in_shadow,
+)
 
 FASTPATH_VERSION = "canonical-parser-gen4-processed-wss-fastpath-shadow/1"
 FASTPATH_COMMITMENT = "processed"
@@ -460,6 +463,19 @@ def record_fastpath_candidate_notification(
         )
         if signal.side == "BUY":
             policy = dict(event.policy_snapshot or {})
+            pump_shadow = quote_pump_buy_exact_sol_in_shadow(
+                payload,
+                wallet_address=signal.wallet_address,
+                token_mint=signal.token_mint,
+                token_decimals=signal.token_decimals,
+                wallet_effective_price_sol=signal.wallet_effective_price_sol,
+                simulated_input_lamports=int(policy["simulated_input_lamports"]),
+                slippage_bps=int(policy["slippage_bps"]),
+            )
+            event.evidence = {
+                **dict(event.evidence or {}),
+                "pump_shadow": pump_shadow,
+            }
             try:
                 quote = _quote(
                     input_mint=SOL_MINT,
@@ -574,6 +590,42 @@ def _candidate_status(
         for row in quoted
         if row.fast_price_impact_bps is not None
     ]
+    pump_shadow_rows = [
+        dict(dict(row.evidence or {}).get("pump_shadow") or {})
+        for row in buys
+        if isinstance(dict(row.evidence or {}).get("pump_shadow"), dict)
+    ]
+    pump_shadow_available = [
+        value for value in pump_shadow_rows if value.get("available") is True
+    ]
+    pump_shadow_failures = Counter(
+        str(value.get("reason"))
+        for value in pump_shadow_rows
+        if value.get("available") is not True and value.get("reason")
+    )
+    pump_shadow_latencies = [
+        float(value["quote_latency_ms"])
+        for value in pump_shadow_available
+        if value.get("quote_latency_ms") is not None
+    ]
+    pump_shadow_deterioration = [
+        float(value["price_deterioration_bps"])
+        for value in pump_shadow_available
+        if value.get("price_deterioration_bps") is not None
+    ]
+    pump_shadow_impact = [
+        float(value["diagnostic_curve_impact_bps"])
+        for value in pump_shadow_available
+        if value.get("diagnostic_curve_impact_bps") is not None
+    ]
+    pump_shadow_pam_pass = [
+        value for value in pump_shadow_available if value.get("pam_pass") is True
+    ]
+    pump_shadow_diagnostic_pass = [
+        value
+        for value in pump_shadow_available
+        if value.get("diagnostic_quote_pass") is True
+    ]
     evidence_sufficient = len(buys) >= 20
     reject_rate = 100.0 * rejection_total / len(buys) if buys else 100.0
     acceptance_rate = 100.0 * len(copyable) / len(buys) if buys else 0.0
@@ -614,6 +666,66 @@ def _candidate_status(
             "p95": _percentile(impact, 0.95),
             "max": max(impact) if impact else None,
         },
+        "pump_shadow_ab": {
+            "version": "m132-pump-event-local-quote-shadow/1",
+            "attempted_buy_count": len(pump_shadow_rows),
+            "available_quote_count": len(pump_shadow_available),
+            "availability_percent_of_buys": round(
+                (
+                    100.0 * len(pump_shadow_available) / len(buys)
+                    if buys
+                    else 0.0
+                ),
+                8,
+            ),
+            "pam_pass_count": len(pump_shadow_pam_pass),
+            "pam_pass_percent_of_available": round(
+                (
+                    100.0
+                    * len(pump_shadow_pam_pass)
+                    / len(pump_shadow_available)
+                    if pump_shadow_available
+                    else 0.0
+                ),
+                8,
+            ),
+            "diagnostic_quote_pass_count": len(pump_shadow_diagnostic_pass),
+            "diagnostic_quote_pass_percent_of_available": round(
+                (
+                    100.0
+                    * len(pump_shadow_diagnostic_pass)
+                    / len(pump_shadow_available)
+                    if pump_shadow_available
+                    else 0.0
+                ),
+                8,
+            ),
+            "failure_breakdown": dict(sorted(pump_shadow_failures.items())),
+            "quote_latency_ms": {
+                "p50": _percentile(pump_shadow_latencies, 0.50),
+                "p95": _percentile(pump_shadow_latencies, 0.95),
+            },
+            "price_deterioration_bps": {
+                "p50": _percentile(pump_shadow_deterioration, 0.50),
+                "p95": _percentile(pump_shadow_deterioration, 0.95),
+                "max": (
+                    max(pump_shadow_deterioration)
+                    if pump_shadow_deterioration
+                    else None
+                ),
+            },
+            "diagnostic_curve_impact_bps": {
+                "p95": _percentile(pump_shadow_impact, 0.95),
+                "max": max(pump_shadow_impact) if pump_shadow_impact else None,
+            },
+            "provider_api_calls": 0,
+            "rpc_reads": 0,
+            "transaction_built": False,
+            "canonical_acceptance_mutated": False,
+            "m75_forward_pass": False,
+            "live_execution": False,
+            "signer_access": False,
+        },
         "entry_gate": {
             "minimum_attempts": 20,
             "attempts_met": evidence_sufficient,
@@ -641,6 +753,11 @@ def _candidate_status(
                 "fast_transaction_built": row.fast_transaction_built,
                 "fast_provisional_copyable": row.fast_provisional_copyable,
                 "fast_rejection": row.fast_provisional_rejection_reason,
+                "pump_shadow": (
+                    dict(row.evidence or {}).get("pump_shadow")
+                    if isinstance(dict(row.evidence or {}).get("pump_shadow"), dict)
+                    else None
+                ),
                 "parse_error": row.parse_error_code,
                 "quote_error": row.quote_error_code,
             }
