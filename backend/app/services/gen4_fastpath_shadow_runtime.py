@@ -14,6 +14,7 @@ from backend.app.database.session import SessionLocal
 from backend.app.services.gen4_fastpath_shadow_service import (
     active_fastpath_wallets,
     configured_fastpath_candidate_wallets,
+    fastpath_notification_wallet_hint,
     record_fastpath_candidate_notification,
     record_fastpath_notification,
     reconcile_fastpath_events,
@@ -38,6 +39,8 @@ class EmbeddedGen4FastpathShadowRuntime:
         self._candidate_connected = False
         self._candidate_messages = 0
         self._candidate_errors = 0
+        self._official_wallet_locks: dict[str, asyncio.Lock] = {}
+        self._official_fallback_lock = asyncio.Lock()
         self._reconcile_task: asyncio.Task | None = None
 
     @property
@@ -218,13 +221,22 @@ class EmbeddedGen4FastpathShadowRuntime:
         message: dict[str, Any],
         semaphore: asyncio.Semaphore,
         received_at: datetime,
+        wallet_hint: str | None,
     ) -> None:
-        async with semaphore:
-            try:
-                await asyncio.to_thread(self._record, message, received_at)
-            except Exception:
-                self._errors += 1
-                logger.exception("gen4_fastpath_shadow_event_failed")
+        lock = (
+            self._official_wallet_locks.setdefault(wallet_hint, asyncio.Lock())
+            if wallet_hint
+            else self._official_fallback_lock
+        )
+        # Per-wallet ordering is required by the M138 shadow position lifecycle.
+        # The global semaphore still allows different wallets to quote concurrently.
+        async with lock:
+            async with semaphore:
+                try:
+                    await asyncio.to_thread(self._record, message, received_at)
+                except Exception:
+                    self._errors += 1
+                    logger.exception("gen4_fastpath_shadow_event_failed")
 
     async def _handle_candidate(
         self,
@@ -334,8 +346,16 @@ class EmbeddedGen4FastpathShadowRuntime:
                         if message.get("method") != "transactionNotification":
                             continue
                         self._messages += 1
+                        wallet_hint = fastpath_notification_wallet_hint(
+                            message, list(last_wallets)
+                        )
                         asyncio.create_task(
-                            self._handle(message, semaphore, received_at)
+                            self._handle(
+                                message,
+                                semaphore,
+                                received_at,
+                                wallet_hint,
+                            )
                         )
                         if self._messages % 10 == 0:
                             self._schedule_reconcile()

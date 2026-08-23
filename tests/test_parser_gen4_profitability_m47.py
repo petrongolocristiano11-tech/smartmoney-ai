@@ -197,7 +197,7 @@ def test_m47_models_and_migration_are_registered():
     revision = scripts.get_revision("e3b5c8d1f297")
     assert revision.down_revision == "d2a4b7c0e186"
     assert scripts.get_revision("a5e7c1d4b926").down_revision == "f4d6a9c2b813"
-    assert scripts.get_heads() == ["d9b2e4f7a153"]
+    assert scripts.get_heads() == ["e4c7a9d1b268"]
 def test_preview_without_history_is_read_only_and_not_evaluable(db):
     report = preview_gen4_profitability(db, settings_object=_settings(), evaluated_at=NOW)
     assert report["verdict"] == VERDICT_NOT_EVALUABLE
