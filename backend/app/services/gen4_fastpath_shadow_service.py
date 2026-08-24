@@ -1429,6 +1429,178 @@ def _candidate_status(
     }
 
 
+
+def get_gen4_fastpath_forward_wallet_status(
+    db: Session,
+    *,
+    wallet_address: str,
+    anchor_utc: datetime,
+    scope: str = "CANDIDATE",
+    recent_limit: int = 50,
+) -> dict[str, Any]:
+    wallet = str(wallet_address or "").strip()
+    if not wallet:
+        raise ValueError("FASTPATH_FORWARD_WALLET_REQUIRED")
+
+    anchor = _aware(anchor_utc)
+    if anchor is None:
+        raise ValueError("FASTPATH_FORWARD_ANCHOR_REQUIRED")
+
+    normalized_scope = str(scope or "CANDIDATE").strip().upper()
+    if normalized_scope not in {"CANDIDATE", "OFFICIAL"}:
+        raise ValueError("FASTPATH_FORWARD_SCOPE_INVALID")
+
+    queried = list(
+        db.scalars(
+            select(CanonicalParserGen4FastpathShadowEvent).where(
+                CanonicalParserGen4FastpathShadowEvent.wallet_address == wallet,
+                CanonicalParserGen4FastpathShadowEvent.fast_received_at >= anchor,
+            )
+        )
+    )
+    rows = [
+        row
+        for row in queried
+        if str(row.wallet_address) == wallet
+        and (_aware(row.fast_received_at) or anchor) >= anchor
+        and (
+            _is_candidate_event(row)
+            if normalized_scope == "CANDIDATE"
+            else not _is_candidate_event(row)
+        )
+    ]
+    rows.sort(key=lambda row: row.fast_received_at)
+
+    buys = [row for row in rows if row.side == "BUY"]
+    sells = [row for row in rows if row.side == "SELL"]
+    accepted = [row for row in buys if bool(row.fast_provisional_copyable)]
+    rejected = [row for row in buys if not bool(row.fast_provisional_copyable)]
+    pam_rejected = [
+        row
+        for row in buys
+        if row.fast_provisional_rejection_reason == "PRICE_ALREADY_MOVED"
+    ]
+    parse_errors = [row for row in rows if row.parse_error_code]
+    quote_errors = [row for row in buys if row.quote_error_code]
+
+    latency_values = []
+    deterioration_values = []
+    impact_values = []
+    for row in buys:
+        if row.fast_end_to_quote_ms is not None:
+            latency_values.append(float(row.fast_end_to_quote_ms))
+        elif row.fast_quote_latency_ms is not None:
+            latency_values.append(
+                float((row.fast_prequote_ms or 0) + row.fast_quote_latency_ms)
+            )
+        if row.fast_price_deterioration_bps is not None:
+            deterioration_values.append(float(row.fast_price_deterioration_bps))
+        if row.fast_price_impact_bps is not None:
+            impact_values.append(float(row.fast_price_impact_bps))
+
+    rejection_breakdown = Counter(
+        str(row.fast_provisional_rejection_reason or "UNSPECIFIED")
+        for row in rejected
+    )
+
+    buy_count = len(buys)
+    acceptance_rate = (
+        round(100.0 * len(accepted) / buy_count, 8) if buy_count else None
+    )
+    reject_rate = (
+        round(100.0 * len(rejected) / buy_count, 8) if buy_count else None
+    )
+    pam_rate = (
+        round(100.0 * len(pam_rejected) / buy_count, 8) if buy_count else None
+    )
+    attempts_met = buy_count >= 20
+    reject_rate_pass = bool(
+        attempts_met and reject_rate is not None and reject_rate <= 20.0
+    )
+
+    limit = max(1, min(int(recent_limit), 500))
+    recent = list(reversed(rows[-limit:]))
+
+    return {
+        "version": "m169-fastpath-persistent-forward-wallet-status/1",
+        "persistent_db_evidence": True,
+        "window_limited": False,
+        "wallet": wallet,
+        "scope": normalized_scope,
+        "anchor_utc": anchor,
+        "event_count": len(rows),
+        "buy_count": buy_count,
+        "sell_count": len(sells),
+        "accepted_buy_count": len(accepted),
+        "rejected_buy_count": len(rejected),
+        "entry_acceptance_rate_percent": acceptance_rate,
+        "entry_reject_rate_percent": reject_rate,
+        "pam_rejection_count": len(pam_rejected),
+        "pam_rejection_rate_percent": pam_rate,
+        "parse_error_count": len(parse_errors),
+        "quote_error_count": len(quote_errors),
+        "rejection_breakdown": dict(sorted(rejection_breakdown.items())),
+        "fast_received_to_quote_ms": {
+            "p50": _percentile(latency_values, 0.50),
+            "p95": _percentile(latency_values, 0.95),
+        },
+        "price_deterioration_bps": {
+            "p50": _percentile(deterioration_values, 0.50),
+            "p95": _percentile(deterioration_values, 0.95),
+            "max": max(deterioration_values) if deterioration_values else None,
+        },
+        "price_impact_bps": {
+            "p50": _percentile(impact_values, 0.50),
+            "p95": _percentile(impact_values, 0.95),
+            "max": max(impact_values) if impact_values else None,
+        },
+        "first_event_at": rows[0].fast_received_at if rows else None,
+        "last_event_at": rows[-1].fast_received_at if rows else None,
+        "entry_gate": {
+            "minimum_attempts": 20,
+            "attempts_met": attempts_met,
+            "maximum_reject_rate_percent": 20.0,
+            "reject_rate_pass": reject_rate_pass,
+            "price_already_moved_limit_bps": 1_000,
+            "price_already_moved_unchanged": True,
+        },
+        "m75_forward_pass": False,
+        "m75_forward_pass_reason": (
+            "PERSISTENT_FORWARD_ENTRY_ONLY_NO_24H_CLOSED_WEBHOOK_PROOF"
+        ),
+        "recent": [
+            {
+                "signature": row.signature,
+                "wallet": row.wallet_address,
+                "side": row.side,
+                "fast_received_at": row.fast_received_at,
+                "fast_prequote_ms": row.fast_prequote_ms,
+                "fast_quote_latency_ms": row.fast_quote_latency_ms,
+                "fast_end_to_quote_ms": row.fast_end_to_quote_ms,
+                "fast_price_deterioration_bps": row.fast_price_deterioration_bps,
+                "fast_price_impact_bps": row.fast_price_impact_bps,
+                "fast_transaction_built": row.fast_transaction_built,
+                "fast_provisional_copyable": row.fast_provisional_copyable,
+                "fast_rejection": row.fast_provisional_rejection_reason,
+                "parse_error": row.parse_error_code,
+                "quote_error": row.quote_error_code,
+            }
+            for row in recent
+        ],
+        "safety": {
+            "provider_history_calls": 0,
+            "helius_credits": 0,
+            "birdeye_cu": 0,
+            "campaign_created": False,
+            "campaign_metrics_mutated": False,
+            "positions_created": 0,
+            "live_execution": False,
+            "signer_access": False,
+            "submitted_transactions": 0,
+            "paper_orders": 0,
+        },
+    }
+
 def _reconciled_rejection(event: CanonicalParserGen4FastpathShadowEvent) -> str | None:
     policy = dict(event.policy_snapshot or {})
     if event.side != "BUY":

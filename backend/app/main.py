@@ -20,6 +20,7 @@ from backend.app.services.gen4_fastpath_shadow_runtime import (
     gen4_fastpath_shadow_runtime,
 )
 from backend.app.services.gen4_fastpath_shadow_service import (
+    get_gen4_fastpath_forward_wallet_status,
     get_gen4_fastpath_shadow_status,
 )
 from datetime import (
@@ -5041,6 +5042,31 @@ def read_gen4_fastpath_shadow_status_endpoint(
     result = get_gen4_fastpath_shadow_status(db, recent_limit=recent_limit)
     result["runtime"] = gen4_fastpath_shadow_runtime.status
     db.commit()
+    return result
+
+
+@app.get(
+    "/integrity/parser-gen4-fastpath-shadow/forward-wallet-status",
+    tags=["Blockchain Integrity"],
+    dependencies=[Depends(require_automation_key)],
+)
+def read_gen4_fastpath_forward_wallet_status_endpoint(
+    wallet_address: str = Query(
+        ..., min_length=32, max_length=44, pattern=r"^[1-9A-HJ-NP-Za-km-z]{32,44}$"
+    ),
+    anchor_utc: datetime = Query(...),
+    scope: str = Query(default="CANDIDATE", pattern=r"^(CANDIDATE|OFFICIAL)$"),
+    recent_limit: int = Query(default=50, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    result = get_gen4_fastpath_forward_wallet_status(
+        db,
+        wallet_address=wallet_address,
+        anchor_utc=anchor_utc,
+        scope=scope,
+        recent_limit=recent_limit,
+    )
+    result["runtime"] = gen4_fastpath_shadow_runtime.status
     return result
 
 
