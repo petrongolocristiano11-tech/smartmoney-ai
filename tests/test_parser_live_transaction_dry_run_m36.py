@@ -118,6 +118,41 @@ def make_transaction(
     return base64.b64encode(raw).decode("ascii")
 
 
+def make_v1_transaction(
+    *,
+    wallet: str = WALLET,
+    token: str = TOKEN,
+    program: str = PROGRAM,
+    signed: bool = False,
+    config_mask: int = 0x07,
+) -> str:
+    wallet_raw = service._base58_decode(wallet)
+    token_raw = service._base58_decode(token)
+    program_raw = service._base58_decode(program)
+    raw = bytearray()
+    raw.append(0x81)
+    raw.extend(bytes([1, 0, 1]))
+    raw.extend(int(config_mask).to_bytes(4, "little"))
+    raw.extend(BLOCKHASH)
+    raw.extend(bytes([1]))
+    raw.extend(bytes([3]))
+    raw.extend(wallet_raw + token_raw + program_raw)
+    if config_mask & 0x03:
+        raw.extend((50_000).to_bytes(8, "little"))
+    if config_mask & (1 << 2):
+        raw.extend((200_000).to_bytes(4, "little"))
+    if config_mask & (1 << 3):
+        raw.extend((0).to_bytes(4, "little"))
+    if config_mask & (1 << 4):
+        raw.extend((32 * 1024).to_bytes(4, "little"))
+    raw.extend(bytes([2, 2]))
+    raw.extend((1).to_bytes(2, "little"))
+    raw.extend(bytes([0, 1]))
+    raw.extend(b"\x01")
+    raw.extend(bytes([9]) * 64 if signed else bytes(64))
+    return base64.b64encode(bytes(raw)).decode("ascii")
+
+
 @pytest.fixture()
 def db() -> Session:
     engine = create_engine(
@@ -428,6 +463,37 @@ def test_parser_reads_v0_without_lookup_table():
     result = service.inspect_unsigned_solana_transaction(make_transaction(versioned=True))
     assert result["transaction_format"] == "V0"
     assert result["address_lookup_count"] == 0
+
+
+def test_parser_reads_v1_with_transaction_config():
+    result = service.inspect_unsigned_solana_transaction(make_v1_transaction())
+    assert result["transaction_format"] == "V1"
+    assert result["required_signers"] == [WALLET]
+    assert result["program_ids"] == [PROGRAM]
+    assert result["address_lookup_count"] == 0
+    assert result["all_signature_slots_zero"] is True
+    assert result["transaction_config"]["priority_fee_lamports"] == 50_000
+    assert result["transaction_config"]["compute_unit_limit"] == 200_000
+
+
+def test_solders_029_decodes_v1_transaction_fixture():
+    from solders.message import MessageV1
+    from solders.transaction import VersionedTransaction
+
+    transaction = VersionedTransaction.from_bytes(
+        base64.b64decode(make_v1_transaction(), validate=True)
+    )
+    assert isinstance(transaction.message, MessageV1)
+
+
+def test_parser_rejects_v1_partial_priority_fee_mask():
+    with pytest.raises(
+        service.CanonicalParserLiveTransactionDryRunError
+    ) as exc:
+        service.inspect_unsigned_solana_transaction(
+            make_v1_transaction(config_mask=0x01)
+        )
+    assert exc.value.code == "M36_TRANSACTION_INVALID"
 
 
 def test_parser_rejects_invalid_base64():

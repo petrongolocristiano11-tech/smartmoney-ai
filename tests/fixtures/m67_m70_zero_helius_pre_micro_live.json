@@ -1,7 +1,7 @@
 {
   "evaluated_at_utc": "2026-08-15T02:30:00+00:00",
   "integrity": {
-    "fixture_sha256": "2717f592e1b3bad037c2988434a7cd3da5c16be8dde5ae6c999f8853582d1c8f"
+    "fixture_sha256": "ed3bd391bacffdc54f2699d12ef5ff80b5bc3b70fd607b6cc9906b0ca55daaf9"
   },
   "local_snapshot": {
     "candidates": [
@@ -28,7 +28,7 @@
       "recovery_counts_as_realtime_proof": false
     },
     "integrity": {
-      "snapshot_payload_sha256": "10e99cb0a9f9b0dd7d3995bf4302a63cf5e4851dff6711d5ab83bc14309dfaf9"
+      "snapshot_payload_sha256": "fdd8283d30dbb702735a995404c98e2ec6ce179cef9419a57af91edf5cc2faf0"
     },
     "safety": {
       "automatic_live_activation": false,

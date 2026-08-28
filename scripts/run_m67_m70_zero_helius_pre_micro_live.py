@@ -392,7 +392,7 @@ def _collect_deep_history(
                     {
                         "commitment": "finalized",
                         "encoding": "jsonParsed",
-                        "maxSupportedTransactionVersion": 0,
+                        "maxSupportedTransactionVersion": 1,
                     },
                 ],
             )

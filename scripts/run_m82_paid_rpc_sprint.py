@@ -456,7 +456,7 @@ def _history_config(
         "sortOrder": "desc",
         "commitment": "finalized",
         "encoding": "jsonParsed",
-        "maxSupportedTransactionVersion": 0,
+        "maxSupportedTransactionVersion": 1,
         "limit": int(limit),
         "filters": {
             "status": "succeeded",

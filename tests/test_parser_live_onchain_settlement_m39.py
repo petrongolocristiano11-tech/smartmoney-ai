@@ -147,6 +147,7 @@ def test_rpc_get_transaction_is_read_only_and_finalized():
     assert captured["method"] == "getTransaction"
     assert captured["params"][1]["commitment"] == "finalized"
     assert captured["params"][1]["encoding"] == "json"
+    assert captured["params"][1]["maxSupportedTransactionVersion"] == 1
 
 
 def test_preview_requires_finalized_submission(db, monkeypatch):

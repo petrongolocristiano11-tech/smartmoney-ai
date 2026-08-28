@@ -124,6 +124,14 @@ def main() -> int:
     runner = (PROJECT_ROOT / "scripts" / "run_m82_paid_rpc_sprint.py").read_text(encoding="utf-8")
     launcher = (PROJECT_ROOT / "scripts" / "launch_m82_paid_rpc_sprint.py").read_text(encoding="utf-8")
     _require("getTransactionsForAddress" in runner, "gTFA assente dal runner M82.")
+    _require(
+        '"maxSupportedTransactionVersion": 1' in runner,
+        "gTFA M82 non dichiara supporto Transaction v1.",
+    )
+    _require(
+        '"maxSupportedTransactionVersion": 0' not in runner,
+        "gTFA M82 ancora limitato a Transaction v0.",
+    )
     _require("api.mainnet-beta.solana.com" not in runner, "RPC pubblico lento ancora presente in M82.")
     _require("M82_HEARTBEAT=" in runner, "Heartbeat M82 assente.")
     _require("checkpoint-lock-policy-resume/1" in runner, "Hotfix resume M82 assente.")

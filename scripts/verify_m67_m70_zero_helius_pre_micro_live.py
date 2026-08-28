@@ -20,12 +20,12 @@ from backend.app.services.gen4_zero_helius_pre_micro_live_service import (  # no
 )
 
 
-EXPECTED_GIT_HEAD = "fe63c528e55af84a97d6deb6872e825a5a43c6b4"
+EXPECTED_GIT_HEAD = "04eff46f992b4b98183e44ab877f89bcf01e2331"
 EXPECTED_HASHES = {
     "backend/app/services/gen4_zero_helius_pre_micro_live_service.py": "ce124eb5648676faa275dd75a7777c27c6ce3878a2af6e810908710d1447cfa7",
-    "scripts/run_m67_m70_zero_helius_pre_micro_live.py": "549d08c98cff48be9dbe8bc7582935daa1db4c361a87c0cca793350b9eda44d7",
-    "tests/fixtures/m67_m70_zero_helius_pre_micro_live.json": "7e9f0045f225d9975af678b7a8fe08f0170fb7d2d33cbc3819f80ca3894804a3",
-    "tests/test_m67_m70_zero_helius_pre_micro_live.py": "c28e47ce415e4650441084863bd69b7a78af337b436ec7f67c5fd2acc6b35cb5",
+    "scripts/run_m67_m70_zero_helius_pre_micro_live.py": "7c0b60be467c0b5da6c3dc0f8692e065270489505473421ea34087b1950c3753",
+    "tests/fixtures/m67_m70_zero_helius_pre_micro_live.json": "e75a10fd74b46bbb86e9a29fec50d949e6ee2ed6bde9af9095b66712c0af623d",
+    "tests/test_m67_m70_zero_helius_pre_micro_live.py": "7898157de1d694c5005962ff69635c94f6593cc8f319778944d0af3638c9dca9",
 }
 
 
@@ -71,6 +71,14 @@ def main() -> int:
     )
     _require("getSignaturesForAddress" in runner_text, "Prescreen RPC pubblico assente.")
     _require("getTransaction" in runner_text, "Deep history RPC pubblico assente.")
+    _require(
+        '"maxSupportedTransactionVersion": 1' in runner_text,
+        "Deep history M67 non dichiara supporto Transaction v1.",
+    )
+    _require(
+        '"maxSupportedTransactionVersion": 0' not in runner_text,
+        "Deep history M67 ancora limitato a Transaction v0.",
+    )
     _require("PublicRpcBudgetExhausted" in runner_text, "Cap RPC hard assente.")
     _require("if \"helius\" in hostname" in runner_text, "Blocco endpoint Helius assente.")
     for forbidden in ("db.add(", "db.commit(", "session.add(", "session.commit("):
@@ -80,6 +88,7 @@ def main() -> int:
     fixture_path = PROJECT_ROOT / "tests/fixtures/m67_m70_zero_helius_pre_micro_live.json"
     fixture = json.loads(fixture_path.read_text(encoding="utf-8-sig"))
     expected_fixture = str(dict(fixture.get("integrity") or {}).get("fixture_sha256") or "")
+    _require(len(expected_fixture) == 64, "Hash logico fixture M67-M70 assente.")
     _require(
         expected_fixture
         == canonical_sha256({key: value for key, value in fixture.items() if key != "integrity"}),

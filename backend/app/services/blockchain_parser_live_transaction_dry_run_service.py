@@ -262,6 +262,163 @@ def _take(data: bytes, offset: int, length: int) -> tuple[bytes, int]:
     return data[offset : offset + length], offset + length
 
 
+def _inspect_v1_solana_transaction(raw: bytes) -> dict[str, Any]:
+    cursor = 1
+    header_raw, cursor = _take(raw, cursor, 3)
+    num_required_signatures = header_raw[0]
+    num_readonly_signed = header_raw[1]
+    num_readonly_unsigned = header_raw[2]
+
+    if num_required_signatures < 1 or num_required_signatures > 12:
+        raise ValueError("invalid v1 signer count")
+    if num_readonly_signed >= num_required_signatures:
+        raise ValueError("invalid v1 readonly signed count")
+
+    config_mask_raw, cursor = _take(raw, cursor, 4)
+    config_mask = int.from_bytes(config_mask_raw, "little")
+    if config_mask & ~0x1F:
+        raise ValueError("unsupported v1 transaction config")
+    priority_bits = config_mask & 0x03
+    if priority_bits not in (0, 0x03):
+        raise ValueError("invalid v1 priority fee mask")
+
+    blockhash_raw, cursor = _take(raw, cursor, 32)
+    instruction_count_raw, cursor = _take(raw, cursor, 1)
+    account_count_raw, cursor = _take(raw, cursor, 1)
+    instruction_count = instruction_count_raw[0]
+    account_count = account_count_raw[0]
+
+    if instruction_count > 64:
+        raise ValueError("too many v1 instructions")
+    if account_count < 1 or account_count > 64:
+        raise ValueError("invalid v1 account count")
+    if account_count < num_required_signatures + num_readonly_unsigned:
+        raise ValueError("invalid v1 readonly unsigned count")
+
+    account_bytes, cursor = _take(raw, cursor, account_count * 32)
+    account_keys = [
+        _base58_encode(account_bytes[index : index + 32])
+        for index in range(0, len(account_bytes), 32)
+    ]
+    if len(set(account_keys)) != len(account_keys):
+        raise ValueError("duplicate v1 account keys")
+
+    transaction_config: dict[str, Any] = {
+        "mask": config_mask,
+        "priority_fee_lamports": None,
+        "compute_unit_limit": None,
+        "loaded_accounts_data_size_limit": None,
+        "heap_size": None,
+    }
+    if priority_bits == 0x03:
+        value_raw, cursor = _take(raw, cursor, 8)
+        transaction_config["priority_fee_lamports"] = int.from_bytes(
+            value_raw, "little"
+        )
+    if config_mask & (1 << 2):
+        value_raw, cursor = _take(raw, cursor, 4)
+        transaction_config["compute_unit_limit"] = int.from_bytes(
+            value_raw, "little"
+        )
+    if config_mask & (1 << 3):
+        value_raw, cursor = _take(raw, cursor, 4)
+        transaction_config["loaded_accounts_data_size_limit"] = int.from_bytes(
+            value_raw, "little"
+        )
+    if config_mask & (1 << 4):
+        value_raw, cursor = _take(raw, cursor, 4)
+        heap_size = int.from_bytes(value_raw, "little")
+        if heap_size < 32 * 1024 or heap_size > 256 * 1024:
+            raise ValueError("invalid v1 heap size")
+        if heap_size % 1024 != 0:
+            raise ValueError("unaligned v1 heap size")
+        transaction_config["heap_size"] = heap_size
+
+    instruction_headers: list[tuple[int, int, int]] = []
+    for _ in range(instruction_count):
+        header, cursor = _take(raw, cursor, 4)
+        instruction_headers.append(
+            (
+                header[0],
+                header[1],
+                int.from_bytes(header[2:4], "little"),
+            )
+        )
+
+    instructions: list[dict[str, Any]] = []
+    program_ids: list[str] = []
+    for sequence, (program_index, account_index_count, data_length) in enumerate(
+        instruction_headers, start=1
+    ):
+        if program_index >= account_count:
+            raise ValueError("invalid v1 program index")
+        account_indexes_raw, cursor = _take(
+            raw, cursor, account_index_count
+        )
+        if any(index >= account_count for index in account_indexes_raw):
+            raise ValueError("invalid v1 instruction account index")
+        _, cursor = _take(raw, cursor, data_length)
+        program_id = account_keys[program_index]
+        instructions.append(
+            {
+                "sequence": sequence,
+                "program_id_index": program_index,
+                "program_id": program_id,
+                "account_indexes": list(account_indexes_raw),
+                "data_length": data_length,
+            }
+        )
+        if program_id not in program_ids:
+            program_ids.append(program_id)
+
+    signature_offset = cursor
+    signatures_raw, cursor = _take(
+        raw, cursor, num_required_signatures * 64
+    )
+    if cursor != len(raw):
+        raise ValueError("unexpected v1 trailing bytes")
+    signatures = [
+        signatures_raw[index : index + 64]
+        for index in range(0, len(signatures_raw), 64)
+    ]
+
+    writable_accounts: list[str] = []
+    signed_writable_end = num_required_signatures - num_readonly_signed
+    unsigned_writable_end = account_count - num_readonly_unsigned
+    for index, account in enumerate(account_keys):
+        is_writable = index < signed_writable_end or (
+            num_required_signatures <= index < unsigned_writable_end
+        )
+        if is_writable:
+            writable_accounts.append(account)
+
+    message_bytes = raw[:signature_offset]
+    return {
+        "transaction_format": "V1",
+        "transaction_size_bytes": len(raw),
+        "signature_slot_count": num_required_signatures,
+        "all_signature_slots_zero": all(
+            signature == (b"\x00" * 64) for signature in signatures
+        ),
+        "required_signer_count": num_required_signatures,
+        "required_signers": account_keys[:num_required_signatures],
+        "static_account_count": account_count,
+        "static_account_keys": account_keys,
+        "writable_accounts": writable_accounts,
+        "instruction_count": instruction_count,
+        "instructions": instructions,
+        "program_ids": sorted(program_ids),
+        "unresolved_program_indexes": [],
+        "address_lookup_count": 0,
+        "address_table_lookups": [],
+        "recent_blockhash": _base58_encode(blockhash_raw),
+        "transaction_config": transaction_config,
+        "transaction_hash": hashlib.sha256(raw).hexdigest(),
+        "message_hash": hashlib.sha256(message_bytes).hexdigest(),
+        "account_keys_hash": calculate_payload_hash(account_keys),
+    }
+
+
 def inspect_unsigned_solana_transaction(transaction_base64: str) -> dict[str, Any]:
     try:
         raw = base64.b64decode(transaction_base64, validate=True)
@@ -275,6 +432,8 @@ def inspect_unsigned_solana_transaction(transaction_base64: str) -> dict[str, An
             "Transazione M36 vuota.", code="M36_TRANSACTION_EMPTY"
         )
     try:
+        if raw[0] == 0x81:
+            return _inspect_v1_solana_transaction(raw)
         signature_count, cursor = _read_shortvec(raw, 0)
         signatures_raw, cursor = _take(raw, cursor, signature_count * 64)
         message_offset = cursor

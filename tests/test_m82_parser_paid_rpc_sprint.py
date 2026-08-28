@@ -228,6 +228,18 @@ def _load_runner_module():
     return module
 
 
+def test_m82_history_config_advertises_transaction_v1():
+    runner = _load_runner_module()
+    config = runner._history_config(
+        cutoff_epoch=1,
+        limit=10,
+        pagination_token=None,
+        include_token_accounts=False,
+    )
+    assert config["transactionDetails"] == "full"
+    assert config["maxSupportedTransactionVersion"] == 1
+
+
 def test_m82_gtfa_client_reserves_50_once_and_resume_hits_cache(tmp_path, monkeypatch):
     runner = _load_runner_module()
     reservations = []

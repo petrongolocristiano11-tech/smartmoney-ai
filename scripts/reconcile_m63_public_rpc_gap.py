@@ -152,7 +152,7 @@ def _fetch_transactions(
                 {
                     "commitment": "finalized",
                     "encoding": "jsonParsed",
-                    "maxSupportedTransactionVersion": 0,
+                    "maxSupportedTransactionVersion": 1,
                 },
             ],
         )

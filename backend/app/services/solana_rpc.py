@@ -292,7 +292,7 @@ class SolanaRpcClient:
                 {
                     "commitment": "finalized",
                     "encoding": "json",
-                    "maxSupportedTransactionVersion": 0,
+                    "maxSupportedTransactionVersion": 1,
                 },
             ],
         )
@@ -489,7 +489,7 @@ def get_transaction_detail(
             {
                 "encoding": "jsonParsed",
                 "maxSupportedTransactionVersion":
-                    0,
+                    1,
             },
         ],
     )

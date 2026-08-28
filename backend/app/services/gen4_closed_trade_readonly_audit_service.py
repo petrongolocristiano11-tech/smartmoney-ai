@@ -854,7 +854,7 @@ def collect_public_transactions(
                 {
                     "commitment": "finalized",
                     "encoding": "jsonParsed",
-                    "maxSupportedTransactionVersion": 0,
+                    "maxSupportedTransactionVersion": 1,
                 },
             ],
         )
