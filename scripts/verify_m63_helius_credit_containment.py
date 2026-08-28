@@ -154,8 +154,10 @@ def main() -> int:
         "M63_EXCLUSIVE_CANDIDATE_WEBHOOK=",
         "GEN4_EXPECT_EXCLUSIVE_WALLET",
     )
-    if '"transactionTypes": ["ANY"]' in webhook_text:
-        raise AssertionError("Raw webhook M63 usa ancora transactionTypes.")
+    if '"transactionTypes": ["ANY"]' not in webhook_text:
+        raise AssertionError("Raw webhook M63 non definisce transactionTypes per create.")
+    if 'transaction_types = selected_detail.get("transactionTypes")' not in webhook_text:
+        raise AssertionError("Raw webhook M63 non preserva transactionTypes dal GET-by-ID.")
     if 'f"{HELIUS_WEBHOOK_API}/{selected_id}"' not in webhook_text:
         raise AssertionError("M63 webhook configurator non verifica il provider per ID.")
     automatic_consumers = "\n".join(

@@ -217,8 +217,9 @@ def main() -> None:
             if isinstance(item, dict)
         ]
 
-        body = {
+        create_body = {
             "webhookURL": target_url,
+            "transactionTypes": ["ANY"],
             "accountAddresses": wallets,
             "webhookType": "raw",
             "authHeader": webhook_secret,
@@ -240,13 +241,30 @@ def main() -> None:
                 raise SetupError("Webhook Gen4 per ID punta a un URL inatteso.")
             if str(selected_detail.get("webhookType") or "").lower() != "raw":
                 raise SetupError("Webhook Gen4 per ID non è RAW.")
+            transaction_types = selected_detail.get("transactionTypes")
+            if not isinstance(transaction_types, list) or not transaction_types:
+                raise SetupError(
+                    "Webhook Gen4 per ID privo di transactionTypes preservabili."
+                )
+            auth_header = str(selected_detail.get("authHeader") or webhook_secret).strip()
+            if not auth_header:
+                raise SetupError("Webhook Gen4 per ID privo di authHeader preservabile.")
+            update_body = {
+                "webhookURL": target_url,
+                "transactionTypes": list(transaction_types),
+                "accountAddresses": wallets,
+                "webhookType": "raw",
+                "authHeader": auth_header,
+                "encoding": str(selected_detail.get("encoding") or "jsonParsed"),
+                "txnStatus": str(selected_detail.get("txnStatus") or "success"),
+            }
             configured = request_json(
                 client,
                 "PUT",
                 f"{HELIUS_WEBHOOK_API}/{selected_id}",
                 params={"api-key": helius_key},
                 headers={"Content-Type": "application/json"},
-                payload=body,
+                payload=update_body,
             )
         else:
             try:
@@ -258,7 +276,7 @@ def main() -> None:
                     HELIUS_WEBHOOK_API,
                     params={"api-key": helius_key},
                     headers={"Content-Type": "application/json"},
-                    payload=body,
+                    payload=create_body,
                 )
             except SetupError as create_error:
                 if not existing or replace_confirmation != REPLACE_CONFIRMATION:
@@ -285,7 +303,7 @@ def main() -> None:
                     f"{HELIUS_WEBHOOK_API}/{selected_id}",
                     params={"api-key": helius_key},
                     headers={"Content-Type": "application/json"},
-                    payload=body,
+                    payload=create_body,
                 )
 
         configured_id = webhook_id(configured if isinstance(configured, dict) else {})
@@ -335,6 +353,9 @@ def main() -> None:
             raise SetupError("Webhook Helius attivo su un URL inatteso.")
         if set((verified or {}).get("accountAddresses") or []) != set(wallets):
             raise SetupError("Webhook Helius non monitora esattamente i wallet congelati.")
+        verified_transaction_types = (verified or {}).get("transactionTypes")
+        if not isinstance(verified_transaction_types, list) or not verified_transaction_types:
+            raise SetupError("Webhook Helius non espone transactionTypes dopo configurazione.")
 
         print("GEN4_HELIUS_WEBHOOK=CONFIGURED")
         print(f"WEBHOOK_ID={configured_id}")

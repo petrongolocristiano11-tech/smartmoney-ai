@@ -47,6 +47,7 @@ class ActivationState:
     primary_webhook_id: str = ""
     original_addresses: list[str] | None = None
     rollback_addresses: list[str] | None = None
+    original_transaction_types: list[Any] | None = None
     webhook_updated: bool = False
     repaired_empty_webhook: bool = False
     primary_anchor_before: str = ""
@@ -130,14 +131,23 @@ def desired_webhook_body(
     target_url: str,
     addresses: list[str],
     webhook_secret: str,
+    transaction_types: list[Any],
+    existing_detail: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if not isinstance(transaction_types, list) or not transaction_types:
+        raise ActivationError("Webhook RAW privo di transactionTypes preservabili")
+    detail = existing_detail or {}
+    auth_header = str(detail.get("authHeader") or webhook_secret).strip()
+    if not auth_header:
+        raise ActivationError("Webhook RAW privo di authHeader preservabile")
     return {
         "webhookURL": target_url,
+        "transactionTypes": list(transaction_types),
         "accountAddresses": sorted(set(addresses)),
         "webhookType": "raw",
-        "authHeader": webhook_secret,
-        "encoding": "jsonParsed",
-        "txnStatus": "success",
+        "authHeader": auth_header,
+        "encoding": str(detail.get("encoding") or "jsonParsed"),
+        "txnStatus": str(detail.get("txnStatus") or "success"),
     }
 
 
@@ -206,6 +216,7 @@ def rollback_activation(
                     target_url=target_url,
                     addresses=restore_addresses,
                     webhook_secret=webhook_secret,
+                    transaction_types=state.original_transaction_types or [],
                 ),
             )
             print("M61_FAILSAFE_WEBHOOK_RESTORED=YES", file=sys.stderr)
@@ -317,6 +328,10 @@ def activate(
         raise ActivationError("Webhook Gen4 esistente non è RAW")
     if not bool(exact_detail.get("active")):
         raise ActivationError("Webhook Gen4 esistente non è attivo")
+    transaction_types = exact_detail.get("transactionTypes")
+    if not isinstance(transaction_types, list) or not transaction_types:
+        raise ActivationError("Webhook Gen4 RAW privo di transactionTypes preservabili")
+    state.original_transaction_types = list(transaction_types)
 
     state.original_addresses = [
         str(value).strip()
@@ -389,6 +404,8 @@ def activate(
                 target_url=target_url,
                 addresses=union_wallets,
                 webhook_secret=webhook_secret,
+                transaction_types=state.original_transaction_types,
+                existing_detail=exact_detail,
             ),
         )
         state.webhook_updated = True
@@ -423,6 +440,8 @@ def activate(
         raise ActivationError("Webhook Helius M61 non è RAW dopo l'update")
     if set(verified.get("accountAddresses") or []) != union_set:
         raise ActivationError("Webhook Helius M61 non monitora esattamente l'unione attesa")
+    if verified.get("transactionTypes") != state.original_transaction_types:
+        raise ActivationError("Webhook Helius M61 non ha preservato transactionTypes")
 
     after = backend_request(client, "GET", STATUS_PATH, automation_key)
     campaigns_after = extract_campaigns(after)

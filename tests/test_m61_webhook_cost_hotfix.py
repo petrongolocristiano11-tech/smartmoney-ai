@@ -421,11 +421,12 @@ def test_activation_uses_get_by_id_when_list_view_omits_addresses(monkeypatch):
                 "webhookID": WEBHOOK_ID,
                 "webhookURL": "https://backend.test" + activation.WEBHOOK_PATH,
                 "webhookType": "raw",
+                "transactionTypes": ["ANY"],
                 "accountAddresses": addresses,
                 "active": True,
             }
         if method == "PUT":
-            assert "transactionTypes" not in (payload or {})
+            assert payload["transactionTypes"] == ["ANY"]
             assert set(payload["accountAddresses"]) == {PRIMARY_A, PRIMARY_B, CANDIDATE}
             return {"webhookID": WEBHOOK_ID}
         raise AssertionError((method, url, payload))
@@ -448,7 +449,7 @@ def test_activation_uses_get_by_id_when_list_view_omits_addresses(monkeypatch):
     assert state.candidate_created_now is True
     assert by_id_reads == 2
     put = next(call for call in helius_calls if call[0] == "PUT")
-    assert "transactionTypes" not in put[2]
+    assert put[2]["transactionTypes"] == ["ANY"]
     assert set(put[2]["accountAddresses"]) == {PRIMARY_A, PRIMARY_B, CANDIDATE}
     configure_calls = [
         call for call in backend_calls
@@ -518,6 +519,7 @@ def test_empty_webhook_failsafe_never_restores_broken_empty_address_list(monkeyp
         primary_webhook_id=WEBHOOK_ID,
         original_addresses=[],
         rollback_addresses=[PRIMARY_A, PRIMARY_B],
+        original_transaction_types=["ANY"],
         webhook_updated=True,
         repaired_empty_webhook=True,
     )
@@ -545,6 +547,7 @@ def test_empty_webhook_failsafe_never_restores_broken_empty_address_list(monkeyp
 
     assert len(helius_calls) == 1
     assert set(helius_calls[0][2]["accountAddresses"]) == {PRIMARY_A, PRIMARY_B}
+    assert helius_calls[0][2]["transactionTypes"] == ["ANY"]
     assert helius_calls[0][2]["accountAddresses"] != []
     stop_calls = [
         call for call in backend_calls
@@ -554,7 +557,7 @@ def test_empty_webhook_failsafe_never_restores_broken_empty_address_list(monkeyp
     assert stop_calls[0][2]["campaign_id"] == candidate_id
 
 
-def test_m61_raw_webhook_scripts_use_authoritative_detail_and_no_transaction_type_filter():
+def test_m61_raw_webhook_scripts_use_authoritative_detail_and_preserve_transaction_types():
     scripts = {
         "configure": Path("scripts/configure_gen4_copyability_helius_webhook.py").read_text(
             encoding="utf-8"
@@ -568,8 +571,12 @@ def test_m61_raw_webhook_scripts_use_authoritative_detail_and_no_transaction_typ
     }
 
     for name, source in scripts.items():
-        assert '"transactionTypes": ["ANY"]' not in source, name
         assert 'f"{HELIUS_WEBHOOK_API}/{' in source, name
+        assert 'transactionTypes' in source, name
+
+    assert '"transactionTypes": ["ANY"]' in scripts["configure"]
+    assert 'transaction_types=state.original_transaction_types' in scripts["activate"]
+    assert '"transactionTypes": list(transaction_types)' in scripts["rollback"]
 
     rollback = scripts["rollback"]
     assert "GET /v0/webhooks is a summary view" in rollback

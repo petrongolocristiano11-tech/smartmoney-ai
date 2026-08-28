@@ -220,6 +220,12 @@ def main() -> int:
             raise RollbackError("Webhook Gen4 per ID non è RAW")
         if not bool(detail.get("active")):
             raise RollbackError("Webhook Gen4 per ID non è attivo")
+        transaction_types = detail.get("transactionTypes")
+        if not isinstance(transaction_types, list) or not transaction_types:
+            raise RollbackError("Webhook Gen4 RAW privo di transactionTypes preservabili")
+        auth_header = str(detail.get("authHeader") or webhook_secret).strip()
+        if not auth_header:
+            raise RollbackError("Webhook Gen4 RAW privo di authHeader preservabile")
 
         current_addresses = {
             str(value).strip()
@@ -238,11 +244,12 @@ def main() -> int:
                 helius_key,
                 {
                     "webhookURL": target_url,
+                    "transactionTypes": list(transaction_types),
                     "accountAddresses": sorted(PRIMARY_WALLETS),
                     "webhookType": "raw",
-                    "authHeader": webhook_secret,
-                    "encoding": "jsonParsed",
-                    "txnStatus": "success",
+                    "authHeader": auth_header,
+                    "encoding": str(detail.get("encoding") or "jsonParsed"),
+                    "txnStatus": str(detail.get("txnStatus") or "success"),
                 },
             )
         backend_request(
@@ -270,6 +277,8 @@ def main() -> int:
             raise RollbackError("Webhook primario non attivo dopo rollback")
         if set(verified.get("accountAddresses") or []) != PRIMARY_WALLETS:
             raise RollbackError("Webhook non ripristinato ai due wallet primari")
+        if verified.get("transactionTypes") != transaction_types:
+            raise RollbackError("Webhook rollback non ha preservato transactionTypes")
 
         after = backend_request(client, "GET", STATUS_PATH, automation_key)
         after_campaigns = [

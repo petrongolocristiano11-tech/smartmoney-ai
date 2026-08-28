@@ -139,16 +139,18 @@ def main() -> None:
         "current_addresses != PRIMARY_WALLETS",
         "STOP_CANDIDATE_PRESERVE_EVIDENCE",
     )
-    if '"transactionTypes": ["ANY"]' in webhook_configurator_text:
-        raise AssertionError("Raw webhook configurator usa ancora transactionTypes")
+    if '"transactionTypes": ["ANY"]' not in webhook_configurator_text:
+        raise AssertionError("Raw webhook configurator non conserva transactionTypes per create")
+    if 'transaction_types = selected_detail.get("transactionTypes")' not in webhook_configurator_text:
+        raise AssertionError("Webhook configurator non preserva transactionTypes dal GET-by-ID")
     if 'f"{HELIUS_WEBHOOK_API}/{selected_id}"' not in webhook_configurator_text:
         raise AssertionError("Webhook configurator non verifica il provider per ID")
-    if '"transactionTypes": ["ANY"]' in activation_text:
-        raise AssertionError("M61 activation raw webhook usa ancora transactionTypes")
+    if 'transaction_types=state.original_transaction_types' not in activation_text:
+        raise AssertionError("M61 activation non preserva transactionTypes sul PUT raw")
     if 'f"{HELIUS_WEBHOOK_API}/{state.webhook_id}"' not in activation_text:
         raise AssertionError("M61 activation non verifica il provider per ID")
-    if '"transactionTypes": ["ANY"]' in rollback_text:
-        raise AssertionError("M61 rollback raw webhook usa ancora transactionTypes")
+    if '"transactionTypes": list(transaction_types)' not in rollback_text:
+        raise AssertionError("M61 rollback non preserva transactionTypes sul PUT raw")
     if 'f"{HELIUS_WEBHOOK_API}/{identifier}"' not in rollback_text:
         raise AssertionError("M61 rollback non verifica il provider per ID")
     if service_text.count("_proof_active_copyability_campaigns(db)") < 2:

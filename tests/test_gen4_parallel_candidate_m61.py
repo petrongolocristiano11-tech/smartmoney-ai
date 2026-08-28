@@ -606,7 +606,8 @@ def test_m61_legacy_webhook_configurator_uses_active_campaign_union():
     assert "registered_campaigns" in source
     assert "M61_SINGLE_WEBHOOK_UNION_ROUTING=ENABLED" in source
     assert "len(wallets) != 2" not in source
-    assert '"transactionTypes": ["ANY"]' not in source
+    assert '"transactionTypes": ["ANY"]' in source
+    assert 'transaction_types = selected_detail.get("transactionTypes")' in source
     assert 'f"{HELIUS_WEBHOOK_API}/{selected_id}"' in source
 
 
@@ -705,6 +706,7 @@ def test_activation_uses_existing_webhook_union_and_preserves_primary(monkeypatc
                 "webhookURL": "https://backend.test" + activation.WEBHOOK_PATH,
                 "accountAddresses": sorted(provider_addresses),
                 "webhookType": "raw",
+                "transactionTypes": ["ANY"],
                 "active": True,
             }
         raise AssertionError((method, url, payload))
@@ -726,7 +728,7 @@ def test_activation_uses_existing_webhook_union_and_preserves_primary(monkeypatc
     assert state.webhook_updated is True
     put = next(call for call in helius_calls if call[0] == "PUT")
     assert set(put[2]["accountAddresses"]) == {PRIMARY_A, PRIMARY_B, CANDIDATE}
-    assert "transactionTypes" not in put[2]
+    assert put[2]["transactionTypes"] == ["ANY"]
     configured_ids = {
         call[2]["campaign_id"]
         for call in backend_calls
@@ -749,6 +751,7 @@ def test_activation_failsafe_restores_webhook_and_stops_only_new_candidate(monke
         candidate_created_now=True,
         webhook_id="wh-1",
         original_addresses=[PRIMARY_A, PRIMARY_B],
+        original_transaction_types=["ANY"],
         webhook_updated=True,
     )
     backend_calls = []
@@ -794,6 +797,7 @@ def test_activation_failsafe_stops_preexisting_unmonitored_candidate(monkeypatch
         candidate_was_monitored_before=False,
         webhook_id="wh-1",
         original_addresses=[PRIMARY_A, PRIMARY_B],
+        original_transaction_types=["ANY"],
         webhook_updated=True,
     )
     backend_calls = []
