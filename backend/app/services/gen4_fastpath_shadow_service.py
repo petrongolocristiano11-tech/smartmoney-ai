@@ -164,14 +164,23 @@ def _is_candidate_event(event: CanonicalParserGen4FastpathShadowEvent) -> bool:
     return str(dict(event.evidence or {}).get("observation_scope") or "") == FASTPATH_CANDIDATE_SCOPE
 
 
-def active_fastpath_wallets(db: Session) -> list[str]:
-    campaigns = list(
+def _proof_active_fastpath_campaigns(
+    db: Session,
+) -> list[CanonicalParserGen4CopyabilityCampaign]:
+    return list(
         db.scalars(
             select(CanonicalParserGen4CopyabilityCampaign).where(
-                CanonicalParserGen4CopyabilityCampaign.status == "ACTIVE"
+                CanonicalParserGen4CopyabilityCampaign.status == "ACTIVE",
+                CanonicalParserGen4CopyabilityCampaign.webhook_status == "ACTIVE",
+                CanonicalParserGen4CopyabilityCampaign.webhook_id.is_not(None),
+                CanonicalParserGen4CopyabilityCampaign.webhook_configured_at.is_not(None),
             )
         )
     )
+
+
+def active_fastpath_wallets(db: Session) -> list[str]:
+    campaigns = _proof_active_fastpath_campaigns(db)
     return sorted(
         {
             str(wallet).strip()
@@ -185,13 +194,7 @@ def active_fastpath_wallets(db: Session) -> list[str]:
 def _campaign_for_wallet(
     db: Session, wallet_address: str
 ) -> CanonicalParserGen4CopyabilityCampaign | None:
-    campaigns = list(
-        db.scalars(
-            select(CanonicalParserGen4CopyabilityCampaign).where(
-                CanonicalParserGen4CopyabilityCampaign.status == "ACTIVE"
-            )
-        )
-    )
+    campaigns = _proof_active_fastpath_campaigns(db)
     for campaign in campaigns:
         if wallet_address in [str(x).strip() for x in (campaign.frozen_wallets or [])]:
             return campaign

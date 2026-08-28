@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_HEAD = "c8a1f3d6e942"
+EXPECTED_HEAD = "e4c7a9d1b268"
 TARGET_WALLET = "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd"
 DEFAULT_PUBLIC_RPC = "https://api.mainnet-beta.solana.com"
 
@@ -121,6 +121,8 @@ def main() -> int:
         'source=SOURCE_RECOVERY',
         'status=RECEIPT_EXCLUDED_RECOVERY',
         'GEN4_COPYABILITY_POLICY_VERSION = "canonical-parser-gen4-realtime-copyability/1"',
+        "_proof_active_copyability_campaigns",
+        "GEN4_COPYABILITY_PROOF_ACTIVE_CAMPAIGN_REQUIRED",
     )
     containment_text = require_text(
         PROJECT_ROOT / "backend/app/services/m63_helius_credit_containment_service.py",
@@ -152,6 +154,10 @@ def main() -> int:
         "M63_EXCLUSIVE_CANDIDATE_WEBHOOK=",
         "GEN4_EXPECT_EXCLUSIVE_WALLET",
     )
+    if '"transactionTypes": ["ANY"]' in webhook_text:
+        raise AssertionError("Raw webhook M63 usa ancora transactionTypes.")
+    if 'f"{HELIUS_WEBHOOK_API}/{selected_id}"' not in webhook_text:
+        raise AssertionError("M63 webhook configurator non verifica il provider per ID.")
     automatic_consumers = "\n".join(
         require_text(
             PROJECT_ROOT / relative_path,

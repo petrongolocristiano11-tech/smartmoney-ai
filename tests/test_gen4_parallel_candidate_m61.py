@@ -34,12 +34,14 @@ from backend.app.services.blockchain_parser_gen4_copyability_service import (
     stop_gen4_copyability_campaign,
 )
 from backend.app.services.jupiter_swap_client import JupiterOrderResult
+from backend.app.services.gen4_fastpath_shadow_service import active_fastpath_wallets
 
 
 NOW = datetime(2026, 8, 7, 21, 0, 0, tzinfo=timezone.utc)
 PRIMARY_A = "FsKYLBwxLQk5YMNSPYQcqceW6o8tJGF7U1aBHyEvGAyE"
 PRIMARY_B = "2ZwYWRaQR7X3zcD7VX8u4Ke8znPQuKrVpRnU3Tp6UH7S"
 CANDIDATE = "Bs34SxJUSjUntbsWDEZrFKEcCdJfSuF9KiwtFdJ1Tfsd"
+CANDIDATE_2 = "43reoQjz67rzbUvmVomhVoMVyPKzrFrBs4cn3s4Kb8Kx"
 TOKEN_A = "8wxkvAfEns76yBzu4MnbV7VnXWjg3iDPA9uwAQ6cpump"
 TOKEN_B = "Cg1hswfyVfnFaKHSEVyNdFWEj1bmnZoA8ZnWLVbApump"
 
@@ -244,6 +246,178 @@ class FakeJupiter:
         raise AssertionError("M61 non deve eseguire transazioni")
 
 
+def test_unconfigured_candidate_is_excluded_from_webhook_and_fastpath_proof(db: Session):
+    primary, candidate = start_both(db)
+    configure(db, primary["campaign_id"])
+
+    assert active_fastpath_wallets(db) == sorted([PRIMARY_A, PRIMARY_B])
+
+    result = receive_gen4_copyability_webhook(
+        db,
+        payload=raw_buy(CANDIDATE, TOKEN_B, "candidate-before-webhook"),
+        received_at=NOW + timedelta(seconds=1),
+    )
+    db.commit()
+
+    assert result["accepted"] == 0
+    assert result["campaigns_touched"] == []
+    assert (
+        db.scalar(
+            select(func.count(CanonicalParserGen4WebhookReceipt.id)).where(
+                CanonicalParserGen4WebhookReceipt.signature == "candidate-before-webhook"
+            )
+        )
+        == 0
+    )
+
+    configure(db, candidate["campaign_id"])
+    assert active_fastpath_wallets(db) == sorted([PRIMARY_A, PRIMARY_B, CANDIDATE])
+
+    accepted = receive_gen4_copyability_webhook(
+        db,
+        payload=raw_buy(CANDIDATE, TOKEN_B, "candidate-after-webhook"),
+        received_at=NOW + timedelta(seconds=2),
+    )
+    db.commit()
+    assert accepted["accepted"] == 1
+    assert accepted["campaigns_touched"] == [candidate["campaign_id"]]
+
+
+def test_candidate_only_m63_lineage_can_start_fresh_candidate_without_primary(db: Session):
+    forward = forward_campaign(db)
+    primary = start_gen4_copyability_campaign(
+        db,
+        confirmation=GEN4_COPYABILITY_START_CONFIRMATION,
+        actor_label="TEST",
+        anchor_at=NOW,
+    )
+    first_candidate = start_gen4_qualified_candidate_campaign(
+        db,
+        confirmation=GEN4_QUALIFIED_CANDIDATE_START_CONFIRMATION,
+        candidate_wallets=[CANDIDATE],
+        selection_snapshot=selection_snapshot(),
+        actor_label="TEST",
+        anchor_at=NOW,
+    )
+    configure(db, first_candidate["campaign_id"])
+    stop_gen4_copyability_campaign(
+        db,
+        campaign_id=primary["campaign_id"],
+        confirmation=GEN4_COPYABILITY_STOP_CONFIRMATION,
+        observed_at=NOW + timedelta(seconds=1),
+    )
+    db.commit()
+
+    second_candidate = start_gen4_qualified_candidate_campaign(
+        db,
+        confirmation=GEN4_QUALIFIED_CANDIDATE_START_CONFIRMATION,
+        candidate_wallets=[CANDIDATE_2],
+        selection_snapshot=selection_snapshot(),
+        actor_label="TEST_M63_CANDIDATE_ONLY",
+        anchor_at=NOW + timedelta(seconds=2),
+    )
+    db.commit()
+
+    row = db.scalar(
+        select(CanonicalParserGen4CopyabilityCampaign).where(
+            CanonicalParserGen4CopyabilityCampaign.campaign_id
+            == second_candidate["campaign_id"]
+        )
+    )
+    assert row is not None
+    assert row.forward_campaign_db_id == forward.id
+    assert row.campaign_role == CAMPAIGN_ROLE_CANDIDATE
+    assert row.technical_metadata["lineage_mode"] == "M63_ACTIVE_CANDIDATE_LINEAGE"
+    assert (
+        row.technical_metadata["lineage_reference_campaign_id"]
+        == first_candidate["campaign_id"]
+    )
+    assert row.technical_metadata["primary_copyability_campaign_id"] is None
+
+
+def test_candidate_only_retry_of_same_unconfigured_run_remains_idempotent(db: Session):
+    forward_campaign(db)
+    primary = start_gen4_copyability_campaign(
+        db,
+        confirmation=GEN4_COPYABILITY_START_CONFIRMATION,
+        actor_label="TEST",
+        anchor_at=NOW,
+    )
+    first_candidate = start_gen4_qualified_candidate_campaign(
+        db,
+        confirmation=GEN4_QUALIFIED_CANDIDATE_START_CONFIRMATION,
+        candidate_wallets=[CANDIDATE],
+        selection_snapshot=selection_snapshot(),
+        actor_label="TEST",
+        anchor_at=NOW,
+    )
+    configure(db, first_candidate["campaign_id"])
+    stop_gen4_copyability_campaign(
+        db,
+        campaign_id=primary["campaign_id"],
+        confirmation=GEN4_COPYABILITY_STOP_CONFIRMATION,
+        observed_at=NOW + timedelta(seconds=1),
+    )
+    db.commit()
+
+    fresh = start_gen4_qualified_candidate_campaign(
+        db,
+        confirmation=GEN4_QUALIFIED_CANDIDATE_START_CONFIRMATION,
+        candidate_wallets=[CANDIDATE_2],
+        selection_snapshot=selection_snapshot(),
+        actor_label="TEST",
+        anchor_at=NOW + timedelta(seconds=2),
+    )
+    replay = start_gen4_qualified_candidate_campaign(
+        db,
+        confirmation=GEN4_QUALIFIED_CANDIDATE_START_CONFIRMATION,
+        candidate_wallets=[CANDIDATE_2],
+        selection_snapshot=selection_snapshot(),
+        actor_label="TEST_RETRY",
+        anchor_at=NOW + timedelta(seconds=3),
+    )
+    assert replay["campaign_id"] == fresh["campaign_id"]
+    assert replay["idempotent_replay"] is True
+    assert replay["webhook"]["status"] == "NOT_CONFIGURED"
+
+
+def test_candidate_only_lineage_rejects_unconfigured_active_reference(db: Session):
+    forward_campaign(db)
+    primary = start_gen4_copyability_campaign(
+        db,
+        confirmation=GEN4_COPYABILITY_START_CONFIRMATION,
+        actor_label="TEST",
+        anchor_at=NOW,
+    )
+    first_candidate = start_gen4_qualified_candidate_campaign(
+        db,
+        confirmation=GEN4_QUALIFIED_CANDIDATE_START_CONFIRMATION,
+        candidate_wallets=[CANDIDATE],
+        selection_snapshot=selection_snapshot(),
+        actor_label="TEST",
+        anchor_at=NOW,
+    )
+    stop_gen4_copyability_campaign(
+        db,
+        campaign_id=primary["campaign_id"],
+        confirmation=GEN4_COPYABILITY_STOP_CONFIRMATION,
+        observed_at=NOW + timedelta(seconds=1),
+    )
+    db.commit()
+
+    with pytest.raises(CanonicalParserGen4CopyabilityError) as error:
+        start_gen4_qualified_candidate_campaign(
+            db,
+            confirmation=GEN4_QUALIFIED_CANDIDATE_START_CONFIRMATION,
+            candidate_wallets=[CANDIDATE_2],
+            selection_snapshot=selection_snapshot(),
+            actor_label="TEST",
+            anchor_at=NOW + timedelta(seconds=2),
+        )
+    assert error.value.code == "GEN4_QUALIFIED_CANDIDATE_LINEAGE_NOT_PROOF_ACTIVE"
+    assert first_candidate["webhook"]["status"] == "NOT_CONFIGURED"
+
+
 def test_start_parallel_candidate_preserves_primary_and_is_idempotent(db: Session):
     primary, candidate = start_both(db)
     assert primary["campaign_role"] == CAMPAIGN_ROLE_PRIMARY
@@ -432,6 +606,8 @@ def test_m61_legacy_webhook_configurator_uses_active_campaign_union():
     assert "registered_campaigns" in source
     assert "M61_SINGLE_WEBHOOK_UNION_ROUTING=ENABLED" in source
     assert "len(wallets) != 2" not in source
+    assert '"transactionTypes": ["ANY"]' not in source
+    assert 'f"{HELIUS_WEBHOOK_API}/{selected_id}"' in source
 
 
 def _activation_primary_payload():
@@ -505,25 +681,29 @@ def test_activation_uses_existing_webhook_union_and_preserves_primary(monkeypatc
             return primary if payload["campaign_id"] == primary["campaign_id"] else candidate
         raise AssertionError((method, path, payload))
 
+    provider_addresses = {PRIMARY_A, PRIMARY_B}
+
     def fake_helius(_client, method, url, _helius_key, payload=None):
+        nonlocal provider_addresses
         helius_calls.append((method, url, payload))
         if method == "GET" and url == activation.HELIUS_WEBHOOK_API:
             return [
                 {
                     "webhookID": "wh-1",
                     "webhookURL": "https://backend.test" + activation.WEBHOOK_PATH,
-                    "accountAddresses": [PRIMARY_A, PRIMARY_B],
+                    "accountAddresses": [],
                     "webhookType": "raw",
                     "active": True,
                 }
             ]
         if method == "PUT":
+            provider_addresses = set(payload["accountAddresses"])
             return {"webhookID": "wh-1"}
         if method == "GET" and url.endswith("/wh-1"):
             return {
                 "webhookID": "wh-1",
                 "webhookURL": "https://backend.test" + activation.WEBHOOK_PATH,
-                "accountAddresses": [PRIMARY_A, PRIMARY_B, CANDIDATE],
+                "accountAddresses": sorted(provider_addresses),
                 "webhookType": "raw",
                 "active": True,
             }
@@ -546,6 +726,7 @@ def test_activation_uses_existing_webhook_union_and_preserves_primary(monkeypatc
     assert state.webhook_updated is True
     put = next(call for call in helius_calls if call[0] == "PUT")
     assert set(put[2]["accountAddresses"]) == {PRIMARY_A, PRIMARY_B, CANDIDATE}
+    assert "transactionTypes" not in put[2]
     configured_ids = {
         call[2]["campaign_id"]
         for call in backend_calls

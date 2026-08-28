@@ -294,6 +294,27 @@ def _active_copyability_campaigns(
     )
 
 
+def _campaign_accepts_forward_proof(
+    campaign: CanonicalParserGen4CopyabilityCampaign,
+) -> bool:
+    return (
+        campaign.status == "ACTIVE"
+        and campaign.webhook_status == "ACTIVE"
+        and bool(str(campaign.webhook_id or "").strip())
+        and campaign.webhook_configured_at is not None
+    )
+
+
+def _proof_active_copyability_campaigns(
+    db: Session,
+) -> list[CanonicalParserGen4CopyabilityCampaign]:
+    return [
+        campaign
+        for campaign in _active_copyability_campaigns(db)
+        if _campaign_accepts_forward_proof(campaign)
+    ]
+
+
 def _campaign_by_id(
     db: Session,
     campaign_id: str,
@@ -507,33 +528,17 @@ def start_gen4_qualified_candidate_campaign(
             code="GEN4_QUALIFIED_CANDIDATE_CONFIRMATION_REQUIRED",
         )
 
-    primary = _primary_copyability_campaign(db)
-    assert primary is not None
-    forward = db.get(
-        CanonicalParserGen4ForwardCampaign,
-        primary.forward_campaign_db_id,
-    )
-    if forward is None or forward.status != "ACTIVE":
-        raise CanonicalParserGen4CopyabilityError(
-            "La campagna forward collegata alla copyability primaria non è attiva.",
-            code="GEN4_QUALIFIED_CANDIDATE_PRIMARY_FORWARD_REQUIRED",
-            status_code=409,
-        )
     wallets = _normalize_candidate_wallets(candidate_wallets)
     snapshot = _validate_selection_snapshot(selection_snapshot)
-
-    policy = _policy_snapshot()
     active_campaigns = _active_copyability_campaigns(db)
 
-    # POST retries are idempotent by candidate wallet set while the run is ACTIVE.
-    # Once a candidate run is archived, a future explicit start creates a fresh
-    # immutable run (new candidate_key/anchor) instead of resurrecting old proof.
+    # POST retries are idempotent by candidate wallet set while the run is ACTIVE,
+    # including the short NOT_CONFIGURED interval before webhook activation.
     same_active = next(
         (
             campaign
             for campaign in active_campaigns
             if campaign.campaign_role == CAMPAIGN_ROLE_CANDIDATE
-            and campaign.forward_campaign_db_id == forward.id
             and sorted(str(item) for item in (campaign.frozen_wallets or [])) == wallets
         ),
         None,
@@ -541,6 +546,60 @@ def start_gen4_qualified_candidate_campaign(
     if same_active is not None:
         _refresh_campaign_metrics(db, same_active, observed_at=_aware(anchor_at))
         return _serialize_campaign(db, same_active) | {"idempotent_replay": True}
+
+    primary = _primary_copyability_campaign(db, required=False)
+    lineage_mode = "PRIMARY_FORWARD"
+    lineage_reference: CanonicalParserGen4CopyabilityCampaign | None = primary
+
+    if lineage_reference is None:
+        active_candidates = [
+            campaign
+            for campaign in active_campaigns
+            if campaign.campaign_role == CAMPAIGN_ROLE_CANDIDATE
+        ]
+        if not active_candidates:
+            raise CanonicalParserGen4CopyabilityError(
+                "Nessuna lineage copyability attiva disponibile per la campagna candidata.",
+                code="GEN4_QUALIFIED_CANDIDATE_LINEAGE_REQUIRED",
+                status_code=409,
+            )
+        lineage_forward_ids = {
+            int(campaign.forward_campaign_db_id)
+            for campaign in active_candidates
+        }
+        if len(lineage_forward_ids) != 1:
+            raise CanonicalParserGen4CopyabilityError(
+                "Le campagne candidate ACTIVE appartengono a lineage forward diverse.",
+                code="GEN4_QUALIFIED_CANDIDATE_LINEAGE_AMBIGUOUS",
+                status_code=409,
+            )
+        unready = [
+            campaign.campaign_id
+            for campaign in active_candidates
+            if not _campaign_accepts_forward_proof(campaign)
+        ]
+        if unready:
+            raise CanonicalParserGen4CopyabilityError(
+                "La lineage candidate-only ACTIVE non è interamente webhook-configured.",
+                code="GEN4_QUALIFIED_CANDIDATE_LINEAGE_NOT_PROOF_ACTIVE",
+                status_code=409,
+            )
+        lineage_reference = active_candidates[0]
+        lineage_mode = "M63_ACTIVE_CANDIDATE_LINEAGE"
+
+    assert lineage_reference is not None
+    forward = db.get(
+        CanonicalParserGen4ForwardCampaign,
+        lineage_reference.forward_campaign_db_id,
+    )
+    if forward is None or forward.status != "ACTIVE":
+        raise CanonicalParserGen4CopyabilityError(
+            "La campagna forward collegata alla lineage copyability non è attiva.",
+            code="GEN4_QUALIFIED_CANDIDATE_FORWARD_LINEAGE_REQUIRED",
+            status_code=409,
+        )
+
+    policy = _policy_snapshot()
 
     occupied_wallets = {
         str(wallet)
@@ -629,7 +688,11 @@ def start_gen4_qualified_candidate_campaign(
         technical_metadata={
             "forward_campaign_id": forward.campaign_id,
             "forward_anchor_at": _aware(forward.anchor_at).isoformat(),
-            "primary_copyability_campaign_id": primary.campaign_id,
+            "primary_copyability_campaign_id": (
+                primary.campaign_id if primary is not None else None
+            ),
+            "lineage_reference_campaign_id": lineage_reference.campaign_id,
+            "lineage_mode": lineage_mode,
             "parallel_isolation": True,
             "selection_fingerprint": selection_fingerprint,
             "candidate_run_sequence": run_sequence,
@@ -828,14 +891,14 @@ def receive_gen4_copyability_webhook(
     payload: Any,
     received_at: datetime | None = None,
 ) -> dict[str, Any]:
-    campaigns = _active_copyability_campaigns(db)
+    campaigns = _proof_active_copyability_campaigns(db)
     if not campaigns:
         return {
             "accepted": 0,
             "duplicates": 0,
             "ignored": 0,
             "campaigns_touched": [],
-            "reason": "NO_ACTIVE_CAMPAIGN",
+            "reason": "NO_PROOF_ACTIVE_CAMPAIGN",
         }
     observed = _aware(received_at)
     events = payload if isinstance(payload, list) else [payload]
@@ -2336,11 +2399,11 @@ def process_gen4_copyability_queue(
             code="GEN4_COPYABILITY_DISABLED",
             status_code=409,
         )
-    campaigns = _active_copyability_campaigns(db)
+    campaigns = _proof_active_copyability_campaigns(db)
     if not campaigns:
         raise CanonicalParserGen4CopyabilityError(
-            "Nessuna campagna Gen4 copyability attiva.",
-            code="GEN4_COPYABILITY_CAMPAIGN_REQUIRED",
+            "Nessuna campagna Gen4 copyability proof-active.",
+            code="GEN4_COPYABILITY_PROOF_ACTIVE_CAMPAIGN_REQUIRED",
             status_code=409,
         )
     campaigns_by_id = {campaign.id: campaign for campaign in campaigns}

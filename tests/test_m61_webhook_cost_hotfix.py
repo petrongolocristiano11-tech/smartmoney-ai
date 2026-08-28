@@ -360,7 +360,7 @@ def activation_candidate_payload(candidate_id: str):
     }
 
 
-def test_activation_repairs_exact_empty_primary_webhook_without_rewriting_primary(monkeypatch):
+def test_activation_uses_get_by_id_when_list_view_omits_addresses(monkeypatch):
     from scripts import activate_gen4_parallel_candidate_m61 as activation
 
     primary = activation_primary_payload()
@@ -383,6 +383,7 @@ def test_activation_repairs_exact_empty_primary_webhook_without_rewriting_primar
     status_reads = 0
     backend_calls = []
     helius_calls = []
+    by_id_reads = 0
 
     def fake_backend(_client, method, path, _key, payload=None):
         nonlocal status_reads
@@ -398,8 +399,10 @@ def test_activation_repairs_exact_empty_primary_webhook_without_rewriting_primar
         raise AssertionError((method, path, payload))
 
     def fake_helius(_client, method, url, _key, payload=None):
+        nonlocal by_id_reads
         helius_calls.append((method, url, payload))
         if method == "GET" and url == activation.HELIUS_WEBHOOK_API:
+            # Provider list view may omit monitored addresses.
             return [{
                 "webhookID": WEBHOOK_ID,
                 "webhookURL": "https://backend.test" + activation.WEBHOOK_PATH,
@@ -407,16 +410,24 @@ def test_activation_repairs_exact_empty_primary_webhook_without_rewriting_primar
                 "accountAddresses": [],
                 "active": True,
             }]
-        if method == "PUT":
-            return {"webhookID": WEBHOOK_ID}
         if method == "GET" and url.endswith("/" + WEBHOOK_ID):
+            by_id_reads += 1
+            addresses = (
+                [PRIMARY_A, PRIMARY_B]
+                if by_id_reads == 1
+                else [PRIMARY_A, PRIMARY_B, CANDIDATE]
+            )
             return {
                 "webhookID": WEBHOOK_ID,
                 "webhookURL": "https://backend.test" + activation.WEBHOOK_PATH,
                 "webhookType": "raw",
-                "accountAddresses": [PRIMARY_A, PRIMARY_B, CANDIDATE],
+                "accountAddresses": addresses,
                 "active": True,
             }
+        if method == "PUT":
+            assert "transactionTypes" not in (payload or {})
+            assert set(payload["accountAddresses"]) == {PRIMARY_A, PRIMARY_B, CANDIDATE}
+            return {"webhookID": WEBHOOK_ID}
         raise AssertionError((method, url, payload))
 
     monkeypatch.setattr(activation, "backend_request", fake_backend)
@@ -431,10 +442,13 @@ def test_activation_repairs_exact_empty_primary_webhook_without_rewriting_primar
         target_url="https://backend.test" + activation.WEBHOOK_PATH,
     )
 
-    assert state.repaired_empty_webhook is True
+    assert state.repaired_empty_webhook is False
+    assert set(state.original_addresses or []) == {PRIMARY_A, PRIMARY_B}
     assert set(state.rollback_addresses or []) == {PRIMARY_A, PRIMARY_B}
     assert state.candidate_created_now is True
+    assert by_id_reads == 2
     put = next(call for call in helius_calls if call[0] == "PUT")
+    assert "transactionTypes" not in put[2]
     assert set(put[2]["accountAddresses"]) == {PRIMARY_A, PRIMARY_B, CANDIDATE}
     configure_calls = [
         call for call in backend_calls
@@ -538,3 +552,25 @@ def test_empty_webhook_failsafe_never_restores_broken_empty_address_list(monkeyp
     ]
     assert len(stop_calls) == 1
     assert stop_calls[0][2]["campaign_id"] == candidate_id
+
+
+def test_m61_raw_webhook_scripts_use_authoritative_detail_and_no_transaction_type_filter():
+    scripts = {
+        "configure": Path("scripts/configure_gen4_copyability_helius_webhook.py").read_text(
+            encoding="utf-8"
+        ),
+        "activate": Path("scripts/activate_gen4_parallel_candidate_m61.py").read_text(
+            encoding="utf-8"
+        ),
+        "rollback": Path("scripts/rollback_gen4_parallel_candidate_m61.py").read_text(
+            encoding="utf-8"
+        ),
+    }
+
+    for name, source in scripts.items():
+        assert '"transactionTypes": ["ANY"]' not in source, name
+        assert 'f"{HELIUS_WEBHOOK_API}/{' in source, name
+
+    rollback = scripts["rollback"]
+    assert "GET /v0/webhooks is a summary view" in rollback
+    assert 'if current_addresses != PRIMARY_WALLETS:' in rollback

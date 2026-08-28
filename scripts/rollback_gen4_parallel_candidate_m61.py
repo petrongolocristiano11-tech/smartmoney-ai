@@ -201,30 +201,50 @@ def main() -> int:
         identifier = webhook_id(exact)
         if not identifier:
             raise RollbackError("Webhook Gen4 privo di ID")
+        # GET /v0/webhooks is a summary view and may omit accountAddresses.
+        # Resolve the exact target there, then use GET-by-ID as the authoritative
+        # source for monitored addresses and webhook attributes.
+        detail = helius_request(
+            client,
+            "GET",
+            f"{HELIUS_WEBHOOK_API}/{identifier}",
+            helius_key,
+        )
+        if not isinstance(detail, dict):
+            raise RollbackError("Webhook Gen4 non leggibile per ID")
+        if webhook_id(detail) != identifier:
+            raise RollbackError("Webhook Gen4 per ID non coincide")
+        if str(detail.get("webhookURL") or "").rstrip("/") != target_url.rstrip("/"):
+            raise RollbackError("Webhook Gen4 per ID punta a un URL inatteso")
+        if str(detail.get("webhookType") or "").lower() != "raw":
+            raise RollbackError("Webhook Gen4 per ID non è RAW")
+        if not bool(detail.get("active")):
+            raise RollbackError("Webhook Gen4 per ID non è attivo")
+
         current_addresses = {
             str(value).strip()
-            for value in (exact.get("accountAddresses") or [])
+            for value in (detail.get("accountAddresses") or [])
             if str(value).strip()
         }
         allowed = (PRIMARY_WALLETS, PRIMARY_WALLETS | {CANDIDATE_WALLET})
         if current_addresses not in allowed:
             raise RollbackError("Webhook Gen4 contiene indirizzi inattesi")
 
-        helius_request(
-            client,
-            "PUT",
-            f"{HELIUS_WEBHOOK_API}/{identifier}",
-            helius_key,
-            {
-                "webhookURL": target_url,
-                "transactionTypes": ["ANY"],
-                "accountAddresses": sorted(PRIMARY_WALLETS),
-                "webhookType": "raw",
-                "authHeader": webhook_secret,
-                "encoding": "jsonParsed",
-                "txnStatus": "success",
-            },
-        )
+        if current_addresses != PRIMARY_WALLETS:
+            helius_request(
+                client,
+                "PUT",
+                f"{HELIUS_WEBHOOK_API}/{identifier}",
+                helius_key,
+                {
+                    "webhookURL": target_url,
+                    "accountAddresses": sorted(PRIMARY_WALLETS),
+                    "webhookType": "raw",
+                    "authHeader": webhook_secret,
+                    "encoding": "jsonParsed",
+                    "txnStatus": "success",
+                },
+            )
         backend_request(
             client,
             "POST",

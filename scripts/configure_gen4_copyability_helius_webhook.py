@@ -219,7 +219,6 @@ def main() -> None:
 
         body = {
             "webhookURL": target_url,
-            "transactionTypes": ["ANY"],
             "accountAddresses": wallets,
             "webhookType": "raw",
             "authHeader": webhook_secret,
@@ -229,6 +228,18 @@ def main() -> None:
 
         selected_id = webhook_id(selected) if isinstance(selected, dict) else ""
         if selected_id:
+            selected_detail = request_json(
+                client,
+                "GET",
+                f"{HELIUS_WEBHOOK_API}/{selected_id}",
+                params={"api-key": helius_key},
+            )
+            if not isinstance(selected_detail, dict):
+                raise SetupError("Webhook Gen4 esistente non leggibile per ID.")
+            if str(selected_detail.get("webhookURL") or "").rstrip("/") != target_url.rstrip("/"):
+                raise SetupError("Webhook Gen4 per ID punta a un URL inatteso.")
+            if str(selected_detail.get("webhookType") or "").lower() != "raw":
+                raise SetupError("Webhook Gen4 per ID non è RAW.")
             configured = request_json(
                 client,
                 "PUT",

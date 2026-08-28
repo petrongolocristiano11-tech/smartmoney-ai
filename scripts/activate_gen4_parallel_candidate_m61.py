@@ -133,7 +133,6 @@ def desired_webhook_body(
 ) -> dict[str, Any]:
     return {
         "webhookURL": target_url,
-        "transactionTypes": ["ANY"],
         "accountAddresses": sorted(set(addresses)),
         "webhookType": "raw",
         "authHeader": webhook_secret,
@@ -303,14 +302,25 @@ def activate(
         raise ActivationError("Webhook Gen4 esistente privo di ID")
     if state.webhook_id != state.primary_webhook_id:
         raise ActivationError("Webhook Helius non coincide con il webhook primario registrato")
-    if str(exact.get("webhookType") or "").lower() != "raw":
+
+    exact_detail = helius_request(
+        client,
+        "GET",
+        f"{HELIUS_WEBHOOK_API}/{state.webhook_id}",
+        helius_key,
+    )
+    if not isinstance(exact_detail, dict):
+        raise ActivationError("Webhook Gen4 esistente non leggibile per ID")
+    if str(exact_detail.get("webhookURL") or "").rstrip("/") != target_url.rstrip("/"):
+        raise ActivationError("Webhook Gen4 per ID punta a un URL inatteso")
+    if str(exact_detail.get("webhookType") or "").lower() != "raw":
         raise ActivationError("Webhook Gen4 esistente non è RAW")
-    if not bool(exact.get("active")):
+    if not bool(exact_detail.get("active")):
         raise ActivationError("Webhook Gen4 esistente non è attivo")
 
     state.original_addresses = [
         str(value).strip()
-        for value in (exact.get("accountAddresses") or [])
+        for value in (exact_detail.get("accountAddresses") or [])
         if str(value).strip()
     ]
     original_set = set(state.original_addresses)
@@ -323,11 +333,9 @@ def activate(
     if original_set not in allowed_existing:
         raise ActivationError("Webhook Gen4 monitora indirizzi inattesi")
 
-    # The remote audit found the exact primary webhook active but with an empty
-    # address list. Empty is repairable ONLY because the webhook ID and URL
-    # already match the database-recorded primary webhook above. On any later
-    # failure, restore at least the two primary wallets rather than restoring
-    # the broken empty list.
+    # Address membership is authoritative only from GET /webhooks/{id};
+    # the provider list view may omit accountAddresses. If the detailed object
+    # is genuinely empty, fail-safe rollback restores at least the primary set.
     state.repaired_empty_webhook = original_set == set()
     state.rollback_addresses = sorted(
         EXPECTED_PRIMARY_WALLETS if state.repaired_empty_webhook else original_set

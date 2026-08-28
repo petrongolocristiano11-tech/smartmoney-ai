@@ -8,7 +8,8 @@ from alembic.script import ScriptDirectory
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 M58_M60_REVISION = "b6f8d2e4c731"
 M58_M60_DOWN_REVISION = "a5e7c1d4b926"
-EXPECTED_PROJECT_HEAD = "c8a1f3d6e942"
+EXPECTED_PROJECT_HEAD = "e4c7a9d1b268"
+M61_REVISION = "c8a1f3d6e942"
 
 
 def require_text(path: Path, *needles: str) -> str:
@@ -39,9 +40,16 @@ def main() -> None:
     ):
         raise AssertionError("Catena Alembic M58-M60 non consecutiva.")
 
-    project_head = scripts.get_revision(EXPECTED_PROJECT_HEAD)
-    if project_head is None or project_head.down_revision != M58_M60_REVISION:
+    m61_revision = scripts.get_revision(M61_REVISION)
+    if m61_revision is None or m61_revision.down_revision != M58_M60_REVISION:
         raise AssertionError("Catena Alembic M58-M61 non consecutiva.")
+
+    lineage = {
+        item.revision
+        for item in scripts.iterate_revisions(EXPECTED_PROJECT_HEAD, "base")
+    }
+    if M58_M60_REVISION not in lineage or M61_REVISION not in lineage:
+        raise AssertionError("M58-M61 non appartengono alla lineage della head corrente.")
 
     model_text = require_text(
         PROJECT_ROOT / "backend/app/models/gen4_copyability.py",
@@ -55,6 +63,9 @@ def main() -> None:
         PROJECT_ROOT / "backend/app/services/blockchain_parser_gen4_copyability_service.py",
         "receive_gen4_copyability_webhook",
         "record_gen4_copyability_recovery_events",
+        "record_gen4_copyability_raw_recovery_events",
+        "_proof_active_copyability_campaigns",
+        "GEN4_COPYABILITY_PROOF_ACTIVE_CAMPAIGN_REQUIRED",
         "process_gen4_copyability_queue",
         "otherAmountThreshold",
         "get_quote_and_unsigned_build",
@@ -113,11 +124,22 @@ def main() -> None:
             raise AssertionError(f"Percorso unsafe M58-M60 rilevato: {needle}")
 
     # The public Helius endpoint must not inherit the automation-key dependency.
-    public_block = main_text.split(
-        '"/integrity/parser-gen4-copyability/webhook/helius"', 1
-    )[1].split(
-        '"/integrity/parser-gen4-copyability/status"', 1
-    )[0]
+    webhook_route_marker = (
+        '@app.post(\n'
+        '    "/integrity/parser-gen4-copyability/webhook/helius",'
+    )
+    webhook_route_start = main_text.find(webhook_route_marker)
+    if webhook_route_start < 0:
+        raise AssertionError("Route webhook Gen4 non localizzata nel sorgente.")
+    next_route_start = main_text.find(
+        "\n@app.",
+        webhook_route_start + len(webhook_route_marker),
+    )
+    public_block = (
+        main_text[webhook_route_start:]
+        if next_route_start < 0
+        else main_text[webhook_route_start:next_route_start]
+    )
     if "require_automation_key" in public_block:
         raise AssertionError("Il webhook pubblico dipende erroneamente dalla automation key.")
     if "authorization" not in public_block.lower():
@@ -145,7 +167,8 @@ def main() -> None:
     print("GEN4_COPYABILITY_M58_M60_CONTRACT=OK")
     print(f"ALEMBIC_M58_M60_REVISION={M58_M60_REVISION}")
     print(f"ALEMBIC_HEAD={EXPECTED_PROJECT_HEAD}")
-    print("ALEMBIC_CHAIN_M58_M61=PASS")
+    print(f"ALEMBIC_M61_REVISION={M61_REVISION}")
+    print("ALEMBIC_CHAIN_M58_M61_CURRENT=PASS")
     print("WEBHOOK_AUTH=AUTHORIZATION_COMPARE_DIGEST")
     print("RECOVERY_ONLY_EXCLUDED=YES")
     print("JUPITER_MODE=QUOTE_AND_UNSIGNED_BUILD_ONLY")
