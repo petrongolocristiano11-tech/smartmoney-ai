@@ -19,6 +19,8 @@ from backend.app.models.gen4_copyability import (
     CanonicalParserGen4CopyabilityPosition,
     CanonicalParserGen4FastpathSelectivePosition,
     CanonicalParserGen4FastpathShadowEvent,
+    CanonicalParserGen4PromotedSelectiveActivation,
+    CanonicalParserGen4PromotedSelectivePosition,
     CanonicalParserGen4WebhookReceipt,
 )
 from backend.app.services.blockchain_parser_gen4_copyability_service import (
@@ -29,6 +31,18 @@ from backend.app.services.blockchain_parser_gen4_copyability_service import (
     _entry_deterioration_bps,
     _quote,
     parse_raw_copyability_signal,
+)
+from backend.app.services.gen4_fastpath_native_m75_evidence_service import (
+    load_fastpath_native_m75_bridge,
+)
+from backend.app.services.gen4_promoted_selective_lifecycle_service import (
+    PROMOTED_POSITION_CLOSED,
+    PROMOTED_POSITION_OPEN,
+    PROMOTED_POSITION_OPEN_PARTIAL,
+    get_promoted_activation_for_event,
+)
+from backend.app.services.gen4_selective_challenger_lifecycle_bridge_design_service import (
+    PROMOTED_SELECTIVE_SCOPE,
 )
 from backend.app.services.jupiter_swap_client import JupiterSwapClient
 from backend.app.services.live_trading_errors import JupiterSwapError
@@ -46,6 +60,8 @@ FASTPATH_SELECTIVE_ENTRY_SOURCE = "PROCESSED_WSS_FASTPATH"
 FASTPATH_SELECTIVE_POSITION_OPEN = "OPEN"
 FASTPATH_SELECTIVE_POSITION_OPEN_PARTIAL = "OPEN_PARTIAL"
 FASTPATH_SELECTIVE_POSITION_CLOSED = "CLOSED"
+PROMOTED_SELECTIVE_POSITION_VERSION = "m307-promoted-candidate-fastpath-selective-position/1"
+PROMOTED_SELECTIVE_ENTRY_SOURCE = "PROCESSED_WSS_PROMOTED_CANDIDATE"
 FASTPATH_SELECTIVE_MIN_CLOSED = 10
 FASTPATH_SELECTIVE_MIN_PROFIT_FACTOR = 1.30
 FASTPATH_SELECTIVE_MAX_DRAWDOWN_PERCENT = 15.0
@@ -617,6 +633,315 @@ def _apply_selective_sell_shadow(
     }
 
 
+
+def _promoted_policy_matches_candidate_event(
+    event: CanonicalParserGen4FastpathShadowEvent,
+    activation: CanonicalParserGen4PromotedSelectiveActivation,
+) -> bool:
+    event_policy = dict(event.policy_snapshot or {})
+    frozen = dict(activation.policy_snapshot or {})
+    integer_keys = (
+        "simulated_input_lamports",
+        "slippage_bps",
+        "max_quote_latency_ms",
+        "max_price_impact_bps",
+        "max_price_deterioration_bps",
+    )
+    for key in integer_keys:
+        try:
+            if int(event_policy.get(key)) != int(frozen.get(key)):
+                return False
+        except (TypeError, ValueError):
+            return False
+    return (
+        event_policy.get("live_execution") is False
+        and event_policy.get("paper_execution") is False
+        and frozen.get("live_execution") is False
+        and frozen.get("paper_execution") is False
+        and frozen.get("automatic_live_activation") is False
+    )
+
+
+def _new_promoted_selective_position(
+    *,
+    event: CanonicalParserGen4FastpathShadowEvent,
+    signal: Any,
+    activation: CanonicalParserGen4PromotedSelectiveActivation,
+    quote: Any,
+    conservative_out: int,
+    deterioration_bps: float | None,
+    price_impact_bps: float,
+) -> CanonicalParserGen4PromotedSelectivePosition:
+    policy = dict(activation.policy_snapshot or {})
+    return CanonicalParserGen4PromotedSelectivePosition(
+        position_id=str(uuid4()),
+        scope=PROMOTED_SELECTIVE_SCOPE,
+        activation_db_id=int(activation.id),
+        activation_id=str(activation.activation_id),
+        entry_fast_event_id=str(event.event_id),
+        status=PROMOTED_POSITION_OPEN,
+        wallet_address=str(signal.wallet_address),
+        token_mint=str(signal.token_mint),
+        token_decimals=int(signal.token_decimals),
+        entry_signature=str(signal.signature),
+        entry_source=PROMOTED_SELECTIVE_ENTRY_SOURCE,
+        entry_received_at=_aware(event.fast_received_at) or _utc_now(),
+        opened_at=_aware(quote.received_at) or _utc_now(),
+        closed_at=None,
+        entry_quote_latency_ms=int(quote.latency_ms),
+        entry_price_deterioration_bps=deterioration_bps,
+        entry_price_impact_bps=float(price_impact_bps),
+        entry_transaction_built=bool(quote.result.transaction),
+        entry_input_lamports=int(quote.result.in_amount),
+        entry_output_token_raw=int(conservative_out),
+        remaining_token_raw=int(conservative_out),
+        allocated_entry_fee_lamports=int(
+            policy.get("estimated_network_fee_lamports") or 0
+        ),
+        realized_output_lamports=0,
+        allocated_exit_fee_lamports=0,
+        pnl_lamports=None,
+        return_percent=None,
+        last_exit_signature=None,
+        exit_quote_latency_ms=None,
+        exit_price_impact_bps=None,
+        exit_transaction_built=False,
+        exit_copyable=False,
+        close_reason=None,
+        entry_quote={
+            **dict(quote.sanitized or {}),
+            "expected_out_amount": int(quote.result.out_amount),
+            "conservative_out_amount": int(conservative_out),
+            "slippage_haircut_applied": True,
+        },
+        exit_quotes=[],
+        evidence={
+            "version": PROMOTED_SELECTIVE_POSITION_VERSION,
+            "scope": PROMOTED_SELECTIVE_SCOPE,
+            "activation_id": str(activation.activation_id),
+            "activation_anchor_utc": (
+                _aware(activation.activation_anchor_at) or _utc_now()
+            ).isoformat(),
+            "strict_post_activation_only": True,
+            "prepromotion_backfill": False,
+            "source_candidate_fast_event_id": str(event.event_id),
+            "source_signature": str(signal.signature),
+            "candidate_observation_scope_unchanged": True,
+            "mutates_copyability_campaign_metrics": False,
+            "uses_official_selective_position_table": False,
+            "live_execution": False,
+            "paper_execution": False,
+            "signer_access": False,
+        },
+    )
+
+
+def _record_promoted_exit_error(
+    positions: list[CanonicalParserGen4PromotedSelectivePosition],
+    *,
+    signature: str,
+    code: str,
+    observed_at: datetime,
+) -> None:
+    for position in positions:
+        evidence = dict(position.evidence or {})
+        failures = list(evidence.get("exit_failures") or [])
+        failures.append(
+            {
+                "signature": signature,
+                "code": code,
+                "observed_at": observed_at.isoformat(),
+            }
+        )
+        evidence["exit_failures"] = failures[-100:]
+        position.evidence = evidence
+
+
+def _apply_promoted_selective_sell_shadow(
+    db: Session,
+    *,
+    event: CanonicalParserGen4FastpathShadowEvent,
+    signal: Any,
+    activation: CanonicalParserGen4PromotedSelectiveActivation,
+    jupiter_client: JupiterSwapClient,
+) -> dict[str, Any]:
+    positions = list(
+        db.scalars(
+            select(CanonicalParserGen4PromotedSelectivePosition)
+            .where(
+                CanonicalParserGen4PromotedSelectivePosition.scope
+                == PROMOTED_SELECTIVE_SCOPE,
+                CanonicalParserGen4PromotedSelectivePosition.activation_db_id
+                == int(activation.id),
+                CanonicalParserGen4PromotedSelectivePosition.wallet_address
+                == str(signal.wallet_address),
+                CanonicalParserGen4PromotedSelectivePosition.token_mint
+                == str(signal.token_mint),
+                CanonicalParserGen4PromotedSelectivePosition.status.in_(
+                    [PROMOTED_POSITION_OPEN, PROMOTED_POSITION_OPEN_PARTIAL]
+                ),
+                CanonicalParserGen4PromotedSelectivePosition.remaining_token_raw > 0,
+            )
+            .order_by(
+                CanonicalParserGen4PromotedSelectivePosition.opened_at,
+                CanonicalParserGen4PromotedSelectivePosition.id,
+            )
+        )
+    )
+    base = {
+        "version": PROMOTED_SELECTIVE_POSITION_VERSION,
+        "scope": PROMOTED_SELECTIVE_SCOPE,
+        "activation_id": str(activation.activation_id),
+        "side": "SELL",
+        "open_positions_found": len(positions),
+        "quote_attempted": False,
+        "exit_applied": False,
+        "positions_closed": 0,
+        "prepromotion_backfill": False,
+        "mutates_copyability_campaign_metrics": False,
+        "live_execution": False,
+        "paper_execution": False,
+        "signer_access": False,
+    }
+    if not positions:
+        return {**base, "reason": "NO_OPEN_PROMOTED_SELECTIVE_POSITION"}
+
+    fraction = signal.sell_fraction
+    if fraction is None or fraction <= 0:
+        return {**base, "reason": "SELL_FRACTION_UNAVAILABLE"}
+
+    policy = dict(activation.policy_snapshot or {})
+    weights = [int(position.remaining_token_raw) for position in positions]
+    total_remaining = sum(weights)
+    amount_to_sell = min(
+        total_remaining,
+        max(1, int(total_remaining * float(fraction))),
+    )
+    try:
+        quote = _quote(
+            input_mint=str(signal.token_mint),
+            output_mint=SOL_MINT,
+            amount_raw=int(amount_to_sell),
+            slippage_bps=int(policy["slippage_bps"]),
+            client=jupiter_client,
+        )
+    except JupiterSwapError as exc:
+        code = str(exc.code)
+        _record_promoted_exit_error(
+            positions,
+            signature=str(signal.signature),
+            code=code,
+            observed_at=_utc_now(),
+        )
+        return {
+            **base,
+            "quote_attempted": True,
+            "quote_error": code,
+            "reason": "EXIT_QUOTE_ERROR",
+        }
+
+    conservative_out = _conservative_out_amount(
+        quote.result, int(policy["slippage_bps"])
+    )
+    impact_bps = max(0.0, float(quote.result.price_impact_percent) * 100.0)
+    rejection = _selective_exit_rejection(
+        policy,
+        quote_latency_ms=int(quote.latency_ms),
+        out_amount=int(quote.result.out_amount),
+        transaction_built=bool(quote.result.transaction),
+        price_impact_bps=impact_bps,
+    )
+    if rejection is not None:
+        _record_promoted_exit_error(
+            positions,
+            signature=str(signal.signature),
+            code=rejection,
+            observed_at=_aware(quote.received_at) or _utc_now(),
+        )
+        return {
+            **base,
+            "quote_attempted": True,
+            "quote_built": bool(quote.result.transaction),
+            "quote_latency_ms": int(quote.latency_ms),
+            "price_impact_bps": impact_bps,
+            "reason": rejection,
+        }
+
+    sold_allocations = _allocate_integer(int(amount_to_sell), weights)
+    out_allocations = _allocate_integer(int(conservative_out), sold_allocations)
+    fee_allocations = _allocate_integer(
+        int(policy.get("estimated_network_fee_lamports") or 0),
+        sold_allocations,
+    )
+    closed = 0
+    affected = 0
+    for position, sold_raw, out_lamports, fee_lamports in zip(
+        positions, sold_allocations, out_allocations, fee_allocations
+    ):
+        if sold_raw <= 0:
+            continue
+        affected += 1
+        position.remaining_token_raw = max(
+            0, int(position.remaining_token_raw) - int(sold_raw)
+        )
+        position.realized_output_lamports += int(out_lamports)
+        position.allocated_exit_fee_lamports += int(fee_lamports)
+        position.last_exit_signature = str(signal.signature)
+        position.exit_quote_latency_ms = int(quote.latency_ms)
+        position.exit_price_impact_bps = float(impact_bps)
+        position.exit_transaction_built = bool(quote.result.transaction)
+        position.exit_copyable = True
+        exit_quotes = list(position.exit_quotes or [])
+        exit_quotes.append(
+            {
+                "signature": str(signal.signature),
+                "sell_fraction": float(fraction),
+                "sold_token_raw": int(sold_raw),
+                "out_lamports": int(out_lamports),
+                "allocated_fee_lamports": int(fee_lamports),
+                "quote": {
+                    **dict(quote.sanitized or {}),
+                    "expected_out_amount": int(quote.result.out_amount),
+                    "conservative_out_amount": int(conservative_out),
+                    "slippage_haircut_applied": True,
+                },
+                "quote_requested_at": quote.requested_at.isoformat(),
+                "quote_received_at": quote.received_at.isoformat(),
+            }
+        )
+        position.exit_quotes = exit_quotes[-100:]
+        dust_limit = max(1, int(position.entry_output_token_raw * 0.001))
+        if position.remaining_token_raw <= dust_limit or float(fraction) >= 0.999:
+            position.remaining_token_raw = 0
+            position.status = PROMOTED_POSITION_CLOSED
+            position.closed_at = _aware(quote.received_at) or _utc_now()
+            position.close_reason = "MIRRORED_WALLET_EXIT"
+            cost = int(position.entry_input_lamports) + int(
+                position.allocated_entry_fee_lamports
+            )
+            proceeds = int(position.realized_output_lamports) - int(
+                position.allocated_exit_fee_lamports
+            )
+            position.pnl_lamports = proceeds - cost
+            position.return_percent = (
+                position.pnl_lamports / cost * 100.0 if cost > 0 else None
+            )
+            closed += 1
+        else:
+            position.status = PROMOTED_POSITION_OPEN_PARTIAL
+
+    return {
+        **base,
+        "quote_attempted": True,
+        "quote_built": bool(quote.result.transaction),
+        "quote_latency_ms": int(quote.latency_ms),
+        "price_impact_bps": impact_bps,
+        "sell_fraction": float(fraction),
+        "positions_affected": affected,
+        "positions_closed": closed,
+        "exit_applied": True,
+    }
+
 def _selective_wallet_metrics(
     positions: list[CanonicalParserGen4FastpathSelectivePosition],
 ) -> dict[str, Any]:
@@ -1078,6 +1403,11 @@ def record_fastpath_candidate_notification(
     if not wallets:
         return {"status": "IGNORED_NO_CANDIDATE_WALLETS", "signature": signature}
 
+    promoted_position: CanonicalParserGen4PromotedSelectivePosition | None = None
+    promoted_sell_context: tuple[
+        Any, CanonicalParserGen4PromotedSelectiveActivation
+    ] | None = None
+
     event = CanonicalParserGen4FastpathShadowEvent(
         event_id=str(uuid4()),
         signature=signature,
@@ -1117,6 +1447,12 @@ def record_fastpath_candidate_notification(
         event.fast_parse_completed_at = parsed_at
         event.fast_prequote_ms = max(
             0, int((parsed_at - observed).total_seconds() * 1000)
+        )
+        promoted_activation = get_promoted_activation_for_event(
+            db,
+            wallet=str(signal.wallet_address),
+            event_received_at=observed,
+            side=str(signal.side),
         )
         if signal.side == "BUY":
             policy = dict(event.policy_snapshot or {})
@@ -1167,10 +1503,67 @@ def record_fastpath_candidate_notification(
                 event.fast_transaction_built = built
                 event.fast_provisional_copyable = reason is None
                 event.fast_provisional_rejection_reason = reason
+                if promoted_activation is not None:
+                    lifecycle = {
+                        "version": PROMOTED_SELECTIVE_POSITION_VERSION,
+                        "scope": PROMOTED_SELECTIVE_SCOPE,
+                        "activation_id": str(promoted_activation.activation_id),
+                        "activation_status": str(promoted_activation.status),
+                        "post_activation_only": True,
+                        "prepromotion_backfill": False,
+                        "entry_eligible": False,
+                        "position_id": None,
+                        "reason": reason,
+                        "policy_violation": False,
+                        "live_execution": False,
+                        "paper_execution": False,
+                        "signer_access": False,
+                    }
+                    if reason is None:
+                        if _promoted_policy_matches_candidate_event(
+                            event, promoted_activation
+                        ):
+                            conservative_out = _conservative_out_amount(
+                                quote.result,
+                                int(
+                                    dict(promoted_activation.policy_snapshot or {})[
+                                        "slippage_bps"
+                                    ]
+                                ),
+                            )
+                            promoted_position = _new_promoted_selective_position(
+                                event=event,
+                                signal=signal,
+                                activation=promoted_activation,
+                                quote=quote,
+                                conservative_out=conservative_out,
+                                deterioration_bps=deterioration,
+                                price_impact_bps=impact_bps,
+                            )
+                            lifecycle.update(
+                                {
+                                    "entry_eligible": True,
+                                    "position_id": promoted_position.position_id,
+                                    "reason": None,
+                                }
+                            )
+                        else:
+                            lifecycle.update(
+                                {
+                                    "reason": "ACTIVATION_POLICY_DRIFT",
+                                    "policy_violation": True,
+                                }
+                            )
+                    event.evidence = {
+                        **dict(event.evidence or {}),
+                        "promoted_selective_lifecycle": lifecycle,
+                    }
             except JupiterSwapError as exc:
                 event.quote_error_code = str(exc.code)
         else:
             event.fast_provisional_rejection_reason = "NOT_A_BUY_SIGNAL"
+            if signal.side == "SELL" and promoted_activation is not None:
+                promoted_sell_context = (signal, promoted_activation)
     except CanonicalParserGen4CopyabilityError as exc:
         event.parse_error_code = str(exc.code)
         event.evidence = {
@@ -1187,6 +1580,22 @@ def record_fastpath_candidate_notification(
         with db.begin_nested():
             db.add(event)
             db.flush()
+            if promoted_position is not None:
+                db.add(promoted_position)
+            if promoted_sell_context is not None:
+                promoted_signal, promoted_activation = promoted_sell_context
+                promoted_exit = _apply_promoted_selective_sell_shadow(
+                    db,
+                    event=event,
+                    signal=promoted_signal,
+                    activation=promoted_activation,
+                    jupiter_client=jupiter_client,
+                )
+                event.evidence = {
+                    **dict(event.evidence or {}),
+                    "promoted_selective_lifecycle": promoted_exit,
+                }
+            db.flush()
     except IntegrityError:
         existing = db.scalar(
             select(CanonicalParserGen4FastpathShadowEvent).where(
@@ -1200,6 +1609,9 @@ def record_fastpath_candidate_notification(
             db.flush()
         return {"status": "DUPLICATE_CANDIDATE", "signature": signature}
 
+    promoted_evidence = dict(
+        dict(event.evidence or {}).get("promoted_selective_lifecycle") or {}
+    )
     return {
         "status": "RECORDED_CANDIDATE",
         "signature": signature,
@@ -1208,6 +1620,9 @@ def record_fastpath_candidate_notification(
         "provisional_copyable": bool(event.fast_provisional_copyable),
         "rejection": event.fast_provisional_rejection_reason,
         "quote_error": event.quote_error_code,
+        "promoted_selective_lifecycle": promoted_evidence,
+        "promoted_position_created": promoted_position is not None,
+        "promoted_exit_applied": bool(promoted_evidence.get("exit_applied")),
     }
 
 
@@ -1524,7 +1939,7 @@ def get_gen4_fastpath_forward_wallet_status(
     limit = max(1, min(int(recent_limit), 500))
     recent = list(reversed(rows[-limit:]))
 
-    return {
+    result = {
         "version": "m169-fastpath-persistent-forward-wallet-status/1",
         "persistent_db_evidence": True,
         "window_limited": False,
@@ -1603,6 +2018,24 @@ def get_gen4_fastpath_forward_wallet_status(
             "paper_orders": 0,
         },
     }
+    if normalized_scope == "OFFICIAL":
+        result["m75_native_bridge"] = load_fastpath_native_m75_bridge(
+            db,
+            wallet=wallet,
+            events=rows,
+            anchor_utc=anchor,
+            terminal_at=_utc_now(),
+        )
+    else:
+        result["m75_native_bridge"] = {
+            "scope": "M282_FASTPATH_NATIVE_M75_EVIDENCE_BRIDGE_DISARMED",
+            "version": "m282-fastpath-native-m75-evidence-bridge/1",
+            "state": "NOT_APPLICABLE_CANDIDATE_SCOPE",
+            "formal_m75_claimed": False,
+            "formal_m75_pass": False,
+            "micro_live_execution_authorized": False,
+        }
+    return result
 
 def _reconciled_rejection(event: CanonicalParserGen4FastpathShadowEvent) -> str | None:
     policy = dict(event.policy_snapshot or {})

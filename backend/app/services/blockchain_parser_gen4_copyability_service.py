@@ -25,6 +25,8 @@ from backend.app.models.gen4_copyability import (
     CanonicalParserGen4CopyabilityPosition,
     CanonicalParserGen4CopyabilityWorkerState,
     CanonicalParserGen4WebhookReceipt,
+    CanonicalParserGen4PromotedSelectiveActivation,
+    CanonicalParserGen4PromotedSelectiveDeliveryReceipt,
 )
 from backend.app.models.gen4_forward_shadow import CanonicalParserGen4ForwardCampaign
 from backend.app.services.jupiter_swap_client import (
@@ -892,20 +894,33 @@ def receive_gen4_copyability_webhook(
     received_at: datetime | None = None,
 ) -> dict[str, Any]:
     campaigns = _proof_active_copyability_campaigns(db)
-    if not campaigns:
+    promoted_activations = list(
+        db.scalars(
+            select(CanonicalParserGen4PromotedSelectiveActivation).where(
+                CanonicalParserGen4PromotedSelectiveActivation.status.in_(["ACTIVE", "DRAINING"])
+            )
+        )
+    )
+    if not campaigns and not promoted_activations:
         return {
             "accepted": 0,
             "duplicates": 0,
             "ignored": 0,
             "campaigns_touched": [],
-            "reason": "NO_PROOF_ACTIVE_CAMPAIGN",
+            "promoted_accepted": 0,
+            "promoted_duplicates": 0,
+            "promoted_activations_touched": [],
+            "reason": "NO_PROOF_ACTIVE_CAMPAIGN_OR_PROMOTED_ACTIVATION",
         }
     observed = _aware(received_at)
     events = payload if isinstance(payload, list) else [payload]
     accepted = 0
     duplicates = 0
+    promoted_accepted = 0
+    promoted_duplicates = 0
     ignored = 0
     touched: set[str] = set()
+    promoted_touched: set[str] = set()
 
     for item in events:
         if not isinstance(item, dict):
@@ -1003,6 +1018,72 @@ def receive_gen4_copyability_webhook(
                 ) + 1
                 duplicates += 1
 
+        for activation in promoted_activations:
+            wallet = str(activation.wallet_address or "").strip()
+            if not wallet:
+                continue
+            matched = _matched_wallets(item, [wallet])
+            if not matched:
+                continue
+            occurred = block_time or observed
+            if occurred <= _aware(activation.activation_anchor_at):
+                continue
+            event_matched = True
+            promoted_touched.add(activation.activation_id)
+            existing_promoted = db.scalar(
+                select(CanonicalParserGen4PromotedSelectiveDeliveryReceipt).where(
+                    CanonicalParserGen4PromotedSelectiveDeliveryReceipt.activation_db_id == activation.id,
+                    CanonicalParserGen4PromotedSelectiveDeliveryReceipt.signature == signature,
+                )
+            )
+            if existing_promoted is not None:
+                existing_promoted.delivery_count += 1
+                existing_promoted.last_received_at = observed
+                existing_promoted.raw_payload = compact_payload
+                existing_promoted.event_hash = event_hash
+                promoted_duplicates += 1
+                continue
+
+            promoted_row = CanonicalParserGen4PromotedSelectiveDeliveryReceipt(
+                receipt_id=str(uuid4()),
+                activation_db_id=activation.id,
+                activation_id=activation.activation_id,
+                signature=signature,
+                event_hash=event_hash,
+                source=SOURCE_WEBHOOK,
+                auth_verified=True,
+                wallet_address=wallet,
+                matched_wallets=matched,
+                slot=slot,
+                block_time=block_time,
+                received_at=observed,
+                first_received_at=observed,
+                last_received_at=observed,
+                delivery_count=1,
+                raw_payload=compact_payload,
+                evidence={
+                    "coverage_contract": "M309_AUTHENTICATED_RAW_WEBHOOK_SECONDARY_DELIVERY",
+                    "preactivation_backfill": False,
+                    "legacy_campaign_receipt": False,
+                },
+            )
+            try:
+                with db.begin_nested():
+                    db.add(promoted_row)
+                    db.flush()
+                promoted_accepted += 1
+            except IntegrityError:
+                raced_promoted = db.scalar(
+                    select(CanonicalParserGen4PromotedSelectiveDeliveryReceipt).where(
+                        CanonicalParserGen4PromotedSelectiveDeliveryReceipt.activation_db_id == activation.id,
+                        CanonicalParserGen4PromotedSelectiveDeliveryReceipt.signature == signature,
+                    )
+                )
+                if raced_promoted is not None:
+                    raced_promoted.delivery_count += 1
+                    raced_promoted.last_received_at = observed
+                promoted_duplicates += 1
+
         if not event_matched:
             ignored += 1
 
@@ -1018,6 +1099,10 @@ def receive_gen4_copyability_webhook(
         "ignored": ignored,
         "campaigns_touched": sorted(touched),
         "active_campaign_count": len(campaigns),
+        "promoted_accepted": promoted_accepted,
+        "promoted_duplicates": promoted_duplicates,
+        "promoted_activations_touched": sorted(promoted_touched),
+        "active_promoted_activation_count": len(promoted_activations),
     }
 
 

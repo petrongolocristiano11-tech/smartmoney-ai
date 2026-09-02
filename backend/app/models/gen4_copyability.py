@@ -511,3 +511,223 @@ class CanonicalParserGen4FastpathSelectivePosition(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+class CanonicalParserGen4PromotedSelectiveActivation(Base):
+    __tablename__ = "canonical_parser_gen4_promoted_selective_activations"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('ACTIVE','DRAINING','STOPPED')",
+            name="ck_gen4_promoted_selective_activation_status",
+        ),
+        CheckConstraint(
+            "length(decision_envelope_sha256) = 64",
+            name="ck_gen4_promoted_selective_activation_decision_sha",
+        ),
+        CheckConstraint(
+            "length(formal_m306_report_sha256) = 64",
+            name="ck_gen4_promoted_selective_activation_m306_sha",
+        ),
+        CheckConstraint(
+            "length(policy_hash) = 64",
+            name="ck_gen4_promoted_selective_activation_policy_hash",
+        ),
+        UniqueConstraint(
+            "activation_id",
+            name="uq_gen4_promoted_selective_activation_id",
+        ),
+        Index(
+            "uq_gen4_promoted_selective_active_wallet",
+            "wallet_address",
+            unique=True,
+            postgresql_where=text("status IN ('ACTIVE','DRAINING')"),
+            sqlite_where=text("status IN ('ACTIVE','DRAINING')"),
+        ),
+        Index(
+            "ix_gen4_promoted_selective_activation_status_anchor",
+            "status",
+            "activation_anchor_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
+    activation_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    wallet_address: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    activation_anchor_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    decision_envelope_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    formal_m306_report_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    decision_envelope: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    draining_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class CanonicalParserGen4PromotedSelectiveDeliveryReceipt(Base):
+    __tablename__ = "canonical_parser_gen4_promoted_selective_delivery_receipts"
+    __table_args__ = (
+        CheckConstraint(
+            "source = 'WEBHOOK'",
+            name="ck_gen4_promoted_delivery_receipt_source",
+        ),
+        UniqueConstraint(
+            "activation_db_id",
+            "signature",
+            name="uq_gen4_promoted_delivery_activation_signature",
+        ),
+        Index(
+            "ix_gen4_promoted_delivery_activation_received",
+            "activation_id",
+            "received_at",
+        ),
+        Index(
+            "ix_gen4_promoted_delivery_wallet_received",
+            "wallet_address",
+            "received_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
+    receipt_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
+    activation_db_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "canonical_parser_gen4_promoted_selective_activations.id",
+            ondelete="CASCADE",
+            name="fk_gen4_promoted_delivery_activation",
+        ),
+        nullable=False,
+    )
+    activation_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    signature: Mapped[str] = mapped_column(String(128), nullable=False)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source: Mapped[str] = mapped_column(String(24), nullable=False)
+    auth_verified: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    wallet_address: Mapped[str] = mapped_column(String(64), nullable=False)
+    matched_wallets: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    slot: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    block_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    first_received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    delivery_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    raw_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class CanonicalParserGen4PromotedSelectivePosition(Base):
+    __tablename__ = "canonical_parser_gen4_promoted_selective_positions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('OPEN','OPEN_PARTIAL','CLOSED')",
+            name="ck_gen4_promoted_selective_position_status",
+        ),
+        CheckConstraint(
+            "scope = 'PROMOTED_CANDIDATE_FASTPATH_SELECTIVE'",
+            name="ck_gen4_promoted_selective_position_scope",
+        ),
+        CheckConstraint(
+            "entry_input_lamports > 0 AND entry_output_token_raw > 0 "
+            "AND remaining_token_raw >= 0 AND realized_output_lamports >= 0 "
+            "AND allocated_entry_fee_lamports >= 0 AND allocated_exit_fee_lamports >= 0",
+            name="ck_gen4_promoted_selective_position_amounts",
+        ),
+        UniqueConstraint(
+            "position_id",
+            name="uq_gen4_promoted_selective_position_id",
+        ),
+        UniqueConstraint(
+            "wallet_address",
+            "entry_signature",
+            name="uq_gen4_promoted_selective_wallet_entry_signature",
+        ),
+        UniqueConstraint(
+            "entry_fast_event_id",
+            name="uq_gen4_promoted_selective_entry_event",
+        ),
+        Index(
+            "ix_gen4_promoted_selective_open_wallet_token",
+            "status",
+            "wallet_address",
+            "token_mint",
+        ),
+        Index(
+            "ix_gen4_promoted_selective_closed_at",
+            "closed_at",
+        ),
+        Index(
+            "ix_gen4_promoted_selective_activation_wallet",
+            "activation_id",
+            "wallet_address",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
+    position_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    scope: Mapped[str] = mapped_column(String(48), nullable=False)
+    activation_db_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "canonical_parser_gen4_promoted_selective_activations.id",
+            ondelete="CASCADE",
+            name="fk_gen4_promoted_selective_position_activation",
+        ),
+        nullable=False,
+    )
+    activation_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    entry_fast_event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    wallet_address: Mapped[str] = mapped_column(String(64), nullable=False)
+    token_mint: Mapped[str] = mapped_column(String(64), nullable=False)
+    token_decimals: Mapped[int] = mapped_column(Integer, nullable=False)
+    entry_signature: Mapped[str] = mapped_column(String(128), nullable=False)
+    entry_source: Mapped[str] = mapped_column(String(48), nullable=False)
+    entry_received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    entry_quote_latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    entry_price_deterioration_bps: Mapped[float | None] = mapped_column(Float, nullable=True)
+    entry_price_impact_bps: Mapped[float] = mapped_column(Float, nullable=False)
+    entry_transaction_built: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    entry_input_lamports: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    entry_output_token_raw: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    remaining_token_raw: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    allocated_entry_fee_lamports: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+    realized_output_lamports: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    allocated_exit_fee_lamports: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    pnl_lamports: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    return_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    last_exit_signature: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    exit_quote_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    exit_price_impact_bps: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_transaction_built: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    exit_copyable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    close_reason: Mapped[str | None] = mapped_column(String(80), nullable=True)
+
+    entry_quote: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    exit_quotes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

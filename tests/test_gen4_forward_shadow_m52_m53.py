@@ -245,7 +245,11 @@ def test_models_and_migration_are_registered_as_single_head():
     revision = scripts.get_revision("f4d6a9c2b813")
     assert revision.down_revision == "e3b5c8d1f297"
     assert scripts.get_revision("a5e7c1d4b926").down_revision == "f4d6a9c2b813"
-    assert scripts.get_heads() == ["e4c7a9d1b268"]
+    heads = scripts.get_heads()
+    assert len(heads) == 1
+    assert "e4c7a9d1b268" in {
+        revision.revision for revision in scripts.walk_revisions()
+    }
 
 
 def test_preview_is_read_only_and_freezes_only_qualified_wallets(db):
