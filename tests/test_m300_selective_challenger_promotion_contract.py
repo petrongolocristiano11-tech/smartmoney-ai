@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from backend.app.services.gen4_formal_m74_candidate_admission_service import (
+    FORMAL_M74_ADMITTED_WALLETS,
+)
+
 from backend.app.services.gen4_selective_challenger_promotion_service import (
     TARGETS,
     build_preparation_report,
@@ -171,3 +175,22 @@ def test_preparation_report_is_disarmed():
     assert report["legacy_boundary"]["legacy_endpoint_called"] is False
     assert report["runtime_boundary"]["future_bridge_implemented"] is False
     validate_report(report)
+
+
+
+def test_formal_m74_admitted_wallet_uses_same_m300_gate_without_backfill():
+    wallet = FORMAL_M74_ADMITTED_WALLETS["5PA"]
+    assert TARGETS["5PA"] == wallet
+    anchor = datetime(2026, 9, 4, 17, 0, 0, tzinfo=timezone.utc)
+    out = evaluate_candidate_promotion(
+        wallet=wallet,
+        events=_dataset(wallet, anchor, prefix="5PA"),
+        anchor_utc=anchor,
+        terminal_at=anchor + timedelta(hours=2),
+    )
+    assert out["promotion_eligible"] is True
+    assert out["target_admission"]["kind"] == "R7_FORMAL_M74_PASS_ADMISSION"
+    assert out["target_admission"]["upstream_formal_m74_pass"] is True
+    assert out["target_admission"]["candidate_entry_evidence_backfilled"] is False
+    assert out["formal_claims"]["gen4_copyability_pass_claimed"] is False
+    assert out["formal_claims"]["m298_pass_claimed"] is False

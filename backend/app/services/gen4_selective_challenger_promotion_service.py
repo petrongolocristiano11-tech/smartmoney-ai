@@ -10,6 +10,12 @@ from backend.app.services.gen4_post_anchor_selective_evidence_service import (
     M297_REPORT_SHA256,
     M298_PRE_REPORT_SHA256,
 )
+from backend.app.services.gen4_formal_m74_candidate_admission_service import (
+    FORMAL_M74_ADMITTED_WALLETS,
+    R7_FORMAL_REPORT_SHA256,
+    formal_m74_admission_for_wallet,
+    validate_formal_m74_admission_registry,
+)
 from backend.app.services.gen4_selective_copyability_gate_service import (
     _end_to_quote_ms,
     classify_buy_attempt,
@@ -29,7 +35,37 @@ M300_LEGACY_START_QUALIFIED_CANDIDATE_COMPATIBLE = False
 M296_REPORT_SHA256 = "914bf15250adcb319359efb022f6bbc73954db6aee09dc05381b8ce0e1bfe1f2"
 M299_PRE_REPORT_SHA256 = "a3a9f0cac44efd02f514ea5b0a4a2fa8525c37a9b65271fc6737ba50de3a68ea"
 
-TARGETS = dict(CHALLENGER_WALLETS)
+TARGETS = {**dict(CHALLENGER_WALLETS), **dict(FORMAL_M74_ADMITTED_WALLETS)}
+
+
+def target_admission_provenance(wallet: str) -> dict[str, Any]:
+    value = str(wallet or "").strip()
+    for label, challenger in CHALLENGER_WALLETS.items():
+        if value == str(challenger):
+            return {
+                "kind": "M299_LEGACY_APPROVED_CHALLENGER",
+                "label": str(label),
+                "wallet": value,
+                "upstream_formal_m74_pass": False,
+                "upstream_formal_m74_report_sha256": None,
+                "candidate_entry_evidence_backfilled": False,
+            }
+    evidence = formal_m74_admission_for_wallet(value)
+    if evidence is not None:
+        return {
+            "kind": "R7_FORMAL_M74_PASS_ADMISSION",
+            "label": next(
+                label for label, admitted in FORMAL_M74_ADMITTED_WALLETS.items()
+                if admitted == value
+            ),
+            "wallet": value,
+            "upstream_formal_m74_pass": True,
+            "upstream_formal_m74_report_sha256": R7_FORMAL_REPORT_SHA256,
+            "formal_m74_evidence": evidence,
+            "candidate_entry_evidence_backfilled": False,
+        }
+    raise M300Error("M300 wallet non appartenente ai target ammessi.")
+
 
 DEFAULT_POLICY: dict[str, Any] = {
     "policy_version": M300_VERSION,
@@ -167,6 +203,7 @@ def validate_policy(policy: dict[str, Any] | None = None) -> dict[str, Any]:
         p.get("full_lifecycle_proof_starts_at_promotion_activation") is True,
         "M300 full-lifecycle anchor non fail-closed.",
     )
+    validate_formal_m74_admission_registry()
     return p
 
 
@@ -179,7 +216,8 @@ def evaluate_candidate_promotion(
     policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     p = validate_policy(policy)
-    _require(wallet in TARGETS.values(), "M300 wallet non appartenente ai challenger approvati.")
+    _require(wallet in TARGETS.values(), "M300 wallet non appartenente ai target approvati.")
+    admission = target_admission_provenance(wallet)
 
     anchor = _aware(anchor_utc)
     terminal = _aware(terminal_at)
@@ -318,6 +356,7 @@ def evaluate_candidate_promotion(
         "scope": M300_SCOPE,
         "version": M300_VERSION,
         "wallet": wallet,
+        "target_admission": admission,
         "state": (
             "PROMOTION_ELIGIBLE_DISARMED"
             if eligible else "PROMOTION_PENDING_OR_FAIL"
@@ -408,6 +447,13 @@ def build_preparation_report() -> dict[str, Any]:
         "version": M300_VERSION,
         "state": "IMPLEMENTED_DISARMED_AWAITING_CANDIDATE_ENTRY_EVIDENCE",
         "targets": TARGETS,
+        "target_admission_registry": {
+            "legacy_challengers": dict(CHALLENGER_WALLETS),
+            "formal_m74_admitted": dict(FORMAL_M74_ADMITTED_WALLETS),
+            "r7_formal_report_sha256": R7_FORMAL_REPORT_SHA256,
+            "formal_m74_admission_armed": False,
+            "candidate_watchlist_mutation_automatic": False,
+        },
         "lineage": {
             "m296_report_sha256": M296_REPORT_SHA256,
             "m297_anchor_utc": M297_ANCHOR_UTC,

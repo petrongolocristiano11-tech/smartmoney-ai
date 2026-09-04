@@ -7,6 +7,11 @@ from pathlib import Path
 PROJECT = Path(r"C:\smartmoney-ai")
 sys.path.insert(0, str(PROJECT))
 
+from backend.app.services.gen4_formal_m74_candidate_admission_service import (
+    FORMAL_M74_ADMITTED_WALLETS,
+    R7_FORMAL_REPORT_SHA256,
+)
+
 from backend.app.services.gen4_selective_challenger_promotion_service import (
     M300_LEGACY_START_QUALIFIED_CANDIDATE_COMPATIBLE,
     M300_PROMOTION_ARMED,
@@ -183,6 +188,33 @@ def main():
     assert weak_result["promotion_eligible"] is False
     assert weak_result["checks"]["minimum_clean_accepted_attempts"] is False
 
+    # A verified R7 formal-M74 PASS may enter the same M300 entry-quality gate,
+    # but its historical M74 evidence cannot substitute for fresh candidate attempts.
+    formal_wallet = FORMAL_M74_ADMITTED_WALLETS["5PA"]
+    assert TARGETS["5PA"] == formal_wallet
+    formal_rows = []
+    for i in range(20):
+        formal_rows.append(
+            event(
+                formal_wallet,
+                f"5PA{i}",
+                anchor + timedelta(minutes=4 * (i + 1)),
+                "ACCEPTED" if i < 10 else "PROTECTIVE",
+            )
+        )
+    formal_result = evaluate_candidate_promotion(
+        wallet=formal_wallet,
+        events=formal_rows,
+        anchor_utc=anchor,
+        terminal_at=anchor + timedelta(hours=2),
+    )
+    assert formal_result["promotion_eligible"] is True
+    assert formal_result["target_admission"]["upstream_formal_m74_pass"] is True
+    assert formal_result["target_admission"]["upstream_formal_m74_report_sha256"] == R7_FORMAL_REPORT_SHA256
+    assert formal_result["formal_claims"]["m74_pass_claimed"] is False
+    assert formal_result["formal_claims"]["gen4_copyability_pass_claimed"] is False
+    assert formal_result["formal_claims"]["m298_pass_claimed"] is False
+
     prep = build_preparation_report()
     assert prep["legacy_boundary"]["legacy_start_qualified_candidate_compatible"] is False
     assert prep["runtime_boundary"]["future_selective_lifecycle_bridge_required"] is True
@@ -194,7 +226,7 @@ def main():
     print(
         "M300_PRE_VERIFY=PASS;"
         "promotion_disarmed=true;"
-        "targets=CGAZ|89F3;"
+        "targets=CGAZ|89F3|5PA;"
         "attempt_floor_from_m298=true;"
         "accepted_floor_from_m298_closed_floor=true;"
         "protective_reject_not_hard_gate=true;"
