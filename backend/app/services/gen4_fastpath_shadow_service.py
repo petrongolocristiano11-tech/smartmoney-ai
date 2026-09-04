@@ -46,6 +46,11 @@ from backend.app.services.gen4_selective_challenger_lifecycle_bridge_design_serv
 )
 from backend.app.services.jupiter_swap_client import JupiterSwapClient
 from backend.app.services.live_trading_errors import JupiterSwapError
+from backend.app.services.gen4_promoted_exit_recovery_service import (
+    is_recoverable_promoted_exit_error,
+    promoted_exit_error_snapshot,
+    schedule_promoted_exit_recovery,
+)
 from backend.app.services.pump_bonding_curve_shadow import (
     quote_pump_buy_exact_sol_in_shadow,
 )
@@ -742,17 +747,19 @@ def _record_promoted_exit_error(
     signature: str,
     code: str,
     observed_at: datetime,
+    details: dict[str, Any] | None = None,
 ) -> None:
     for position in positions:
         evidence = dict(position.evidence or {})
         failures = list(evidence.get("exit_failures") or [])
-        failures.append(
-            {
-                "signature": signature,
-                "code": code,
-                "observed_at": observed_at.isoformat(),
-            }
-        )
+        record: dict[str, Any] = {
+            "signature": signature,
+            "code": code,
+            "observed_at": observed_at.isoformat(),
+        }
+        if details:
+            record["details"] = dict(details)
+        failures.append(record)
         evidence["exit_failures"] = failures[-100:]
         position.evidence = evidence
 
@@ -817,6 +824,7 @@ def _apply_promoted_selective_sell_shadow(
         total_remaining,
         max(1, int(total_remaining * float(fraction))),
     )
+    sold_allocations = _allocate_integer(int(amount_to_sell), weights)
     try:
         quote = _quote(
             input_mint=str(signal.token_mint),
@@ -827,16 +835,36 @@ def _apply_promoted_selective_sell_shadow(
         )
     except JupiterSwapError as exc:
         code = str(exc.code)
+        observed_at = _aware(event.fast_received_at) or _utc_now()
+        error_details = promoted_exit_error_snapshot(exc)
+        if is_recoverable_promoted_exit_error(exc):
+            recovery = schedule_promoted_exit_recovery(
+                positions,
+                signature=str(signal.signature),
+                sell_fraction=float(fraction),
+                sold_allocations=sold_allocations,
+                observed_at=observed_at,
+                error=exc,
+            )
+            return {
+                **base,
+                "quote_attempted": True,
+                "quote_error": code,
+                "reason": "EXIT_RECOVERY_SCHEDULED",
+                "autonomous_exit_recovery": recovery,
+            }
         _record_promoted_exit_error(
             positions,
             signature=str(signal.signature),
             code=code,
-            observed_at=_utc_now(),
+            observed_at=observed_at,
+            details=error_details,
         )
         return {
             **base,
             "quote_attempted": True,
             "quote_error": code,
+            "quote_error_details": error_details,
             "reason": "EXIT_QUOTE_ERROR",
         }
 
@@ -867,7 +895,6 @@ def _apply_promoted_selective_sell_shadow(
             "reason": rejection,
         }
 
-    sold_allocations = _allocate_integer(int(amount_to_sell), weights)
     out_allocations = _allocate_integer(int(conservative_out), sold_allocations)
     fee_allocations = _allocate_integer(
         int(policy.get("estimated_network_fee_lamports") or 0),

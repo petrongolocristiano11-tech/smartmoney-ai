@@ -20,6 +20,10 @@ from backend.app.services.gen4_fastpath_shadow_service import (
     reconcile_fastpath_events,
 )
 from backend.app.services.jupiter_swap_client import JupiterSwapClient
+from backend.app.services.gen4_promoted_exit_recovery_service import (
+    PROMOTED_EXIT_RECOVERY_TICK_SECONDS,
+    recover_promoted_selective_exits,
+)
 
 logger = logging.getLogger("smartmoney.gen4_fastpath_shadow")
 
@@ -42,6 +46,10 @@ class EmbeddedGen4FastpathShadowRuntime:
         self._official_wallet_locks: dict[str, asyncio.Lock] = {}
         self._official_fallback_lock = asyncio.Lock()
         self._reconcile_task: asyncio.Task | None = None
+        self._promoted_exit_recovery_task: asyncio.Task | None = None
+        self._promoted_exit_recovery_runs = 0
+        self._promoted_exit_recovery_groups = 0
+        self._promoted_exit_recovery_errors = 0
 
     @property
     def enabled(self) -> bool:
@@ -95,6 +103,18 @@ class EmbeddedGen4FastpathShadowRuntime:
                 "live_execution": False,
                 "signer_access": False,
             },
+            "promoted_exit_recovery": {
+                "running": bool(
+                    self._promoted_exit_recovery_task is not None
+                    and not self._promoted_exit_recovery_task.done()
+                ),
+                "runs": self._promoted_exit_recovery_runs,
+                "recovered_groups": self._promoted_exit_recovery_groups,
+                "errors": self._promoted_exit_recovery_errors,
+                "live_execution": False,
+                "signer_access": False,
+                "transaction_submission": False,
+            },
             "live_execution": False,
             "signer_access": False,
         }
@@ -108,6 +128,10 @@ class EmbeddedGen4FastpathShadowRuntime:
         self._stop_requested = False
         self._jupiter = JupiterSwapClient(persistent_http=True)
         self._task = asyncio.create_task(self._run(), name="gen4-fastpath-shadow")
+        self._promoted_exit_recovery_task = asyncio.create_task(
+            self._run_promoted_exit_recovery(),
+            name="gen4-promoted-exit-recovery-shadow",
+        )
         if self.candidate_enabled:
             self._candidate_jupiter = JupiterSwapClient(persistent_http=True)
             self._candidate_task = asyncio.create_task(
@@ -142,6 +166,11 @@ class EmbeddedGen4FastpathShadowRuntime:
             with suppress(asyncio.CancelledError, Exception):
                 await self._reconcile_task
         self._reconcile_task = None
+        if self._promoted_exit_recovery_task is not None:
+            self._promoted_exit_recovery_task.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await self._promoted_exit_recovery_task
+        self._promoted_exit_recovery_task = None
         if self._jupiter is not None:
             await asyncio.to_thread(self._jupiter.close)
         self._jupiter = None
@@ -189,6 +218,36 @@ class EmbeddedGen4FastpathShadowRuntime:
             except Exception:
                 db.rollback()
                 raise
+
+    def _recover_promoted_exits(self) -> dict[str, Any]:
+        if self._jupiter is None:
+            return {"recovered_groups": 0}
+        with SessionLocal() as db:
+            try:
+                result = recover_promoted_selective_exits(
+                    db,
+                    jupiter_client=self._jupiter,
+                )
+                db.commit()
+                return result
+            except Exception:
+                db.rollback()
+                raise
+
+    async def _run_promoted_exit_recovery(self) -> None:
+        while not self._stop_requested:
+            try:
+                result = await asyncio.to_thread(self._recover_promoted_exits)
+                self._promoted_exit_recovery_runs += 1
+                self._promoted_exit_recovery_groups += int(
+                    result.get("recovered_groups") or 0
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self._promoted_exit_recovery_errors += 1
+                logger.exception("gen4_promoted_exit_recovery_failed")
+            await asyncio.sleep(PROMOTED_EXIT_RECOVERY_TICK_SECONDS)
 
     def _reconcile(self) -> None:
         with SessionLocal() as db:
