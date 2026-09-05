@@ -72,6 +72,41 @@ FASTPATH_SELECTIVE_MIN_PROFIT_FACTOR = 1.30
 FASTPATH_SELECTIVE_MAX_DRAWDOWN_PERCENT = 15.0
 
 
+def _jupiter_error_snapshot(exc: JupiterSwapError) -> dict[str, Any]:
+    payload = dict(getattr(exc, "payload", None) or {})
+    response = payload.get("response")
+    safe_response: dict[str, Any] = {}
+    if isinstance(response, dict):
+        for key in ("code", "message", "error", "errorMessage"):
+            if key in response:
+                safe_response[key] = response[key]
+
+    raw_rate_headers = payload.get("rate_limit_headers")
+    rate_headers: dict[str, str] = {}
+    if isinstance(raw_rate_headers, dict):
+        for key in (
+            "x-ratelimit-current",
+            "x-ratelimit-remaining",
+            "x-ratelimit-reset",
+            "retry-after",
+        ):
+            value = raw_rate_headers.get(key)
+            if value not in (None, ""):
+                rate_headers[key] = str(value)
+
+    return {
+        "code": str(getattr(exc, "code", "") or ""),
+        "internal_status_code": int(
+            getattr(exc, "status_code", 0) or 0
+        ),
+        "http_status": payload.get("http_status"),
+        "attempts": payload.get("attempts"),
+        "retryable": payload.get("retryable"),
+        "rate_limit_headers": rate_headers,
+        "response": safe_response,
+    }
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -1371,6 +1406,10 @@ def record_fastpath_notification(
                         }
                 except JupiterSwapError as exc:
                     event.quote_error_code = str(exc.code)
+                    event.evidence = {
+                        **dict(event.evidence or {}),
+                        "jupiter_error": _jupiter_error_snapshot(exc),
+                    }
             else:
                 event.fast_provisional_rejection_reason = "NOT_A_BUY_SIGNAL"
                 if signal.side == "SELL":
@@ -1587,6 +1626,10 @@ def record_fastpath_candidate_notification(
                     }
             except JupiterSwapError as exc:
                 event.quote_error_code = str(exc.code)
+                event.evidence = {
+                    **dict(event.evidence or {}),
+                    "jupiter_error": _jupiter_error_snapshot(exc),
+                }
         else:
             event.fast_provisional_rejection_reason = "NOT_A_BUY_SIGNAL"
             if signal.side == "SELL" and promoted_activation is not None:

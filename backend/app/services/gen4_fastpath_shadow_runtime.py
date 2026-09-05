@@ -126,14 +126,14 @@ class EmbeddedGen4FastpathShadowRuntime:
         if self.running:
             return False
         self._stop_requested = False
-        self._jupiter = JupiterSwapClient(persistent_http=True)
+        self._jupiter = JupiterSwapClient(persistent_http=True, shared_rate_limit=True)
         self._task = asyncio.create_task(self._run(), name="gen4-fastpath-shadow")
         self._promoted_exit_recovery_task = asyncio.create_task(
             self._run_promoted_exit_recovery(),
             name="gen4-promoted-exit-recovery-shadow",
         )
         if self.candidate_enabled:
-            self._candidate_jupiter = JupiterSwapClient(persistent_http=True)
+            self._candidate_jupiter = JupiterSwapClient(persistent_http=True, shared_rate_limit=True)
             self._candidate_task = asyncio.create_task(
                 self._run_candidate(),
                 name="gen4-fastpath-candidate-shadow",

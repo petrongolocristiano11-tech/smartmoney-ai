@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
@@ -8,6 +9,141 @@ import httpx
 from backend.app.core.config import settings
 from backend.app.services.live_trading_errors import (
     JupiterSwapError,
+)
+
+
+_JUPITER_RATE_LIMIT_FALLBACK_RPS = 10
+_JUPITER_RATE_LIMIT_HEADROOM_RATIO = 0.80
+_JUPITER_RATE_LIMIT_RESET_EPSILON_SECONDS = 0.05
+
+
+class _SharedJupiterRateLimitCoordinator:
+    """Process-wide pacing for the shared Jupiter general API bucket.
+
+    Official and candidate fast-path clients run in the same process and use the
+    same API key / organisation quota.  The coordinator therefore serializes
+    request *starts* across client instances, preserves headroom below the
+    observed RPS limit, and honors the gateway reset timestamp after a 429.
+    It never applies to /execute because execute has a dedicated bucket and is
+    not retryable in this client.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._next_request_at = 0.0
+        self._blocked_until = 0.0
+        self._observed_limit = _JUPITER_RATE_LIMIT_FALLBACK_RPS
+
+    def _target_rps_locked(self) -> int:
+        return max(
+            1,
+            int(
+                self._observed_limit
+                * _JUPITER_RATE_LIMIT_HEADROOM_RATIO
+            ),
+        )
+
+    def acquire(self) -> None:
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                ready_at = max(
+                    self._next_request_at,
+                    self._blocked_until,
+                )
+                if ready_at <= now:
+                    interval = 1.0 / float(
+                        self._target_rps_locked()
+                    )
+                    self._next_request_at = now + interval
+                    return
+                delay = max(0.0, ready_at - now)
+            time.sleep(delay)
+
+    def observe(self, headers: Any) -> None:
+        current = _parse_nonnegative_int_header(
+            headers,
+            "x-ratelimit-current",
+        )
+        remaining = _parse_nonnegative_int_header(
+            headers,
+            "x-ratelimit-remaining",
+        )
+        if current is None or remaining is None:
+            return
+        observed_limit = current + remaining
+        if observed_limit <= 0:
+            return
+        with self._lock:
+            self._observed_limit = observed_limit
+
+    def block_until_reset(self, headers: Any) -> float:
+        reset_value = _header_value(
+            headers,
+            "x-ratelimit-reset",
+        )
+        delay = 0.0
+        if reset_value:
+            try:
+                delay = max(
+                    0.0,
+                    float(reset_value)
+                    - time.time()
+                    + _JUPITER_RATE_LIMIT_RESET_EPSILON_SECONDS,
+                )
+            except (TypeError, ValueError):
+                delay = 0.0
+        with self._lock:
+            if delay > 0.0:
+                self._blocked_until = max(
+                    self._blocked_until,
+                    time.monotonic() + delay,
+                )
+        return delay
+
+
+def _header_value(headers: Any, name: str) -> str | None:
+    try:
+        value = headers.get(name)
+    except AttributeError:
+        return None
+    if value in (None, ""):
+        return None
+    return str(value).strip() or None
+
+
+def _parse_nonnegative_int_header(
+    headers: Any,
+    name: str,
+) -> int | None:
+    value = _header_value(headers, name)
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _sanitized_rate_limit_headers(
+    headers: Any,
+) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for name in (
+        "x-ratelimit-current",
+        "x-ratelimit-remaining",
+        "x-ratelimit-reset",
+        "retry-after",
+    ):
+        value = _header_value(headers, name)
+        if value is not None:
+            result[name] = value
+    return result
+
+
+_SHARED_JUPITER_RATE_LIMIT_COORDINATOR = (
+    _SharedJupiterRateLimitCoordinator()
 )
 
 
@@ -51,6 +187,7 @@ class JupiterSwapClient:
             | None
         ) = None,
         persistent_http: bool = False,
+        shared_rate_limit: bool = False,
     ):
         self.api_key = (
             api_key
@@ -103,6 +240,7 @@ class JupiterSwapClient:
         self.sleep_fn = sleep_fn or time.sleep
         self.transport = transport
         self.persistent_http = bool(persistent_http)
+        self.shared_rate_limit = bool(shared_rate_limit)
         self._persistent_client = (
             httpx.Client(
                 timeout=self.timeout_seconds,
@@ -222,6 +360,9 @@ class JupiterSwapClient:
                 < maximum_attempts
             )
 
+            if retryable and self.shared_rate_limit:
+                _SHARED_JUPITER_RATE_LIMIT_COORDINATOR.acquire()
+
             try:
                 if self._persistent_client is not None:
                     response = self._persistent_client.request(
@@ -292,6 +433,16 @@ class JupiterSwapClient:
                     },
                 ) from exception
 
+            rate_limit_headers = (
+                _sanitized_rate_limit_headers(
+                    response.headers
+                )
+            )
+            if retryable and self.shared_rate_limit:
+                _SHARED_JUPITER_RATE_LIMIT_COORDINATOR.observe(
+                    response.headers
+                )
+
             if (
                 retryable
                 and response.status_code
@@ -310,18 +461,29 @@ class JupiterSwapClient:
 
                 if retry_after:
                     try:
-                        delay = min(
-                            self.retry_max_seconds,
-                            max(
-                                delay,
-                                float(
-                                    retry_after
-                                ),
-                            ),
+                        delay = max(
+                            delay,
+                            float(retry_after),
                         )
                     except ValueError:
                         pass
 
+                if (
+                    response.status_code == 429
+                    and self.shared_rate_limit
+                ):
+                    reset_delay = (
+                        _SHARED_JUPITER_RATE_LIMIT_COORDINATOR
+                        .block_until_reset(
+                            response.headers
+                        )
+                    )
+                    delay = max(delay, reset_delay)
+
+                # A gateway reset is authoritative.  Do not cap it to the
+                # generic exponential-backoff ceiling; the current Swap V2
+                # general bucket is per-second and this prevents blind retries
+                # before the advertised reset boundary.
                 self.sleep_fn(delay)
                 continue
 
@@ -391,6 +553,8 @@ class JupiterSwapClient:
                             sanitize_jupiter_payload(
                                 payload
                             ),
+                        "rate_limit_headers":
+                            rate_limit_headers,
                     },
                 )
 
