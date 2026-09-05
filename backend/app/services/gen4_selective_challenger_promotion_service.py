@@ -12,9 +12,14 @@ from backend.app.services.gen4_post_anchor_selective_evidence_service import (
 )
 from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     FORMAL_M74_ADMITTED_WALLETS,
+    PENDING_FLAT_M74_ADMITTED_WALLETS,
+    PENDING_FLAT_M74_ROOT_CAUSE_REPORT_SHA256,
+    PENDING_FLAT_M74_TARGETED_REPORT_SHA256,
     R7_FORMAL_REPORT_SHA256,
     formal_m74_admission_for_wallet,
+    pending_flat_m74_admission_for_wallet,
     validate_formal_m74_admission_registry,
+    validate_pending_flat_m74_admission_registry,
 )
 from backend.app.services.gen4_selective_copyability_gate_service import (
     _end_to_quote_ms,
@@ -35,7 +40,11 @@ M300_LEGACY_START_QUALIFIED_CANDIDATE_COMPATIBLE = False
 M296_REPORT_SHA256 = "914bf15250adcb319359efb022f6bbc73954db6aee09dc05381b8ce0e1bfe1f2"
 M299_PRE_REPORT_SHA256 = "a3a9f0cac44efd02f514ea5b0a4a2fa8525c37a9b65271fc6737ba50de3a68ea"
 
-TARGETS = {**dict(CHALLENGER_WALLETS), **dict(FORMAL_M74_ADMITTED_WALLETS)}
+TARGETS = {
+    **dict(CHALLENGER_WALLETS),
+    **dict(FORMAL_M74_ADMITTED_WALLETS),
+    **dict(PENDING_FLAT_M74_ADMITTED_WALLETS),
+}
 
 
 def target_admission_provenance(wallet: str) -> dict[str, Any]:
@@ -60,8 +69,31 @@ def target_admission_provenance(wallet: str) -> dict[str, Any]:
             ),
             "wallet": value,
             "upstream_formal_m74_pass": True,
+            "upstream_economic_m74_qualification": True,
             "upstream_formal_m74_report_sha256": R7_FORMAL_REPORT_SHA256,
             "formal_m74_evidence": evidence,
+            "historical_open_positions_quarantined": False,
+            "candidate_entry_evidence_backfilled": False,
+        }
+
+    pending = pending_flat_m74_admission_for_wallet(value)
+    if pending is not None:
+        return {
+            "kind": "R7_M74_QUALIFIED_PENDING_FLAT_ADMISSION",
+            "label": next(
+                label for label, admitted in PENDING_FLAT_M74_ADMITTED_WALLETS.items()
+                if admitted == value
+            ),
+            "wallet": value,
+            "upstream_formal_m74_pass": False,
+            "upstream_economic_m74_qualification": True,
+            "upstream_flatness_only_blocker": True,
+            "upstream_formal_failure_reasons": ["zero_open_positions"],
+            "upstream_targeted_report_sha256": PENDING_FLAT_M74_TARGETED_REPORT_SHA256,
+            "upstream_root_cause_report_sha256": PENDING_FLAT_M74_ROOT_CAUSE_REPORT_SHA256,
+            "pending_flat_evidence": pending,
+            "historical_open_positions_quarantined": True,
+            "historical_open_positions_followed_by_candidate_lane": False,
             "candidate_entry_evidence_backfilled": False,
         }
     raise M300Error("M300 wallet non appartenente ai target ammessi.")
@@ -204,6 +236,7 @@ def validate_policy(policy: dict[str, Any] | None = None) -> dict[str, Any]:
         "M300 full-lifecycle anchor non fail-closed.",
     )
     validate_formal_m74_admission_registry()
+    validate_pending_flat_m74_admission_registry()
     return p
 
 
@@ -409,6 +442,10 @@ def evaluate_candidate_promotion(
             "requires_explicit_code_change_and_deploy": True,
             "candidate_fastpath_entry_evidence_backfilled": False,
             "full_lifecycle_proof_starts_at_promotion_activation": True,
+            "historical_pre_anchor_positions_carried_forward": False,
+            "pending_flat_historical_positions_quarantined": bool(
+                admission.get("historical_open_positions_quarantined", False)
+            ),
             "future_m298_observation_hours_still_required": 24.0,
             "future_m298_entry_attempts_still_required": 20,
             "future_m298_closed_trades_still_required": 10,
@@ -450,7 +487,10 @@ def build_preparation_report() -> dict[str, Any]:
         "target_admission_registry": {
             "legacy_challengers": dict(CHALLENGER_WALLETS),
             "formal_m74_admitted": dict(FORMAL_M74_ADMITTED_WALLETS),
+            "pending_flat_m74_admitted": dict(PENDING_FLAT_M74_ADMITTED_WALLETS),
             "r7_formal_report_sha256": R7_FORMAL_REPORT_SHA256,
+            "pending_flat_targeted_report_sha256": PENDING_FLAT_M74_TARGETED_REPORT_SHA256,
+            "pending_flat_root_cause_report_sha256": PENDING_FLAT_M74_ROOT_CAUSE_REPORT_SHA256,
             "formal_m74_admission_armed": False,
             "candidate_watchlist_mutation_automatic": False,
         },

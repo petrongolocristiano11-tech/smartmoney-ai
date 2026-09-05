@@ -9,6 +9,7 @@ sys.path.insert(0, str(PROJECT))
 
 from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     FORMAL_M74_ADMITTED_WALLETS,
+    PENDING_FLAT_M74_ADMITTED_WALLETS,
     R7_FORMAL_REPORT_SHA256,
 )
 
@@ -215,6 +216,33 @@ def main():
     assert formal_result["formal_claims"]["gen4_copyability_pass_claimed"] is False
     assert formal_result["formal_claims"]["m298_pass_claimed"] is False
 
+    # Flatness-only historical blockers are admitted as a separate provenance.
+    for label, pending_wallet in PENDING_FLAT_M74_ADMITTED_WALLETS.items():
+        assert TARGETS[label] == pending_wallet
+        pending_rows = []
+        for i in range(20):
+            pending_rows.append(
+                event(
+                    pending_wallet,
+                    f"{label}{i}",
+                    anchor + timedelta(minutes=4 * (i + 1)),
+                    "ACCEPTED" if i < 10 else "PROTECTIVE",
+                )
+            )
+        pending_result = evaluate_candidate_promotion(
+            wallet=pending_wallet,
+            events=pending_rows,
+            anchor_utc=anchor,
+            terminal_at=anchor + timedelta(hours=2),
+        )
+        assert pending_result["promotion_eligible"] is True
+        assert pending_result["target_admission"]["kind"] == "R7_M74_QUALIFIED_PENDING_FLAT_ADMISSION"
+        assert pending_result["target_admission"]["upstream_formal_m74_pass"] is False
+        assert pending_result["target_admission"]["upstream_economic_m74_qualification"] is True
+        assert pending_result["target_admission"]["historical_open_positions_quarantined"] is True
+        assert pending_result["formal_claims"]["m74_pass_claimed"] is False
+        assert pending_result["formal_claims"]["m298_pass_claimed"] is False
+
     prep = build_preparation_report()
     assert prep["legacy_boundary"]["legacy_start_qualified_candidate_compatible"] is False
     assert prep["runtime_boundary"]["future_selective_lifecycle_bridge_required"] is True
@@ -226,7 +254,7 @@ def main():
     print(
         "M300_PRE_VERIFY=PASS;"
         "promotion_disarmed=true;"
-        "targets=CGAZ|89F3|5PA;"
+        "targets=CGAZ|89F3|5PA|3N7|2MQR;"
         "attempt_floor_from_m298=true;"
         "accepted_floor_from_m298_closed_floor=true;"
         "protective_reject_not_hard_gate=true;"
