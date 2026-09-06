@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -8,6 +9,10 @@ import pytest
 import backend.app.services.jupiter_swap_client as jupiter
 from backend.app.services.gen4_fastpath_shadow_service import (
     _jupiter_error_snapshot,
+    _record_jupiter_entry_error,
+)
+from backend.app.services.gen4_selective_copyability_gate_service import (
+    classify_buy_attempt,
 )
 from backend.app.services.live_trading_errors import JupiterSwapError
 
@@ -214,3 +219,130 @@ def test_runtime_arms_shared_limit_for_official_and_candidate_clients():
     ).read_text(encoding="utf-8")
     assert runtime_source.count("shared_rate_limit=True") == 2
     assert runtime_source.count("persistent_http=True") >= 2
+
+
+def _empty_fastpath_buy_event():
+    return SimpleNamespace(
+        evidence={},
+        parse_error_code=None,
+        quote_error_code=None,
+        fast_provisional_copyable=False,
+        fast_provisional_rejection_reason=None,
+        fast_transaction_built=False,
+        fast_quote_received_at=None,
+        fast_price_impact_bps=None,
+        fast_price_deterioration_bps=None,
+    )
+
+
+def test_http400_no_routes_is_forward_liquidity_protective_reject():
+    event = _empty_fastpath_buy_event()
+    exc = JupiterSwapError(
+        "No routes found",
+        code="JUPITER_HTTP_ERROR",
+        status_code=502,
+        payload={
+            "http_status": 400,
+            "attempts": 1,
+            "retryable": True,
+            "rate_limit_headers": {
+                "x-ratelimit-current": "1",
+                "x-ratelimit-remaining": "9",
+            },
+            "response": {"error": "No routes found"},
+        },
+    )
+
+    _record_jupiter_entry_error(event, exc)
+
+    assert event.quote_error_code is None
+    assert event.fast_provisional_copyable is False
+    assert event.fast_provisional_rejection_reason == "NO_EXECUTABLE_OUTPUT"
+    assert classify_buy_attempt(event) == (
+        "LIQUIDITY_PROTECTIVE_REJECT",
+        "NO_EXECUTABLE_OUTPUT",
+    )
+    assert event.evidence["jupiter_error"]["http_status"] == 400
+    assert event.evidence["jupiter_error"]["response"] == {
+        "error": "No routes found"
+    }
+    assert event.evidence["jupiter_entry_classification"] == {
+        "version": "jupiter-entry-error-classification/1",
+        "provider": "JUPITER",
+        "http_status": 400,
+        "provider_error": "No routes found",
+        "classification": "LIQUIDITY_PROTECTIVE_REJECT",
+        "mapped_rejection": "NO_EXECUTABLE_OUTPUT",
+        "historical_reclassification": False,
+    }
+
+
+def test_other_http400_remains_technical_failure():
+    event = _empty_fastpath_buy_event()
+    exc = JupiterSwapError(
+        "Invalid request",
+        code="JUPITER_HTTP_ERROR",
+        status_code=502,
+        payload={
+            "http_status": 400,
+            "attempts": 1,
+            "retryable": True,
+            "response": {"error": "Invalid request"},
+        },
+    )
+
+    _record_jupiter_entry_error(event, exc)
+
+    assert event.quote_error_code == "JUPITER_HTTP_ERROR"
+    assert event.fast_provisional_rejection_reason is None
+    assert classify_buy_attempt(event) == (
+        "TECHNICAL_FAILURE",
+        "QUOTE:JUPITER_HTTP_ERROR",
+    )
+
+
+def test_http429_remains_technical_failure():
+    event = _empty_fastpath_buy_event()
+    exc = JupiterSwapError(
+        "[API Gateway] Too many requests",
+        code="JUPITER_HTTP_ERROR",
+        status_code=502,
+        payload={
+            "http_status": 429,
+            "attempts": 3,
+            "retryable": True,
+            "response": {
+                "message": "[API Gateway] Too many requests"
+            },
+        },
+    )
+
+    _record_jupiter_entry_error(event, exc)
+
+    assert event.quote_error_code == "JUPITER_HTTP_ERROR"
+    assert event.fast_provisional_rejection_reason is None
+    assert classify_buy_attempt(event) == (
+        "TECHNICAL_FAILURE",
+        "QUOTE:JUPITER_HTTP_ERROR",
+    )
+
+
+def test_no_route_mapping_is_exact_fingerprint_only():
+    event = _empty_fastpath_buy_event()
+    exc = JupiterSwapError(
+        "No route found",
+        code="JUPITER_HTTP_ERROR",
+        status_code=502,
+        payload={
+            "http_status": 400,
+            "attempts": 1,
+            "retryable": True,
+            "response": {"error": "No route found"},
+        },
+    )
+
+    _record_jupiter_entry_error(event, exc)
+
+    assert event.quote_error_code == "JUPITER_HTTP_ERROR"
+    assert event.fast_provisional_rejection_reason is None
+    assert classify_buy_attempt(event)[0] == "TECHNICAL_FAILURE"

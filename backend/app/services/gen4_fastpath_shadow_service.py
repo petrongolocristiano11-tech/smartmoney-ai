@@ -107,6 +107,52 @@ def _jupiter_error_snapshot(exc: JupiterSwapError) -> dict[str, Any]:
     }
 
 
+def _is_jupiter_no_route_liquidity_rejection(exc: JupiterSwapError) -> bool:
+    if str(getattr(exc, "code", "") or "") != "JUPITER_HTTP_ERROR":
+        return False
+    payload = dict(getattr(exc, "payload", None) or {})
+    try:
+        http_status = int(payload.get("http_status"))
+    except (TypeError, ValueError):
+        return False
+    if http_status != 400:
+        return False
+    response = payload.get("response")
+    if not isinstance(response, dict):
+        return False
+    message = str(response.get("error") or "").strip().casefold()
+    return message == "no routes found"
+
+
+def _record_jupiter_entry_error(
+    event: CanonicalParserGen4FastpathShadowEvent,
+    exc: JupiterSwapError,
+) -> None:
+    snapshot = _jupiter_error_snapshot(exc)
+    event.evidence = {
+        **dict(event.evidence or {}),
+        "jupiter_error": snapshot,
+    }
+    if _is_jupiter_no_route_liquidity_rejection(exc):
+        event.quote_error_code = None
+        event.fast_provisional_copyable = False
+        event.fast_provisional_rejection_reason = "NO_EXECUTABLE_OUTPUT"
+        event.evidence = {
+            **dict(event.evidence or {}),
+            "jupiter_entry_classification": {
+                "version": "jupiter-entry-error-classification/1",
+                "provider": "JUPITER",
+                "http_status": 400,
+                "provider_error": "No routes found",
+                "classification": "LIQUIDITY_PROTECTIVE_REJECT",
+                "mapped_rejection": "NO_EXECUTABLE_OUTPUT",
+                "historical_reclassification": False,
+            },
+        }
+        return
+    event.quote_error_code = str(exc.code)
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -1405,11 +1451,7 @@ def record_fastpath_notification(
                             },
                         }
                 except JupiterSwapError as exc:
-                    event.quote_error_code = str(exc.code)
-                    event.evidence = {
-                        **dict(event.evidence or {}),
-                        "jupiter_error": _jupiter_error_snapshot(exc),
-                    }
+                    _record_jupiter_entry_error(event, exc)
             else:
                 event.fast_provisional_rejection_reason = "NOT_A_BUY_SIGNAL"
                 if signal.side == "SELL":
@@ -1625,11 +1667,7 @@ def record_fastpath_candidate_notification(
                         "promoted_selective_lifecycle": lifecycle,
                     }
             except JupiterSwapError as exc:
-                event.quote_error_code = str(exc.code)
-                event.evidence = {
-                    **dict(event.evidence or {}),
-                    "jupiter_error": _jupiter_error_snapshot(exc),
-                }
+                _record_jupiter_entry_error(event, exc)
         else:
             event.fast_provisional_rejection_reason = "NOT_A_BUY_SIGNAL"
             if signal.side == "SELL" and promoted_activation is not None:
