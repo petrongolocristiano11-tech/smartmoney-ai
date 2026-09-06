@@ -20,12 +20,15 @@ from backend.app.services.gen4_promoted_selective_lifecycle_service import (
     DRAIN_CONFIRMATION,
     M299_FORMAL_ACQUISITION_REPORT_SHA256,
     M306_FORMAL_REPORT_SHA256,
+    M307_FORMAL_LINEAGE_BY_WALLET,
     STOP_CONFIRMATION,
     M307Error,
     activate_promoted_selective_lifecycle,
     build_activation_package,
+    formal_lineage_for_wallet,
     get_promoted_activation_for_event,
     transition_promoted_selective_lifecycle,
+    validate_activation_package,
 )
 from backend.app.services.gen4_selective_challenger_promotion_service import (
     M300_SCOPE,
@@ -33,6 +36,11 @@ from backend.app.services.gen4_selective_challenger_promotion_service import (
 )
 
 WALLET = "89f3DSmRiFsAZWQXCQMYPwyEUtxbVeCDP7JEjsXrbWST"
+CGAZ = "CGAZ8ysbcmc6a14uYRqDJfnQvjRF4fVSZBYiTsZgRwcH"
+TWO_MQR = "2mqrindMAjJEQPLhroYWyiYPo5h9iAsahfdd4QtsjwdY"
+TWO_MQR_M306 = "801b1d2c3982f45bf92dba2ccbb7253897997395c90947ca1e4878f297d781e0"
+TWO_MQR_M299 = "d51c9c45625c5a4d71612b3bf2f6b05bb621d2b844975ae3e55479a414927bb8"
+TWO_MQR_TERMINAL = "2026-09-06T20:49:53.954151+00:00"
 
 
 def _decision(wallet: str = WALLET) -> dict:
@@ -110,6 +118,19 @@ def _package(activation_at: datetime) -> dict:
         operational_policy_snapshot=_policy(),
         operational_policy_source_sha256="a" * 64,
         candidate_watchlist_wallets=[WALLET],
+        activation_at=activation_at,
+    )
+
+
+def _package_for_wallet(wallet: str, activation_at: datetime) -> dict:
+    lineage = formal_lineage_for_wallet(wallet)
+    return build_activation_package(
+        m300_decision=_decision(wallet),
+        m306_report_sha256=lineage["m306_report_sha256"],
+        m299_acquisition_report_sha256=lineage["m299_acquisition_report_sha256"],
+        operational_policy_snapshot=_policy(),
+        operational_policy_source_sha256="a" * 64,
+        candidate_watchlist_wallets=[wallet],
         activation_at=activation_at,
     )
 
@@ -361,3 +382,83 @@ def test_activation_package_rejects_wrong_formal_lineage():
             candidate_watchlist_wallets=[WALLET],
             activation_at=activation_at,
         )
+
+def test_wallet_scoped_formal_lineage_registry_preserves_legacy_and_adds_2mqr():
+    assert set(M307_FORMAL_LINEAGE_BY_WALLET) == {CGAZ, WALLET, TWO_MQR}
+    assert formal_lineage_for_wallet(WALLET) == {
+        "m306_report_sha256": M306_FORMAL_REPORT_SHA256,
+        "m299_acquisition_report_sha256": M299_FORMAL_ACQUISITION_REPORT_SHA256,
+        "m306_terminal_utc": "2026-09-01T15:12:26.113486+00:00",
+    }
+    assert formal_lineage_for_wallet(CGAZ) == formal_lineage_for_wallet(WALLET)
+    assert formal_lineage_for_wallet(TWO_MQR) == {
+        "m306_report_sha256": TWO_MQR_M306,
+        "m299_acquisition_report_sha256": TWO_MQR_M299,
+        "m306_terminal_utc": TWO_MQR_TERMINAL,
+    }
+
+
+def test_2mqr_activation_package_accepts_only_its_wallet_scoped_lineage():
+    activation_at = datetime(2026, 9, 6, 21, 0, tzinfo=timezone.utc)
+    package = _package_for_wallet(TWO_MQR, activation_at)
+    validated = validate_activation_package(package)
+    lineage = validated["formal_promotion_lineage"]
+    assert validated["wallet"] == TWO_MQR
+    assert lineage["m306_report_sha256"] == TWO_MQR_M306
+    assert lineage["m299_acquisition_report_sha256"] == TWO_MQR_M299
+    assert lineage["m306_terminal_utc"] == TWO_MQR_TERMINAL
+    assert validated["decision_envelope"]["evaluated_at_utc"] == TWO_MQR_TERMINAL
+
+
+def test_2mqr_rejects_legacy_cross_wallet_lineage_and_arbitrary_sha():
+    activation_at = datetime(2026, 9, 6, 21, 0, tzinfo=timezone.utc)
+    with pytest.raises(M307Error):
+        build_activation_package(
+            m300_decision=_decision(TWO_MQR),
+            m306_report_sha256=M306_FORMAL_REPORT_SHA256,
+            m299_acquisition_report_sha256=M299_FORMAL_ACQUISITION_REPORT_SHA256,
+            operational_policy_snapshot=_policy(),
+            operational_policy_source_sha256="a" * 64,
+            candidate_watchlist_wallets=[TWO_MQR],
+            activation_at=activation_at,
+        )
+    with pytest.raises(M307Error):
+        build_activation_package(
+            m300_decision=_decision(TWO_MQR),
+            m306_report_sha256=TWO_MQR_M306,
+            m299_acquisition_report_sha256="0" * 64,
+            operational_policy_snapshot=_policy(),
+            operational_policy_source_sha256="a" * 64,
+            candidate_watchlist_wallets=[TWO_MQR],
+            activation_at=activation_at,
+        )
+
+
+def test_legacy_wallet_rejects_2mqr_cross_wallet_lineage():
+    activation_at = datetime(2026, 9, 6, 21, 0, tzinfo=timezone.utc)
+    with pytest.raises(M307Error):
+        build_activation_package(
+            m300_decision=_decision(WALLET),
+            m306_report_sha256=TWO_MQR_M306,
+            m299_acquisition_report_sha256=TWO_MQR_M299,
+            operational_policy_snapshot=_policy(),
+            operational_policy_source_sha256="a" * 64,
+            candidate_watchlist_wallets=[WALLET],
+            activation_at=activation_at,
+        )
+
+
+def test_2mqr_activation_persists_wallet_scoped_m306_lineage(db: Session):
+    activation_at = datetime(2026, 9, 6, 21, 0, tzinfo=timezone.utc)
+    result = activate_promoted_selective_lifecycle(
+        db,
+        confirmation=ACTIVATE_CONFIRMATION,
+        activation_package=_package_for_wallet(TWO_MQR, activation_at),
+    )
+    row = db.query(CanonicalParserGen4PromotedSelectiveActivation).filter_by(
+        activation_id=result["activation_id"]
+    ).one()
+    assert row.wallet_address == TWO_MQR
+    assert row.formal_m306_report_sha256 == TWO_MQR_M306
+    assert row.evidence["formal_promotion_lineage"]["m299_acquisition_report_sha256"] == TWO_MQR_M299
+    assert row.evidence["formal_promotion_lineage"]["m306_terminal_utc"] == TWO_MQR_TERMINAL

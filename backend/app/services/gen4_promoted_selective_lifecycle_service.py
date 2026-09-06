@@ -43,6 +43,24 @@ M306_FORMAL_REPORT_SHA256 = "05796e4cc3d771752e10f61490d4c763288b7f3c8844db11c5c
 M299_FORMAL_ACQUISITION_REPORT_SHA256 = "b0893640854362cb28a084cc6f6ddd07b4f457299727bf627d21703114b63c19"
 M306_FORMAL_TERMINAL_UTC = "2026-09-01T15:12:26.113486+00:00"
 
+M307_FORMAL_LINEAGE_BY_WALLET: dict[str, dict[str, str]] = {
+    "CGAZ8ysbcmc6a14uYRqDJfnQvjRF4fVSZBYiTsZgRwcH": {
+        "m306_report_sha256": M306_FORMAL_REPORT_SHA256,
+        "m299_acquisition_report_sha256": M299_FORMAL_ACQUISITION_REPORT_SHA256,
+        "m306_terminal_utc": M306_FORMAL_TERMINAL_UTC,
+    },
+    "89f3DSmRiFsAZWQXCQMYPwyEUtxbVeCDP7JEjsXrbWST": {
+        "m306_report_sha256": M306_FORMAL_REPORT_SHA256,
+        "m299_acquisition_report_sha256": M299_FORMAL_ACQUISITION_REPORT_SHA256,
+        "m306_terminal_utc": M306_FORMAL_TERMINAL_UTC,
+    },
+    "2mqrindMAjJEQPLhroYWyiYPo5h9iAsahfdd4QtsjwdY": {
+        "m306_report_sha256": "801b1d2c3982f45bf92dba2ccbb7253897997395c90947ca1e4878f297d781e0",
+        "m299_acquisition_report_sha256": "d51c9c45625c5a4d71612b3bf2f6b05bb621d2b844975ae3e55479a414927bb8",
+        "m306_terminal_utc": "2026-09-06T20:49:53.954151+00:00",
+    },
+}
+
 ACTIVATE_CONFIRMATION = "ACTIVATE_M307_PROMOTED_SELECTIVE_LIFECYCLE"
 DRAIN_CONFIRMATION = "DRAIN_M307_PROMOTED_SELECTIVE_LIFECYCLE"
 STOP_CONFIRMATION = "STOP_M307_PROMOTED_SELECTIVE_LIFECYCLE"
@@ -93,6 +111,28 @@ def _without_integrity(value: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in value.items() if k != "integrity"}
 
 
+def formal_lineage_for_wallet(wallet: str) -> dict[str, str]:
+    value = str(wallet or "").strip()
+    lineage = dict(M307_FORMAL_LINEAGE_BY_WALLET.get(value) or {})
+    _require(bool(lineage), "M307 wallet senza formal lineage registry.")
+    m306_sha = _sha64(
+        lineage.get("m306_report_sha256"),
+        label="registry M306 formal report",
+    )
+    m299_sha = _sha64(
+        lineage.get("m299_acquisition_report_sha256"),
+        label="registry M299 acquisition report",
+    )
+    terminal_text = str(lineage.get("m306_terminal_utc") or "")
+    terminal = _aware(terminal_text)
+    _require(terminal is not None, "M307 registry M306 terminal invalido.")
+    return {
+        "m306_report_sha256": m306_sha,
+        "m299_acquisition_report_sha256": m299_sha,
+        "m306_terminal_utc": terminal.isoformat(),
+    }
+
+
 def build_activation_package(
     *,
     m300_decision: dict[str, Any],
@@ -111,18 +151,19 @@ def build_activation_package(
     checks = dict(decision.get("checks") or {})
     _require(bool(checks) and all(value is True for value in checks.values()), "M307 M300 checks non tutti PASS.")
 
+    wallet = str(decision["wallet"])
+    formal_lineage = formal_lineage_for_wallet(wallet)
     m306_sha = _sha64(m306_report_sha256, label="M306 formal report")
     _require(
-        m306_sha == M306_FORMAL_REPORT_SHA256,
-        "M307 M306 formal report SHA inatteso.",
+        m306_sha == formal_lineage["m306_report_sha256"],
+        "M307 M306 formal report SHA inatteso per wallet.",
     )
     m299_sha = _sha64(m299_acquisition_report_sha256, label="M299 acquisition report")
     _require(
-        m299_sha == M299_FORMAL_ACQUISITION_REPORT_SHA256,
-        "M307 M299 acquisition report SHA inatteso.",
+        m299_sha == formal_lineage["m299_acquisition_report_sha256"],
+        "M307 M299 acquisition report SHA inatteso per wallet.",
     )
 
-    wallet = str(decision["wallet"])
     watchlist = sorted({str(item).strip() for item in candidate_watchlist_wallets if str(item).strip()})
     _require(wallet in watchlist, "M307 wallet non presente nella candidate watchlist al momento della preparazione.")
 
@@ -133,7 +174,7 @@ def build_activation_package(
     )
     activated = _aware(activation_at)
     _require(activated is not None, "M307 activation_at invalido.")
-    formal_terminal = _aware(M306_FORMAL_TERMINAL_UTC)
+    formal_terminal = _aware(formal_lineage["m306_terminal_utc"])
     _require(formal_terminal is not None and activated >= formal_terminal, "M307 activation precedente alla formal M306 evaluation.")
 
     decision_envelope = sign_promotion_decision_envelope(
@@ -159,7 +200,7 @@ def build_activation_package(
         "formal_promotion_lineage": {
             "m306_report_sha256": m306_sha,
             "m299_acquisition_report_sha256": m299_sha,
-            "m306_terminal_utc": M306_FORMAL_TERMINAL_UTC,
+            "m306_terminal_utc": formal_lineage["m306_terminal_utc"],
             "m300_state": decision["state"],
             "m300_promotion_eligible": True,
         },
@@ -193,15 +234,22 @@ def validate_activation_package(package: dict[str, Any]) -> dict[str, Any]:
     )
     _require(p.get("version") == M307_VERSION, "M307 activation package version inattesa.")
     wallet = str(p.get("wallet") or "")
+    expected_lineage = formal_lineage_for_wallet(wallet)
     lineage = dict(p.get("formal_promotion_lineage") or {})
     _require(
-        str(lineage.get("m306_report_sha256") or "") == M306_FORMAL_REPORT_SHA256,
-        "M307 activation package M306 lineage invalida.",
+        str(lineage.get("m306_report_sha256") or "")
+        == expected_lineage["m306_report_sha256"],
+        "M307 activation package M306 lineage invalida per wallet.",
     )
     _require(
         str(lineage.get("m299_acquisition_report_sha256") or "")
-        == M299_FORMAL_ACQUISITION_REPORT_SHA256,
-        "M307 activation package M299 lineage invalida.",
+        == expected_lineage["m299_acquisition_report_sha256"],
+        "M307 activation package M299 lineage invalida per wallet.",
+    )
+    _require(
+        str(lineage.get("m306_terminal_utc") or "")
+        == expected_lineage["m306_terminal_utc"],
+        "M307 activation package M306 terminal lineage invalido per wallet.",
     )
     _require(lineage.get("m300_state") == "PROMOTION_ELIGIBLE_DISARMED", "M307 activation package M300 state invalido.")
     _require(lineage.get("m300_promotion_eligible") is True, "M307 activation package M300 eligibility invalida.")
@@ -212,6 +260,17 @@ def validate_activation_package(package: dict[str, Any]) -> dict[str, Any]:
 
     envelope = validate_promotion_decision_envelope(dict(p.get("decision_envelope") or {}))
     _require(str(envelope.get("wallet") or "") == wallet, "M307 decision envelope wallet mismatch.")
+    _require(
+        str(envelope.get("evaluated_at_utc") or "")
+        == expected_lineage["m306_terminal_utc"],
+        "M307 decision envelope formal terminal mismatch.",
+    )
+    envelope_lineage = dict(envelope.get("lineage") or {})
+    _require(
+        str(envelope_lineage.get("m300_acquisition_report_sha256") or "")
+        == expected_lineage["m299_acquisition_report_sha256"],
+        "M307 decision envelope acquisition lineage mismatch.",
+    )
     blueprint = dict(p.get("activation_blueprint") or {})
     _require(blueprint.get("scope") == M301_ACTIVATION_BLUEPRINT_SCOPE, "M307 activation blueprint scope invalido.")
     _require(str(blueprint.get("wallet") or "") == wallet, "M307 activation blueprint wallet mismatch.")
@@ -343,7 +402,9 @@ def activate_promoted_selective_lifecycle(
         status=ACTIVATION_ACTIVE,
         activation_anchor_at=_aware(blueprint["activation_anchor_utc"]),
         decision_envelope_sha256=str(dict(envelope.get("integrity") or {}).get("payload_sha256") or ""),
-        formal_m306_report_sha256=M306_FORMAL_REPORT_SHA256,
+        formal_m306_report_sha256=str(
+            dict(package["formal_promotion_lineage"])["m306_report_sha256"]
+        ),
         policy_hash=str(frozen["policy_hash"]),
         policy_snapshot=frozen,
         decision_envelope=envelope,

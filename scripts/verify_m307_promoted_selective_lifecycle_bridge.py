@@ -22,6 +22,8 @@ from backend.app.services.gen4_post_anchor_selective_evidence_service import (
 from backend.app.services.gen4_promoted_selective_lifecycle_service import (
     M299_FORMAL_ACQUISITION_REPORT_SHA256,
     M306_FORMAL_REPORT_SHA256,
+    M307_FORMAL_LINEAGE_BY_WALLET,
+    M307Error,
     M307_AUTOMATIC_PROMOTION,
     M307_BRIDGE_ARMED,
     M307_BRIDGE_IMPLEMENTED,
@@ -31,6 +33,7 @@ from backend.app.services.gen4_promoted_selective_lifecycle_service import (
     M307_SCOPE,
     M307_VERSION,
     build_activation_package,
+    formal_lineage_for_wallet,
     validate_activation_package,
 )
 from backend.app.services.gen4_selective_challenger_lifecycle_bridge_design_service import (
@@ -47,13 +50,18 @@ ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "alembic" / "versions" / "f5d8b1c3e470_add_m307_promoted_selective_lifecycle_bridge.py"
 
 WALLET = "89f3DSmRiFsAZWQXCQMYPwyEUtxbVeCDP7JEjsXrbWST"
+CGAZ = "CGAZ8ysbcmc6a14uYRqDJfnQvjRF4fVSZBYiTsZgRwcH"
+TWO_MQR = "2mqrindMAjJEQPLhroYWyiYPo5h9iAsahfdd4QtsjwdY"
+TWO_MQR_M306 = "801b1d2c3982f45bf92dba2ccbb7253897997395c90947ca1e4878f297d781e0"
+TWO_MQR_M299 = "d51c9c45625c5a4d71612b3bf2f6b05bb621d2b844975ae3e55479a414927bb8"
+TWO_MQR_TERMINAL = "2026-09-06T20:49:53.954151+00:00"
 
 
-def _decision() -> dict:
+def _decision(wallet: str = WALLET) -> dict:
     return {
         "scope": M300_SCOPE,
         "version": M300_VERSION,
-        "wallet": WALLET,
+        "wallet": wallet,
         "state": "PROMOTION_ELIGIBLE_DISARMED",
         "promotion_eligible": True,
         "promotion_armed": False,
@@ -112,6 +120,16 @@ def main() -> None:
     assert M307_SCOPE == "M307_PROMOTED_SELECTIVE_LIFECYCLE_BRIDGE_IMPLEMENTED_DISARMED"
     assert M307_VERSION.endswith("/1")
 
+    assert set(M307_FORMAL_LINEAGE_BY_WALLET) == {CGAZ, WALLET, TWO_MQR}
+    assert formal_lineage_for_wallet(WALLET)["m306_report_sha256"] == M306_FORMAL_REPORT_SHA256
+    assert formal_lineage_for_wallet(WALLET)["m299_acquisition_report_sha256"] == M299_FORMAL_ACQUISITION_REPORT_SHA256
+    assert formal_lineage_for_wallet(CGAZ) == formal_lineage_for_wallet(WALLET)
+    assert formal_lineage_for_wallet(TWO_MQR) == {
+        "m306_report_sha256": TWO_MQR_M306,
+        "m299_acquisition_report_sha256": TWO_MQR_M299,
+        "m306_terminal_utc": TWO_MQR_TERMINAL,
+    }
+
     assert CanonicalParserGen4PromotedSelectiveActivation.__tablename__ == PROMOTED_ACTIVATION_TABLE
     assert CanonicalParserGen4PromotedSelectivePosition.__tablename__ == PROMOTED_POSITION_TABLE
     assert M299_PROMOTED_SELECTIVE_SCOPE == PROMOTED_SELECTIVE_SCOPE
@@ -168,6 +186,57 @@ def main() -> None:
     assert package["activation_blueprint"]["runtime_route"]["helius_provider_union_change_required"] is False
     assert package["activation_blueprint"]["runtime_route"]["legacy_start_qualified_candidate_required"] is False
 
+    two_mqr_lineage = formal_lineage_for_wallet(TWO_MQR)
+    two_mqr_package = build_activation_package(
+        m300_decision=_decision(TWO_MQR),
+        m306_report_sha256=two_mqr_lineage["m306_report_sha256"],
+        m299_acquisition_report_sha256=two_mqr_lineage["m299_acquisition_report_sha256"],
+        operational_policy_snapshot={
+            "simulated_input_lamports": 10_000_000,
+            "slippage_bps": 300,
+            "max_quote_latency_ms": 5_000,
+            "max_price_impact_bps": 500,
+            "max_price_deterioration_bps": 1_000,
+            "estimated_network_fee_lamports": 100_000,
+            "live_execution": False,
+            "paper_execution": False,
+            "automatic_live_activation": False,
+        },
+        operational_policy_source_sha256="b" * 64,
+        candidate_watchlist_wallets=[TWO_MQR],
+        activation_at=datetime(2026, 9, 6, 21, 0, tzinfo=timezone.utc),
+    )
+    validate_activation_package(two_mqr_package)
+    assert two_mqr_package["formal_promotion_lineage"]["m306_report_sha256"] == TWO_MQR_M306
+    assert two_mqr_package["formal_promotion_lineage"]["m299_acquisition_report_sha256"] == TWO_MQR_M299
+    assert two_mqr_package["formal_promotion_lineage"]["m306_terminal_utc"] == TWO_MQR_TERMINAL
+    assert two_mqr_package["decision_envelope"]["evaluated_at_utc"] == TWO_MQR_TERMINAL
+
+    try:
+        build_activation_package(
+            m300_decision=_decision(TWO_MQR),
+            m306_report_sha256=M306_FORMAL_REPORT_SHA256,
+            m299_acquisition_report_sha256=M299_FORMAL_ACQUISITION_REPORT_SHA256,
+            operational_policy_snapshot={
+                "simulated_input_lamports": 10_000_000,
+                "slippage_bps": 300,
+                "max_quote_latency_ms": 5_000,
+                "max_price_impact_bps": 500,
+                "max_price_deterioration_bps": 1_000,
+                "estimated_network_fee_lamports": 100_000,
+                "live_execution": False,
+                "paper_execution": False,
+                "automatic_live_activation": False,
+            },
+            operational_policy_source_sha256="b" * 64,
+            candidate_watchlist_wallets=[TWO_MQR],
+            activation_at=datetime(2026, 9, 6, 21, 0, tzinfo=timezone.utc),
+        )
+    except M307Error:
+        pass
+    else:
+        raise AssertionError("M307 accepted cross-wallet historical lineage for 2MQR")
+
     text = MIGRATION.read_text(encoding="utf-8-sig")
     assert 'revision = "f5d8b1c3e470"' in text
     assert 'down_revision = "e4c7a9d1b268"' in text
@@ -189,6 +258,9 @@ def main() -> None:
         "m299_promoted_adapter=true;"
         "webhook_coverage_fail_closed_without_receipts=true;"
         "m309_authenticated_coverage_extension_compatible=true;"
+        "wallet_scoped_formal_lineage=true;"
+        "cross_wallet_lineage_rejected=true;"
+        "2mqr_lineage_registered=true;"
         "live=false;signer=false;paper=0"
     )
 
