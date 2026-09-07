@@ -7,6 +7,11 @@ from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     PENDING_FLAT_M74_ADMITTED_WALLETS,
     PENDING_FLAT_M74_ROOT_CAUSE_REPORT_SHA256,
     PENDING_FLAT_M74_TARGETED_REPORT_SHA256,
+    PENDING_FLAT_M74_R8_MAXYIELD_REPORT_SHA256,
+    PENDING_FLAT_M74_R4_CURRENT_ROOT_CAUSE_REPORT_SHA256,
+    PENDING_FLAT_M74_R2_ADMISSION_READINESS_REPORT_SHA256,
+    PENDING_FLAT_M74_LEGACY_ADMISSION_KIND,
+    PENDING_FLAT_M74_R8_ADMISSION_KIND,
     R7_FORMAL_REPORT_SHA256,
     build_formal_m74_admission_report,
     formal_m74_admission_for_wallet,
@@ -124,8 +129,8 @@ def test_5pa_historical_m74_pass_cannot_substitute_for_missing_new_candidate_att
 
 def test_pending_flat_registry_is_exact_and_never_claims_formal_m74_pass():
     registry = validate_pending_flat_m74_admission_registry()
-    assert set(PENDING_FLAT_M74_ADMITTED_WALLETS) == {"3N7", "2MQR"}
-    assert len(registry) == 2
+    assert set(PENDING_FLAT_M74_ADMITTED_WALLETS) == {"3N7", "2MQR", "9rDM", "D9gQ", "37uM"}
+    assert len(registry) == 5
     for label, wallet in PENDING_FLAT_M74_ADMITTED_WALLETS.items():
         evidence = registry[wallet]
         assert evidence["qualification_state"] == "QUALIFIED_PENDING_FLAT"
@@ -136,8 +141,16 @@ def test_pending_flat_registry_is_exact_and_never_claims_formal_m74_pass():
         assert evidence["all_non_flatness_m74_checks_passed"] is True
         assert evidence["flatness_only_blocker"] is True
         assert evidence["open_positions"] == 5
-        assert evidence["targeted_report_sha256"] == PENDING_FLAT_M74_TARGETED_REPORT_SHA256
-        assert evidence["root_cause_report_sha256"] == PENDING_FLAT_M74_ROOT_CAUSE_REPORT_SHA256
+        if label in {"3N7", "2MQR"}:
+            assert evidence["admission_kind"] == PENDING_FLAT_M74_LEGACY_ADMISSION_KIND
+            assert evidence["targeted_report_sha256"] == PENDING_FLAT_M74_TARGETED_REPORT_SHA256
+            assert evidence["root_cause_report_sha256"] == PENDING_FLAT_M74_ROOT_CAUSE_REPORT_SHA256
+            assert evidence["admission_readiness_report_sha256"] is None
+        else:
+            assert evidence["admission_kind"] == PENDING_FLAT_M74_R8_ADMISSION_KIND
+            assert evidence["targeted_report_sha256"] == PENDING_FLAT_M74_R8_MAXYIELD_REPORT_SHA256
+            assert evidence["root_cause_report_sha256"] == PENDING_FLAT_M74_R4_CURRENT_ROOT_CAUSE_REPORT_SHA256
+            assert evidence["admission_readiness_report_sha256"] == PENDING_FLAT_M74_R2_ADMISSION_READINESS_REPORT_SHA256
         assert evidence["parser_gap_positions"] == 0
         assert evidence["position_turnover"] is False
         assert evidence["historical_open_positions_quarantined"] is True
@@ -149,10 +162,12 @@ def test_pending_flat_registry_is_exact_and_never_claims_formal_m74_pass():
 
 def test_pending_flat_wallets_are_m300_targets_with_fresh_evidence_only():
     anchor = datetime(2026, 9, 5, 10, 0, 0, tzinfo=timezone.utc)
+    registry = validate_pending_flat_m74_admission_registry()
     for label, wallet in PENDING_FLAT_M74_ADMITTED_WALLETS.items():
         assert TARGETS[label] == wallet
+        evidence = registry[wallet]
         provenance = target_admission_provenance(wallet)
-        assert provenance["kind"] == "R7_M74_QUALIFIED_PENDING_FLAT_ADMISSION"
+        assert provenance["kind"] == evidence["admission_kind"]
         assert provenance["upstream_formal_m74_pass"] is False
         assert provenance["upstream_economic_m74_qualification"] is True
         assert provenance["upstream_flatness_only_blocker"] is True

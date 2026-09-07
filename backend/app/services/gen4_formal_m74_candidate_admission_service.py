@@ -6,7 +6,7 @@ from backend.app.services.gen4_zero_helius_final_pre_micro_live_service import (
     canonical_sha256,
 )
 
-FORMAL_M74_ADMISSION_VERSION = "gen4-formal-m74-candidate-admission/2"
+FORMAL_M74_ADMISSION_VERSION = "gen4-formal-m74-candidate-admission/3"
 FORMAL_M74_ADMISSION_SCOPE = "FORMAL_M74_PASS_TO_FASTPATH_CANDIDATE_ADMISSION_DISARMED"
 FORMAL_M74_ADMISSION_ARMED = False
 FORMAL_M74_AUTOMATIC_WATCHLIST_MUTATION = False
@@ -24,11 +24,19 @@ FORMAL_M74_ADMITTED_WALLETS: dict[str, str] = {
 
 PENDING_FLAT_M74_TARGETED_REPORT_SHA256 = "e1f8aab7fdbeff94fd8927dba55c03fb4d564375bdbd332a9e413b70d945b8e6"
 PENDING_FLAT_M74_ROOT_CAUSE_REPORT_SHA256 = "be808e1a2b8cd7a2855629b6f36e9be5bcb6f8bfc7260878d148c1c6be9e9813"
+PENDING_FLAT_M74_R8_MAXYIELD_REPORT_SHA256 = "4f4ff27b7d78a89ed586a4b21ebf4ab022bd9302122465495734e576a651a35c"
+PENDING_FLAT_M74_R4_CURRENT_ROOT_CAUSE_REPORT_SHA256 = "a3943ee1b79a7256f531647e9bf1695da85b219c5b1151eb6ceb1eacff20ed78"
+PENDING_FLAT_M74_R2_ADMISSION_READINESS_REPORT_SHA256 = "1e3b9620bcd27a0285ca72afc07da11932adcb919521eb784e7510485deff7c1"
+PENDING_FLAT_M74_LEGACY_ADMISSION_KIND = "R7_M74_QUALIFIED_PENDING_FLAT_ADMISSION"
+PENDING_FLAT_M74_R8_ADMISSION_KIND = "R8_M74_QUALIFIED_PENDING_FLAT_ADMISSION"
 PENDING_FLAT_M74_STATE = "QUALIFIED_PENDING_FLAT"
 
 PENDING_FLAT_M74_ADMITTED_WALLETS: dict[str, str] = {
     "3N7": "3N7aa2Wkg9dEm8kkC4F7M8knExDyEL8Vehu1S9H3NA2K",
     "2MQR": "2mqrindMAjJEQPLhroYWyiYPo5h9iAsahfdd4QtsjwdY",
+    "9rDM": "9rDMVCH7mQ9N2PkyHw8KT8wraMhF8tyMz9R631yyL1df",
+    "D9gQ": "D9gQ6RhKEpnobPBUdWY5bPQt2p3zGk3iVz6ChpUi2ArA",
+    "37uM": "37uM1rp8TK7eVURVRnjtaxGkdJyXjgA9uz83DjApcHvq",
 }
 
 # These wallets were evaluated with the unchanged canonical M74 evaluator.
@@ -40,6 +48,7 @@ PENDING_FLAT_M74_ADMITTED_WALLETS: dict[str, str] = {
 # candidate/full-lifecycle evidence.
 PENDING_FLAT_M74_ADMISSION_EVIDENCE: dict[str, dict[str, Any]] = {
     PENDING_FLAT_M74_ADMITTED_WALLETS["3N7"]: {
+        "admission_kind": PENDING_FLAT_M74_LEGACY_ADMISSION_KIND,
         "wallet_address": PENDING_FLAT_M74_ADMITTED_WALLETS["3N7"],
         "qualification_state": PENDING_FLAT_M74_STATE,
         "formal_m74_pass": False,
@@ -56,6 +65,7 @@ PENDING_FLAT_M74_ADMISSION_EVIDENCE: dict[str, dict[str, Any]] = {
         "open_positions": 5,
         "targeted_report_sha256": PENDING_FLAT_M74_TARGETED_REPORT_SHA256,
         "root_cause_report_sha256": PENDING_FLAT_M74_ROOT_CAUSE_REPORT_SHA256,
+        "admission_readiness_report_sha256": None,
         "root_cause_classification": "SOURCE_HAS_NOT_SOLD_THE_5_MODEL_POSITIONS",
         "parser_gap_positions": 0,
         "position_turnover": False,
@@ -68,6 +78,7 @@ PENDING_FLAT_M74_ADMISSION_EVIDENCE: dict[str, dict[str, Any]] = {
         "live_execution_authorized": False,
     },
     PENDING_FLAT_M74_ADMITTED_WALLETS["2MQR"]: {
+        "admission_kind": PENDING_FLAT_M74_LEGACY_ADMISSION_KIND,
         "wallet_address": PENDING_FLAT_M74_ADMITTED_WALLETS["2MQR"],
         "qualification_state": PENDING_FLAT_M74_STATE,
         "formal_m74_pass": False,
@@ -84,6 +95,97 @@ PENDING_FLAT_M74_ADMISSION_EVIDENCE: dict[str, dict[str, Any]] = {
         "open_positions": 5,
         "targeted_report_sha256": PENDING_FLAT_M74_TARGETED_REPORT_SHA256,
         "root_cause_report_sha256": PENDING_FLAT_M74_ROOT_CAUSE_REPORT_SHA256,
+        "admission_readiness_report_sha256": None,
+        "root_cause_classification": "SOURCE_HAS_NOT_SOLD_THE_5_MODEL_POSITIONS",
+        "parser_gap_positions": 0,
+        "position_turnover": False,
+        "historical_open_positions_quarantined": True,
+        "historical_open_positions_followed_by_candidate_lane": False,
+        "candidate_forward_proof_backfilled": False,
+        "m75_pass_claimed": False,
+        "m298_pass_claimed": False,
+        "gen4_copyability_pass_claimed": False,
+        "live_execution_authorized": False,
+    },
+    PENDING_FLAT_M74_ADMITTED_WALLETS["9rDM"]: {
+        "admission_kind": PENDING_FLAT_M74_R8_ADMISSION_KIND,
+        "wallet_address": PENDING_FLAT_M74_ADMITTED_WALLETS["9rDM"],
+        "qualification_state": PENDING_FLAT_M74_STATE,
+        "formal_m74_pass": False,
+        "formal_m74_status": "FAIL_COMPLETE_HISTORY",
+        "formal_evaluator": R7_FORMAL_EVALUATOR,
+        "formal_failure_reasons": ["zero_open_positions"],
+        "history_complete": True,
+        "all_non_flatness_m74_checks_passed": True,
+        "flatness_only_blocker": True,
+        "closed_trade_count": 1193,
+        "profit_factor": 100.28787642,
+        "net_pnl_sol": 23.492750972,
+        "maximum_drawdown_percent": 0.8309446,
+        "open_positions": 5,
+        "targeted_report_sha256": PENDING_FLAT_M74_R8_MAXYIELD_REPORT_SHA256,
+        "root_cause_report_sha256": PENDING_FLAT_M74_R4_CURRENT_ROOT_CAUSE_REPORT_SHA256,
+        "admission_readiness_report_sha256": PENDING_FLAT_M74_R2_ADMISSION_READINESS_REPORT_SHA256,
+        "root_cause_classification": "SOURCE_HAS_NOT_SOLD_THE_5_MODEL_POSITIONS",
+        "parser_gap_positions": 0,
+        "position_turnover": False,
+        "historical_open_positions_quarantined": True,
+        "historical_open_positions_followed_by_candidate_lane": False,
+        "candidate_forward_proof_backfilled": False,
+        "m75_pass_claimed": False,
+        "m298_pass_claimed": False,
+        "gen4_copyability_pass_claimed": False,
+        "live_execution_authorized": False,
+    },
+    PENDING_FLAT_M74_ADMITTED_WALLETS["D9gQ"]: {
+        "admission_kind": PENDING_FLAT_M74_R8_ADMISSION_KIND,
+        "wallet_address": PENDING_FLAT_M74_ADMITTED_WALLETS["D9gQ"],
+        "qualification_state": PENDING_FLAT_M74_STATE,
+        "formal_m74_pass": False,
+        "formal_m74_status": "FAIL_COMPLETE_HISTORY",
+        "formal_evaluator": R7_FORMAL_EVALUATOR,
+        "formal_failure_reasons": ["zero_open_positions"],
+        "history_complete": True,
+        "all_non_flatness_m74_checks_passed": True,
+        "flatness_only_blocker": True,
+        "closed_trade_count": 2122,
+        "profit_factor": 28.39894056,
+        "net_pnl_sol": 52.078692904,
+        "maximum_drawdown_percent": 2.24234512,
+        "open_positions": 5,
+        "targeted_report_sha256": PENDING_FLAT_M74_R8_MAXYIELD_REPORT_SHA256,
+        "root_cause_report_sha256": PENDING_FLAT_M74_R4_CURRENT_ROOT_CAUSE_REPORT_SHA256,
+        "admission_readiness_report_sha256": PENDING_FLAT_M74_R2_ADMISSION_READINESS_REPORT_SHA256,
+        "root_cause_classification": "SOURCE_HAS_NOT_SOLD_THE_5_MODEL_POSITIONS",
+        "parser_gap_positions": 0,
+        "position_turnover": False,
+        "historical_open_positions_quarantined": True,
+        "historical_open_positions_followed_by_candidate_lane": False,
+        "candidate_forward_proof_backfilled": False,
+        "m75_pass_claimed": False,
+        "m298_pass_claimed": False,
+        "gen4_copyability_pass_claimed": False,
+        "live_execution_authorized": False,
+    },
+    PENDING_FLAT_M74_ADMITTED_WALLETS["37uM"]: {
+        "admission_kind": PENDING_FLAT_M74_R8_ADMISSION_KIND,
+        "wallet_address": PENDING_FLAT_M74_ADMITTED_WALLETS["37uM"],
+        "qualification_state": PENDING_FLAT_M74_STATE,
+        "formal_m74_pass": False,
+        "formal_m74_status": "FAIL_COMPLETE_HISTORY",
+        "formal_evaluator": R7_FORMAL_EVALUATOR,
+        "formal_failure_reasons": ["zero_open_positions"],
+        "history_complete": True,
+        "all_non_flatness_m74_checks_passed": True,
+        "flatness_only_blocker": True,
+        "closed_trade_count": 451,
+        "profit_factor": 13.1011247,
+        "net_pnl_sol": 10.83847028,
+        "maximum_drawdown_percent": 1.95599692,
+        "open_positions": 5,
+        "targeted_report_sha256": PENDING_FLAT_M74_R8_MAXYIELD_REPORT_SHA256,
+        "root_cause_report_sha256": PENDING_FLAT_M74_R4_CURRENT_ROOT_CAUSE_REPORT_SHA256,
+        "admission_readiness_report_sha256": PENDING_FLAT_M74_R2_ADMISSION_READINESS_REPORT_SHA256,
         "root_cause_classification": "SOURCE_HAS_NOT_SOLD_THE_5_MODEL_POSITIONS",
         "parser_gap_positions": 0,
         "position_turnover": False,
@@ -172,7 +274,7 @@ def validate_formal_m74_admission_registry() -> dict[str, dict[str, Any]]:
 
 def validate_pending_flat_m74_admission_registry() -> dict[str, dict[str, Any]]:
     _require(
-        len(PENDING_FLAT_M74_ADMITTED_WALLETS) == 2,
+        len(PENDING_FLAT_M74_ADMITTED_WALLETS) == 5,
         "Unexpected pending-flat M74 admission registry size.",
     )
     _require(
@@ -184,16 +286,54 @@ def validate_pending_flat_m74_admission_registry() -> dict[str, dict[str, Any]]:
 
     expected = {
         "3N7": {
+            "admission_kind": PENDING_FLAT_M74_LEGACY_ADMISSION_KIND,
             "closed_trade_count": 157,
             "profit_factor": 3.61359228,
             "net_pnl_sol": 1.525179787,
             "maximum_drawdown_percent": 5.17888299,
+            "targeted_report_sha256": PENDING_FLAT_M74_TARGETED_REPORT_SHA256,
+            "root_cause_report_sha256": PENDING_FLAT_M74_ROOT_CAUSE_REPORT_SHA256,
+            "admission_readiness_report_sha256": None,
         },
         "2MQR": {
+            "admission_kind": PENDING_FLAT_M74_LEGACY_ADMISSION_KIND,
             "closed_trade_count": 734,
             "profit_factor": 2.97184034,
             "net_pnl_sol": 3.167214088,
             "maximum_drawdown_percent": 3.60728645,
+            "targeted_report_sha256": PENDING_FLAT_M74_TARGETED_REPORT_SHA256,
+            "root_cause_report_sha256": PENDING_FLAT_M74_ROOT_CAUSE_REPORT_SHA256,
+            "admission_readiness_report_sha256": None,
+        },
+        "9rDM": {
+            "admission_kind": PENDING_FLAT_M74_R8_ADMISSION_KIND,
+            "closed_trade_count": 1193,
+            "profit_factor": 100.28787642,
+            "net_pnl_sol": 23.492750972,
+            "maximum_drawdown_percent": 0.8309446,
+            "targeted_report_sha256": PENDING_FLAT_M74_R8_MAXYIELD_REPORT_SHA256,
+            "root_cause_report_sha256": PENDING_FLAT_M74_R4_CURRENT_ROOT_CAUSE_REPORT_SHA256,
+            "admission_readiness_report_sha256": PENDING_FLAT_M74_R2_ADMISSION_READINESS_REPORT_SHA256,
+        },
+        "D9gQ": {
+            "admission_kind": PENDING_FLAT_M74_R8_ADMISSION_KIND,
+            "closed_trade_count": 2122,
+            "profit_factor": 28.39894056,
+            "net_pnl_sol": 52.078692904,
+            "maximum_drawdown_percent": 2.24234512,
+            "targeted_report_sha256": PENDING_FLAT_M74_R8_MAXYIELD_REPORT_SHA256,
+            "root_cause_report_sha256": PENDING_FLAT_M74_R4_CURRENT_ROOT_CAUSE_REPORT_SHA256,
+            "admission_readiness_report_sha256": PENDING_FLAT_M74_R2_ADMISSION_READINESS_REPORT_SHA256,
+        },
+        "37uM": {
+            "admission_kind": PENDING_FLAT_M74_R8_ADMISSION_KIND,
+            "closed_trade_count": 451,
+            "profit_factor": 13.1011247,
+            "net_pnl_sol": 10.83847028,
+            "maximum_drawdown_percent": 1.95599692,
+            "targeted_report_sha256": PENDING_FLAT_M74_R8_MAXYIELD_REPORT_SHA256,
+            "root_cause_report_sha256": PENDING_FLAT_M74_R4_CURRENT_ROOT_CAUSE_REPORT_SHA256,
+            "admission_readiness_report_sha256": PENDING_FLAT_M74_R2_ADMISSION_READINESS_REPORT_SHA256,
         },
     }
 
@@ -213,13 +353,19 @@ def validate_pending_flat_m74_admission_registry() -> dict[str, dict[str, Any]]:
         _require(evidence.get("all_non_flatness_m74_checks_passed") is True, f"{label} non-flatness M74 checks not proven.")
         _require(evidence.get("flatness_only_blocker") is True, f"{label} flatness-only marker missing.")
         _require(int(evidence.get("open_positions") or 0) == 5, f"{label} open-position count drift.")
+        metrics = expected[label]
+        _require(evidence.get("admission_kind") == metrics["admission_kind"], f"{label} admission kind drift.")
         _require(
-            evidence.get("targeted_report_sha256") == PENDING_FLAT_M74_TARGETED_REPORT_SHA256,
+            evidence.get("targeted_report_sha256") == metrics["targeted_report_sha256"],
             f"{label} targeted report SHA drift.",
         )
         _require(
-            evidence.get("root_cause_report_sha256") == PENDING_FLAT_M74_ROOT_CAUSE_REPORT_SHA256,
+            evidence.get("root_cause_report_sha256") == metrics["root_cause_report_sha256"],
             f"{label} root-cause report SHA drift.",
+        )
+        _require(
+            evidence.get("admission_readiness_report_sha256") == metrics["admission_readiness_report_sha256"],
+            f"{label} admission-readiness report SHA drift.",
         )
         _require(
             evidence.get("root_cause_classification") == "SOURCE_HAS_NOT_SOLD_THE_5_MODEL_POSITIONS",
@@ -238,7 +384,6 @@ def validate_pending_flat_m74_admission_registry() -> dict[str, dict[str, Any]]:
         _require(evidence.get("gen4_copyability_pass_claimed") is False, f"{label} Gen4 PASS cannot be invented.")
         _require(evidence.get("live_execution_authorized") is False, f"{label} LIVE authorization cannot be inherited.")
 
-        metrics = expected[label]
         _require(int(evidence.get("closed_trade_count") or 0) == metrics["closed_trade_count"], f"{label} closed count drift.")
         for key in ("profit_factor", "net_pnl_sol", "maximum_drawdown_percent"):
             _require(

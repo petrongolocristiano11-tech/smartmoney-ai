@@ -7,6 +7,11 @@ from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     PENDING_FLAT_M74_ADMITTED_WALLETS,
     PENDING_FLAT_M74_ROOT_CAUSE_REPORT_SHA256,
     PENDING_FLAT_M74_TARGETED_REPORT_SHA256,
+    PENDING_FLAT_M74_R8_MAXYIELD_REPORT_SHA256,
+    PENDING_FLAT_M74_R4_CURRENT_ROOT_CAUSE_REPORT_SHA256,
+    PENDING_FLAT_M74_R2_ADMISSION_READINESS_REPORT_SHA256,
+    PENDING_FLAT_M74_LEGACY_ADMISSION_KIND,
+    PENDING_FLAT_M74_R8_ADMISSION_KIND,
     R7_FIX1_SCRIPT_SHA256,
     R7_FORMAL_REPORT_SHA256,
     build_formal_m74_admission_report,
@@ -54,7 +59,7 @@ def main():
     assert registry[wallet]["candidate_forward_proof_backfilled"] is False
 
     pending = validate_pending_flat_m74_admission_registry()
-    assert len(pending) == 2
+    assert len(pending) == 5
     for label, pending_wallet in PENDING_FLAT_M74_ADMITTED_WALLETS.items():
         evidence = pending[pending_wallet]
         assert TARGETS[label] == pending_wallet
@@ -62,8 +67,16 @@ def main():
         assert evidence["formal_failure_reasons"] == ["zero_open_positions"]
         assert evidence["all_non_flatness_m74_checks_passed"] is True
         assert evidence["historical_open_positions_quarantined"] is True
-        assert evidence["targeted_report_sha256"] == PENDING_FLAT_M74_TARGETED_REPORT_SHA256
-        assert evidence["root_cause_report_sha256"] == PENDING_FLAT_M74_ROOT_CAUSE_REPORT_SHA256
+        if label in {"3N7", "2MQR"}:
+            assert evidence["admission_kind"] == PENDING_FLAT_M74_LEGACY_ADMISSION_KIND
+            assert evidence["targeted_report_sha256"] == PENDING_FLAT_M74_TARGETED_REPORT_SHA256
+            assert evidence["root_cause_report_sha256"] == PENDING_FLAT_M74_ROOT_CAUSE_REPORT_SHA256
+            assert evidence["admission_readiness_report_sha256"] is None
+        else:
+            assert evidence["admission_kind"] == PENDING_FLAT_M74_R8_ADMISSION_KIND
+            assert evidence["targeted_report_sha256"] == PENDING_FLAT_M74_R8_MAXYIELD_REPORT_SHA256
+            assert evidence["root_cause_report_sha256"] == PENDING_FLAT_M74_R4_CURRENT_ROOT_CAUSE_REPORT_SHA256
+            assert evidence["admission_readiness_report_sha256"] == PENDING_FLAT_M74_R2_ADMISSION_READINESS_REPORT_SHA256
 
     policy = validate_policy()
     assert policy["minimum_clean_entry_attempts"] == 20
@@ -109,7 +122,7 @@ def main():
         f"wallet={wallet};formal_m74_report_sha={R7_FORMAL_REPORT_SHA256};"
         "m300_target=yes;new_candidate_attempt_floor=20;new_accepted_floor=10;"
         "historical_backfill=no;legacy_gen4_pass_invented=no;"
-        "pending_flat=3N7|2MQR;historical_positions=quarantined;"
+        "pending_flat=3N7|2MQR|9rDM|D9gQ|37uM;historical_positions=quarantined;"
         "watchlist_mutation=manual_future_step;provider_mutation=no;"
         "m75_changed=no;m298_changed=no;pam_changed=no;live=no"
     )

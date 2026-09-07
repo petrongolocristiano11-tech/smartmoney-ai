@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     FORMAL_M74_ADMITTED_WALLETS,
     PENDING_FLAT_M74_ADMITTED_WALLETS,
+    validate_pending_flat_m74_admission_registry,
 )
 
 from backend.app.services.gen4_selective_challenger_promotion_service import (
@@ -200,6 +201,7 @@ def test_formal_m74_admitted_wallet_uses_same_m300_gate_without_backfill():
 
 def test_pending_flat_m74_admission_uses_identical_m300_gate_and_quarantines_history():
     anchor = datetime(2026, 9, 5, 10, 0, 0, tzinfo=timezone.utc)
+    pending_registry = validate_pending_flat_m74_admission_registry()
     for label, wallet in PENDING_FLAT_M74_ADMITTED_WALLETS.items():
         assert TARGETS[label] == wallet
         out = evaluate_candidate_promotion(
@@ -209,7 +211,7 @@ def test_pending_flat_m74_admission_uses_identical_m300_gate_and_quarantines_his
             terminal_at=anchor + timedelta(hours=2),
         )
         assert out["promotion_eligible"] is True
-        assert out["target_admission"]["kind"] == "R7_M74_QUALIFIED_PENDING_FLAT_ADMISSION"
+        assert out["target_admission"]["kind"] == pending_registry[wallet]["admission_kind"]
         assert out["target_admission"]["upstream_formal_m74_pass"] is False
         assert out["target_admission"]["upstream_economic_m74_qualification"] is True
         assert out["target_admission"]["upstream_flatness_only_blocker"] is True

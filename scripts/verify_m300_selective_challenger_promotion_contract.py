@@ -11,6 +11,7 @@ from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     FORMAL_M74_ADMITTED_WALLETS,
     PENDING_FLAT_M74_ADMITTED_WALLETS,
     R7_FORMAL_REPORT_SHA256,
+    validate_pending_flat_m74_admission_registry,
 )
 
 from backend.app.services.gen4_selective_challenger_promotion_service import (
@@ -217,6 +218,7 @@ def main():
     assert formal_result["formal_claims"]["m298_pass_claimed"] is False
 
     # Flatness-only historical blockers are admitted as a separate provenance.
+    pending_registry = validate_pending_flat_m74_admission_registry()
     for label, pending_wallet in PENDING_FLAT_M74_ADMITTED_WALLETS.items():
         assert TARGETS[label] == pending_wallet
         pending_rows = []
@@ -236,7 +238,7 @@ def main():
             terminal_at=anchor + timedelta(hours=2),
         )
         assert pending_result["promotion_eligible"] is True
-        assert pending_result["target_admission"]["kind"] == "R7_M74_QUALIFIED_PENDING_FLAT_ADMISSION"
+        assert pending_result["target_admission"]["kind"] == pending_registry[pending_wallet]["admission_kind"]
         assert pending_result["target_admission"]["upstream_formal_m74_pass"] is False
         assert pending_result["target_admission"]["upstream_economic_m74_qualification"] is True
         assert pending_result["target_admission"]["historical_open_positions_quarantined"] is True
@@ -254,7 +256,7 @@ def main():
     print(
         "M300_PRE_VERIFY=PASS;"
         "promotion_disarmed=true;"
-        "targets=CGAZ|89F3|5PA|3N7|2MQR;"
+        "targets=CGAZ|89F3|5PA|3N7|2MQR|9rDM|D9gQ|37uM;"
         "attempt_floor_from_m298=true;"
         "accepted_floor_from_m298_closed_floor=true;"
         "protective_reject_not_hard_gate=true;"

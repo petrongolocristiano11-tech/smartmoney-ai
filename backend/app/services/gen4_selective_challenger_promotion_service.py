@@ -15,6 +15,9 @@ from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     PENDING_FLAT_M74_ADMITTED_WALLETS,
     PENDING_FLAT_M74_ROOT_CAUSE_REPORT_SHA256,
     PENDING_FLAT_M74_TARGETED_REPORT_SHA256,
+    PENDING_FLAT_M74_R8_MAXYIELD_REPORT_SHA256,
+    PENDING_FLAT_M74_R4_CURRENT_ROOT_CAUSE_REPORT_SHA256,
+    PENDING_FLAT_M74_R2_ADMISSION_READINESS_REPORT_SHA256,
     R7_FORMAL_REPORT_SHA256,
     formal_m74_admission_for_wallet,
     pending_flat_m74_admission_for_wallet,
@@ -79,7 +82,7 @@ def target_admission_provenance(wallet: str) -> dict[str, Any]:
     pending = pending_flat_m74_admission_for_wallet(value)
     if pending is not None:
         return {
-            "kind": "R7_M74_QUALIFIED_PENDING_FLAT_ADMISSION",
+            "kind": str(pending.get("admission_kind") or "R7_M74_QUALIFIED_PENDING_FLAT_ADMISSION"),
             "label": next(
                 label for label, admitted in PENDING_FLAT_M74_ADMITTED_WALLETS.items()
                 if admitted == value
@@ -89,8 +92,9 @@ def target_admission_provenance(wallet: str) -> dict[str, Any]:
             "upstream_economic_m74_qualification": True,
             "upstream_flatness_only_blocker": True,
             "upstream_formal_failure_reasons": ["zero_open_positions"],
-            "upstream_targeted_report_sha256": PENDING_FLAT_M74_TARGETED_REPORT_SHA256,
-            "upstream_root_cause_report_sha256": PENDING_FLAT_M74_ROOT_CAUSE_REPORT_SHA256,
+            "upstream_targeted_report_sha256": pending.get("targeted_report_sha256"),
+            "upstream_root_cause_report_sha256": pending.get("root_cause_report_sha256"),
+            "upstream_admission_readiness_report_sha256": pending.get("admission_readiness_report_sha256"),
             "pending_flat_evidence": pending,
             "historical_open_positions_quarantined": True,
             "historical_open_positions_followed_by_candidate_lane": False,
@@ -491,6 +495,9 @@ def build_preparation_report() -> dict[str, Any]:
             "r7_formal_report_sha256": R7_FORMAL_REPORT_SHA256,
             "pending_flat_targeted_report_sha256": PENDING_FLAT_M74_TARGETED_REPORT_SHA256,
             "pending_flat_root_cause_report_sha256": PENDING_FLAT_M74_ROOT_CAUSE_REPORT_SHA256,
+            "pending_flat_r8_maxyield_report_sha256": PENDING_FLAT_M74_R8_MAXYIELD_REPORT_SHA256,
+            "pending_flat_r4_current_root_cause_report_sha256": PENDING_FLAT_M74_R4_CURRENT_ROOT_CAUSE_REPORT_SHA256,
+            "pending_flat_r2_admission_readiness_report_sha256": PENDING_FLAT_M74_R2_ADMISSION_READINESS_REPORT_SHA256,
             "formal_m74_admission_armed": False,
             "candidate_watchlist_mutation_automatic": False,
         },
