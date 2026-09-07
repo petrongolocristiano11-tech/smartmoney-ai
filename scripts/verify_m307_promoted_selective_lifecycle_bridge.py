@@ -55,6 +55,10 @@ TWO_MQR = "2mqrindMAjJEQPLhroYWyiYPo5h9iAsahfdd4QtsjwdY"
 TWO_MQR_M306 = "801b1d2c3982f45bf92dba2ccbb7253897997395c90947ca1e4878f297d781e0"
 TWO_MQR_M299 = "d51c9c45625c5a4d71612b3bf2f6b05bb621d2b844975ae3e55479a414927bb8"
 TWO_MQR_TERMINAL = "2026-09-06T20:49:53.954151+00:00"
+D9GQ = "D9gQ6RhKEpnobPBUdWY5bPQt2p3zGk3iVz6ChpUi2ArA"
+D9GQ_M306 = "0fb1f681cbeb50c024487979a24ae914fa4b9cd178151cc48a78ff5c85b3504d"
+D9GQ_M299 = "d18b388794ac2debe5c38ad56c83ef2dc11b74d7e1c6f5180dec8a96255d8854"
+D9GQ_TERMINAL = "2026-09-07T20:38:58.512074+00:00"
 
 
 def _decision(wallet: str = WALLET) -> dict:
@@ -120,7 +124,7 @@ def main() -> None:
     assert M307_SCOPE == "M307_PROMOTED_SELECTIVE_LIFECYCLE_BRIDGE_IMPLEMENTED_DISARMED"
     assert M307_VERSION.endswith("/1")
 
-    assert set(M307_FORMAL_LINEAGE_BY_WALLET) == {CGAZ, WALLET, TWO_MQR}
+    assert set(M307_FORMAL_LINEAGE_BY_WALLET) == {CGAZ, WALLET, TWO_MQR, D9GQ}
     assert formal_lineage_for_wallet(WALLET)["m306_report_sha256"] == M306_FORMAL_REPORT_SHA256
     assert formal_lineage_for_wallet(WALLET)["m299_acquisition_report_sha256"] == M299_FORMAL_ACQUISITION_REPORT_SHA256
     assert formal_lineage_for_wallet(CGAZ) == formal_lineage_for_wallet(WALLET)
@@ -128,6 +132,11 @@ def main() -> None:
         "m306_report_sha256": TWO_MQR_M306,
         "m299_acquisition_report_sha256": TWO_MQR_M299,
         "m306_terminal_utc": TWO_MQR_TERMINAL,
+    }
+    assert formal_lineage_for_wallet(D9GQ) == {
+        "m306_report_sha256": D9GQ_M306,
+        "m299_acquisition_report_sha256": D9GQ_M299,
+        "m306_terminal_utc": D9GQ_TERMINAL,
     }
 
     assert CanonicalParserGen4PromotedSelectiveActivation.__tablename__ == PROMOTED_ACTIVATION_TABLE
@@ -212,6 +221,32 @@ def main() -> None:
     assert two_mqr_package["formal_promotion_lineage"]["m306_terminal_utc"] == TWO_MQR_TERMINAL
     assert two_mqr_package["decision_envelope"]["evaluated_at_utc"] == TWO_MQR_TERMINAL
 
+    d9gq_lineage = formal_lineage_for_wallet(D9GQ)
+    d9gq_package = build_activation_package(
+        m300_decision=_decision(D9GQ),
+        m306_report_sha256=d9gq_lineage["m306_report_sha256"],
+        m299_acquisition_report_sha256=d9gq_lineage["m299_acquisition_report_sha256"],
+        operational_policy_snapshot={
+            "simulated_input_lamports": 10_000_000,
+            "slippage_bps": 300,
+            "max_quote_latency_ms": 5_000,
+            "max_price_impact_bps": 500,
+            "max_price_deterioration_bps": 1_000,
+            "estimated_network_fee_lamports": 100_000,
+            "live_execution": False,
+            "paper_execution": False,
+            "automatic_live_activation": False,
+        },
+        operational_policy_source_sha256="c" * 64,
+        candidate_watchlist_wallets=[D9GQ],
+        activation_at=datetime(2026, 9, 7, 21, 0, tzinfo=timezone.utc),
+    )
+    validate_activation_package(d9gq_package)
+    assert d9gq_package["formal_promotion_lineage"]["m306_report_sha256"] == D9GQ_M306
+    assert d9gq_package["formal_promotion_lineage"]["m299_acquisition_report_sha256"] == D9GQ_M299
+    assert d9gq_package["formal_promotion_lineage"]["m306_terminal_utc"] == D9GQ_TERMINAL
+    assert d9gq_package["decision_envelope"]["evaluated_at_utc"] == D9GQ_TERMINAL
+
     try:
         build_activation_package(
             m300_decision=_decision(TWO_MQR),
@@ -261,6 +296,7 @@ def main() -> None:
         "wallet_scoped_formal_lineage=true;"
         "cross_wallet_lineage_rejected=true;"
         "2mqr_lineage_registered=true;"
+        "d9gq_lineage_registered=true;"
         "live=false;signer=false;paper=0"
     )
 
