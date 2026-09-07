@@ -13,6 +13,9 @@ from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     PENDING_FLAT_M74_LEGACY_ADMISSION_KIND,
     PENDING_FLAT_M74_R8_ADMISSION_KIND,
     R7_FORMAL_REPORT_SHA256,
+    R9_MAXYIELD_FORMAL_REPORT_SHA256,
+    R9_FORMAL3_ADMISSION_READINESS_REPORT_SHA256,
+    R9_FORMAL_M74_ADMISSION_KIND,
     build_formal_m74_admission_report,
     formal_m74_admission_for_wallet,
     pending_flat_m74_admission_for_wallet,
@@ -62,6 +65,23 @@ def test_formal_m74_registry_is_exact_disarmed_and_does_not_claim_downstream_pas
     assert evidence["gen4_copyability_pass_claimed"] is False
     assert evidence["m75_pass_claimed"] is False
     assert evidence["m298_pass_claimed"] is False
+    assert set(FORMAL_M74_ADMITTED_WALLETS) == {"5PA", "3UdE", "EdNc", "GmRK"}
+    assert len(registry) == 4
+    for label in ("3UdE", "EdNc", "GmRK"):
+        r9_wallet = FORMAL_M74_ADMITTED_WALLETS[label]
+        r9_evidence = registry[r9_wallet]
+        assert r9_evidence["admission_kind"] == R9_FORMAL_M74_ADMISSION_KIND
+        assert r9_evidence["formal_m74_pass"] is True
+        assert r9_evidence["formal_m74_status"] == "PASS"
+        assert r9_evidence["formal_failure_reasons"] == []
+        assert r9_evidence["history_complete"] is True
+        assert r9_evidence["open_positions"] == 0
+        assert r9_evidence["r9_maxyield_report_sha256"] == R9_MAXYIELD_FORMAL_REPORT_SHA256
+        assert r9_evidence["r9_admission_readiness_report_sha256"] == R9_FORMAL3_ADMISSION_READINESS_REPORT_SHA256
+        assert r9_evidence["candidate_forward_proof_backfilled"] is False
+        assert r9_evidence["gen4_copyability_pass_claimed"] is False
+        assert r9_evidence["m75_pass_claimed"] is False
+        assert r9_evidence["m298_pass_claimed"] is False
     report = build_formal_m74_admission_report()
     assert report["evaluation"] == "PASS"
     assert report["armed"] is False
@@ -80,6 +100,49 @@ def test_5pa_is_an_m300_target_only_through_formal_m74_admission_provenance():
     assert admission["upstream_formal_m74_report_sha256"] == R7_FORMAL_REPORT_SHA256
     assert admission["candidate_entry_evidence_backfilled"] is False
     assert formal_m74_admission_for_wallet("unknown") is None
+
+
+def test_r9_formal_m74_wallets_are_m300_targets_with_distinct_r9_provenance():
+    for label in ("3UdE", "EdNc", "GmRK"):
+        wallet = FORMAL_M74_ADMITTED_WALLETS[label]
+        assert TARGETS[label] == wallet
+        admission = target_admission_provenance(wallet)
+        assert admission["kind"] == R9_FORMAL_M74_ADMISSION_KIND
+        assert admission["upstream_formal_m74_pass"] is True
+        assert admission["upstream_economic_m74_qualification"] is True
+        assert admission["upstream_formal_m74_report_sha256"] == R9_MAXYIELD_FORMAL_REPORT_SHA256
+        assert admission["upstream_admission_readiness_report_sha256"] == R9_FORMAL3_ADMISSION_READINESS_REPORT_SHA256
+        assert admission["historical_open_positions_quarantined"] is False
+        assert admission["candidate_entry_evidence_backfilled"] is False
+
+
+def test_r9_formal_m74_wallets_still_require_fresh_twenty_attempts_and_ten_accepted():
+    anchor = datetime(2026, 9, 7, 14, 30, 0, tzinfo=timezone.utc)
+    for label in ("3UdE", "EdNc", "GmRK"):
+        wallet = FORMAL_M74_ADMITTED_WALLETS[label]
+        rows = [
+            _event(
+                wallet,
+                f"{label}-{i}",
+                anchor + timedelta(minutes=i + 1),
+                accepted=i < 10,
+            )
+            for i in range(20)
+        ]
+        result = evaluate_candidate_promotion(
+            wallet=wallet,
+            events=rows,
+            anchor_utc=anchor,
+            terminal_at=anchor + timedelta(hours=2),
+        )
+        assert result["promotion_eligible"] is True
+        assert result["clean_window"]["attempts"] == 20
+        assert result["clean_window"]["accepted"] == 10
+        assert result["target_admission"]["kind"] == R9_FORMAL_M74_ADMISSION_KIND
+        assert result["future_selective_lifecycle_bridge"]["candidate_fastpath_entry_evidence_backfilled"] is False
+        assert result["formal_claims"]["m74_pass_claimed"] is False
+        assert result["formal_claims"]["m298_pass_claimed"] is False
+        assert validate_m300_decision(result)["wallet"] == wallet
 
 
 def test_5pa_m300_still_requires_new_twenty_attempts_and_ten_accepted():

@@ -5,6 +5,9 @@ from datetime import datetime, timedelta, timezone
 from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     FORMAL_M74_ADMITTED_WALLETS,
     PENDING_FLAT_M74_ADMITTED_WALLETS,
+    R9_MAXYIELD_FORMAL_REPORT_SHA256,
+    R9_FORMAL3_ADMISSION_READINESS_REPORT_SHA256,
+    R9_FORMAL_M74_ADMISSION_KIND,
     validate_pending_flat_m74_admission_registry,
 )
 
@@ -197,6 +200,27 @@ def test_formal_m74_admitted_wallet_uses_same_m300_gate_without_backfill():
     assert out["formal_claims"]["gen4_copyability_pass_claimed"] is False
     assert out["formal_claims"]["m298_pass_claimed"] is False
 
+
+
+def test_r9_formal_m74_admission_uses_identical_fresh_m300_gate():
+    anchor = datetime(2026, 9, 7, 14, 30, 0, tzinfo=timezone.utc)
+    for label in ("3UdE", "EdNc", "GmRK"):
+        wallet = FORMAL_M74_ADMITTED_WALLETS[label]
+        assert TARGETS[label] == wallet
+        out = evaluate_candidate_promotion(
+            wallet=wallet,
+            events=_dataset(wallet, anchor, prefix=label),
+            anchor_utc=anchor,
+            terminal_at=anchor + timedelta(hours=2),
+        )
+        assert out["promotion_eligible"] is True
+        assert out["target_admission"]["kind"] == R9_FORMAL_M74_ADMISSION_KIND
+        assert out["target_admission"]["upstream_formal_m74_pass"] is True
+        assert out["target_admission"]["upstream_formal_m74_report_sha256"] == R9_MAXYIELD_FORMAL_REPORT_SHA256
+        assert out["target_admission"]["upstream_admission_readiness_report_sha256"] == R9_FORMAL3_ADMISSION_READINESS_REPORT_SHA256
+        assert out["target_admission"]["candidate_entry_evidence_backfilled"] is False
+        assert out["formal_claims"]["m74_pass_claimed"] is False
+        assert out["formal_claims"]["m298_pass_claimed"] is False
 
 
 def test_pending_flat_m74_admission_uses_identical_m300_gate_and_quarantines_history():

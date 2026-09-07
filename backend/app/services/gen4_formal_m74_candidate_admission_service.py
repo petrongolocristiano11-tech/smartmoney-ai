@@ -6,7 +6,7 @@ from backend.app.services.gen4_zero_helius_final_pre_micro_live_service import (
     canonical_sha256,
 )
 
-FORMAL_M74_ADMISSION_VERSION = "gen4-formal-m74-candidate-admission/3"
+FORMAL_M74_ADMISSION_VERSION = "gen4-formal-m74-candidate-admission/4"
 FORMAL_M74_ADMISSION_SCOPE = "FORMAL_M74_PASS_TO_FASTPATH_CANDIDATE_ADMISSION_DISARMED"
 FORMAL_M74_ADMISSION_ARMED = False
 FORMAL_M74_AUTOMATIC_WATCHLIST_MUTATION = False
@@ -17,8 +17,15 @@ R7_FIX1_SCRIPT_SHA256 = "0d773bb72913cd8eded637357b1ac0c78caa7fe119be3ea26e6bfe4
 R7_FORMAL_REPORT_SHA256 = "4636f386775669ff089c4c8fb4f233d7374afca32bf751f4e1063b589eeaa536"
 R7_FORMAL_EVALUATOR = "evaluate_m74_candidate"
 
+R9_MAXYIELD_FORMAL_REPORT_SHA256 = "1b7da834b3bde1d53c20604c30773c06dc84b409ae95f336f8b8b8de82e43ef6"
+R9_FORMAL3_ADMISSION_READINESS_REPORT_SHA256 = "b84d106a78d813e0b887c9473c692dcb57a9a89ffe909ab483e01aee8349f095"
+R9_FORMAL_M74_ADMISSION_KIND = "R9_FORMAL_M74_PASS_ADMISSION"
+
 FORMAL_M74_ADMITTED_WALLETS: dict[str, str] = {
     "5PA": "5pAewyzzyf3bbD2MEdvEjTHR9AqfL9wWouEA8ft2ggEV",
+    "3UdE": "3UdEqvfFESsjxJ1mJjhevCqvMmLjzTMiyXfiUVaKeFpG",
+    "EdNc": "EdNcBDUFQaTxuaaiFfp5Ss4EanvuXtpGV9ZZvFFVRayd",
+    "GmRK": "GmRKk85gpi21Bti8z95fp3iWAGycAMJDz7uZKpAw1TF8",
 }
 
 
@@ -204,6 +211,7 @@ PENDING_FLAT_M74_ADMISSION_EVIDENCE: dict[str, dict[str, Any]] = {
 # previously-evaluated formal PASS artifact.
 FORMAL_M74_ADMISSION_EVIDENCE: dict[str, dict[str, Any]] = {
     FORMAL_M74_ADMITTED_WALLETS["5PA"]: {
+        "admission_kind": "R7_FORMAL_M74_PASS_ADMISSION",
         "wallet_address": FORMAL_M74_ADMITTED_WALLETS["5PA"],
         "formal_m74_pass": True,
         "formal_m74_status": "PASS",
@@ -215,6 +223,81 @@ FORMAL_M74_ADMISSION_EVIDENCE: dict[str, dict[str, Any]] = {
         "profit_factor": 16.04721544,
         "net_pnl_sol": 9.01787482,
         "maximum_drawdown_percent": 3.31264317,
+        "open_positions": 0,
+        "historical_evidence_only": True,
+        "candidate_forward_proof_backfilled": False,
+        "m75_pass_claimed": False,
+        "m298_pass_claimed": False,
+        "gen4_copyability_pass_claimed": False,
+        "live_execution_authorized": False,
+    },
+    FORMAL_M74_ADMITTED_WALLETS["3UdE"]: {
+        "admission_kind": R9_FORMAL_M74_ADMISSION_KIND,
+        "wallet_address": FORMAL_M74_ADMITTED_WALLETS["3UdE"],
+        "formal_m74_pass": True,
+        "formal_m74_status": "PASS",
+        "formal_evaluator": R7_FORMAL_EVALUATOR,
+        "formal_failure_reasons": [],
+        "history_complete": True,
+        "r9_maxyield_report_sha256": R9_MAXYIELD_FORMAL_REPORT_SHA256,
+        "r9_admission_readiness_report_sha256": R9_FORMAL3_ADMISSION_READINESS_REPORT_SHA256,
+        "closed_trade_count": 187,
+        "history_span_days": 32.1328125,
+        "profit_factor": 34.86653426,
+        "net_pnl_sol": 2.432305971,
+        "maximum_drawdown_percent": 1.5658988,
+        "recent_profit_factor": 13.37938072,
+        "recent_net_pnl_sol": 0.188834504,
+        "open_positions": 0,
+        "historical_evidence_only": True,
+        "candidate_forward_proof_backfilled": False,
+        "m75_pass_claimed": False,
+        "m298_pass_claimed": False,
+        "gen4_copyability_pass_claimed": False,
+        "live_execution_authorized": False,
+    },
+    FORMAL_M74_ADMITTED_WALLETS["EdNc"]: {
+        "admission_kind": R9_FORMAL_M74_ADMISSION_KIND,
+        "wallet_address": FORMAL_M74_ADMITTED_WALLETS["EdNc"],
+        "formal_m74_pass": True,
+        "formal_m74_status": "PASS",
+        "formal_evaluator": R7_FORMAL_EVALUATOR,
+        "formal_failure_reasons": [],
+        "history_complete": True,
+        "r9_maxyield_report_sha256": R9_MAXYIELD_FORMAL_REPORT_SHA256,
+        "r9_admission_readiness_report_sha256": R9_FORMAL3_ADMISSION_READINESS_REPORT_SHA256,
+        "closed_trade_count": 872,
+        "history_span_days": 34.49731481,
+        "profit_factor": 15.19200523,
+        "net_pnl_sol": 11.460454231,
+        "maximum_drawdown_percent": 3.58194619,
+        "recent_profit_factor": 999.0,
+        "recent_net_pnl_sol": 0.235122344,
+        "open_positions": 0,
+        "historical_evidence_only": True,
+        "candidate_forward_proof_backfilled": False,
+        "m75_pass_claimed": False,
+        "m298_pass_claimed": False,
+        "gen4_copyability_pass_claimed": False,
+        "live_execution_authorized": False,
+    },
+    FORMAL_M74_ADMITTED_WALLETS["GmRK"]: {
+        "admission_kind": R9_FORMAL_M74_ADMISSION_KIND,
+        "wallet_address": FORMAL_M74_ADMITTED_WALLETS["GmRK"],
+        "formal_m74_pass": True,
+        "formal_m74_status": "PASS",
+        "formal_evaluator": R7_FORMAL_EVALUATOR,
+        "formal_failure_reasons": [],
+        "history_complete": True,
+        "r9_maxyield_report_sha256": R9_MAXYIELD_FORMAL_REPORT_SHA256,
+        "r9_admission_readiness_report_sha256": R9_FORMAL3_ADMISSION_READINESS_REPORT_SHA256,
+        "closed_trade_count": 339,
+        "history_span_days": 33.21300926,
+        "profit_factor": 4.21251621,
+        "net_pnl_sol": 1.598777065,
+        "maximum_drawdown_percent": 3.29388431,
+        "recent_profit_factor": 1.14362375,
+        "recent_net_pnl_sol": 0.007222638,
         "open_positions": 0,
         "historical_evidence_only": True,
         "candidate_forward_proof_backfilled": False,
@@ -246,30 +329,97 @@ def validate_formal_m74_admission_registry() -> dict[str, dict[str, Any]]:
         "Formal M74 admission must not mutate provider configuration automatically.",
     )
     _require(FORMAL_M74_PRE_ADMISSION_BACKFILL is False, "Formal M74 backfill must remain disabled.")
-    _require(len(FORMAL_M74_ADMITTED_WALLETS) == 1, "Unexpected formal M74 admission registry size.")
+    _require(
+        set(FORMAL_M74_ADMITTED_WALLETS) == {"5PA", "3UdE", "EdNc", "GmRK"},
+        "Unexpected formal M74 admission registry labels.",
+    )
 
-    wallet = FORMAL_M74_ADMITTED_WALLETS["5PA"]
-    evidence = dict(FORMAL_M74_ADMISSION_EVIDENCE.get(wallet) or {})
-    _require(evidence.get("wallet_address") == wallet, "Formal M74 wallet evidence mismatch.")
-    _require(evidence.get("formal_m74_pass") is True, "Formal M74 PASS evidence missing.")
-    _require(evidence.get("formal_m74_status") == "PASS", "Formal M74 status is not PASS.")
-    _require(evidence.get("formal_evaluator") == R7_FORMAL_EVALUATOR, "Formal M74 evaluator drift.")
-    _require(evidence.get("r7_fix1_script_sha256") == R7_FIX1_SCRIPT_SHA256, "R7 FIX1 SHA drift.")
-    _require(evidence.get("r7_formal_report_sha256") == R7_FORMAL_REPORT_SHA256, "R7 report SHA drift.")
-    _require(int(evidence.get("closed_trade_count") or 0) == 524, "Formal M74 closed count drift.")
-    _require(abs(float(evidence.get("history_span_days") or 0.0) - 35.00766204) < 1e-12, "Formal M74 span drift.")
-    _require(abs(float(evidence.get("profit_factor") or 0.0) - 16.04721544) < 1e-12, "Formal M74 PF drift.")
-    _require(abs(float(evidence.get("net_pnl_sol") or 0.0) - 9.01787482) < 1e-12, "Formal M74 net PnL drift.")
-    _require(abs(float(evidence.get("maximum_drawdown_percent") or 0.0) - 3.31264317) < 1e-12, "Formal M74 DD drift.")
-    _require(int(evidence.get("open_positions") if evidence.get("open_positions") is not None else -1) == 0, "Formal M74 report must have zero open positions.")
-    _require(evidence.get("historical_evidence_only") is True, "Historical evidence boundary missing.")
-    _require(evidence.get("candidate_forward_proof_backfilled") is False, "Candidate proof backfill detected.")
-    _require(evidence.get("m75_pass_claimed") is False, "M75 cannot be claimed by M74 admission.")
-    _require(evidence.get("m298_pass_claimed") is False, "M298 cannot be claimed by M74 admission.")
-    _require(evidence.get("gen4_copyability_pass_claimed") is False, "Gen4 copyability PASS cannot be invented.")
-    _require(evidence.get("live_execution_authorized") is False, "LIVE authorization cannot be inherited.")
-    return {wallet: evidence}
+    expected = {
+        "5PA": {
+            "admission_kind": "R7_FORMAL_M74_PASS_ADMISSION",
+            "closed_trade_count": 524,
+            "history_span_days": 35.00766204,
+            "profit_factor": 16.04721544,
+            "net_pnl_sol": 9.01787482,
+            "maximum_drawdown_percent": 3.31264317,
+            "recent_profit_factor": None,
+            "recent_net_pnl_sol": None,
+        },
+        "3UdE": {
+            "admission_kind": R9_FORMAL_M74_ADMISSION_KIND,
+            "closed_trade_count": 187,
+            "history_span_days": 32.1328125,
+            "profit_factor": 34.86653426,
+            "net_pnl_sol": 2.432305971,
+            "maximum_drawdown_percent": 1.5658988,
+            "recent_profit_factor": 13.37938072,
+            "recent_net_pnl_sol": 0.188834504,
+        },
+        "EdNc": {
+            "admission_kind": R9_FORMAL_M74_ADMISSION_KIND,
+            "closed_trade_count": 872,
+            "history_span_days": 34.49731481,
+            "profit_factor": 15.19200523,
+            "net_pnl_sol": 11.460454231,
+            "maximum_drawdown_percent": 3.58194619,
+            "recent_profit_factor": 999.0,
+            "recent_net_pnl_sol": 0.235122344,
+        },
+        "GmRK": {
+            "admission_kind": R9_FORMAL_M74_ADMISSION_KIND,
+            "closed_trade_count": 339,
+            "history_span_days": 33.21300926,
+            "profit_factor": 4.21251621,
+            "net_pnl_sol": 1.598777065,
+            "maximum_drawdown_percent": 3.29388431,
+            "recent_profit_factor": 1.14362375,
+            "recent_net_pnl_sol": 0.007222638,
+        },
+    }
 
+    registry: dict[str, dict[str, Any]] = {}
+    for label, wallet in FORMAL_M74_ADMITTED_WALLETS.items():
+        evidence = dict(FORMAL_M74_ADMISSION_EVIDENCE.get(wallet) or {})
+        metrics = expected[label]
+        _require(evidence.get("wallet_address") == wallet, f"{label} formal M74 wallet evidence mismatch.")
+        _require(evidence.get("formal_m74_pass") is True, f"{label} formal M74 PASS evidence missing.")
+        _require(evidence.get("formal_m74_status") == "PASS", f"{label} formal M74 status is not PASS.")
+        _require(evidence.get("formal_evaluator") == R7_FORMAL_EVALUATOR, f"{label} formal evaluator drift.")
+        _require(evidence.get("admission_kind") == metrics["admission_kind"], f"{label} formal admission kind drift.")
+        _require(int(evidence.get("closed_trade_count") or 0) == metrics["closed_trade_count"], f"{label} closed count drift.")
+        _require(abs(float(evidence.get("history_span_days") or 0.0) - metrics["history_span_days"]) < 1e-12, f"{label} span drift.")
+        _require(abs(float(evidence.get("profit_factor") or 0.0) - metrics["profit_factor"]) < 1e-12, f"{label} PF drift.")
+        _require(abs(float(evidence.get("net_pnl_sol") or 0.0) - metrics["net_pnl_sol"]) < 1e-12, f"{label} net PnL drift.")
+        _require(abs(float(evidence.get("maximum_drawdown_percent") or 0.0) - metrics["maximum_drawdown_percent"]) < 1e-12, f"{label} DD drift.")
+        _require(int(evidence.get("open_positions") if evidence.get("open_positions") is not None else -1) == 0, f"{label} formal report must have zero open positions.")
+        _require(evidence.get("historical_evidence_only") is True, f"{label} historical evidence boundary missing.")
+        _require(evidence.get("candidate_forward_proof_backfilled") is False, f"{label} candidate proof backfill detected.")
+        _require(evidence.get("m75_pass_claimed") is False, f"{label} M75 cannot be claimed by M74 admission.")
+        _require(evidence.get("m298_pass_claimed") is False, f"{label} M298 cannot be claimed by M74 admission.")
+        _require(evidence.get("gen4_copyability_pass_claimed") is False, f"{label} Gen4 copyability PASS cannot be invented.")
+        _require(evidence.get("live_execution_authorized") is False, f"{label} LIVE authorization cannot be inherited.")
+
+        if label == "5PA":
+            _require(evidence.get("r7_fix1_script_sha256") == R7_FIX1_SCRIPT_SHA256, "5PA R7 FIX1 SHA drift.")
+            _require(evidence.get("r7_formal_report_sha256") == R7_FORMAL_REPORT_SHA256, "5PA R7 report SHA drift.")
+        else:
+            _require(evidence.get("history_complete") is True, f"{label} R9 history must be complete.")
+            _require(list(evidence.get("formal_failure_reasons") or []) == [], f"{label} R9 formal failures must be empty.")
+            _require(evidence.get("r9_maxyield_report_sha256") == R9_MAXYIELD_FORMAL_REPORT_SHA256, f"{label} R9 maxyield report SHA drift.")
+            _require(
+                evidence.get("r9_admission_readiness_report_sha256") == R9_FORMAL3_ADMISSION_READINESS_REPORT_SHA256,
+                f"{label} R9 admission readiness SHA drift.",
+            )
+            _require(
+                abs(float(evidence.get("recent_profit_factor") or 0.0) - metrics["recent_profit_factor"]) < 1e-12,
+                f"{label} recent PF drift.",
+            )
+            _require(
+                abs(float(evidence.get("recent_net_pnl_sol") or 0.0) - metrics["recent_net_pnl_sol"]) < 1e-12,
+                f"{label} recent net drift.",
+            )
+        registry[wallet] = evidence
+    return registry
 
 
 def validate_pending_flat_m74_admission_registry() -> dict[str, dict[str, Any]]:

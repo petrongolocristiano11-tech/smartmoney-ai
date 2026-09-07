@@ -11,6 +11,9 @@ from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     FORMAL_M74_ADMITTED_WALLETS,
     PENDING_FLAT_M74_ADMITTED_WALLETS,
     R7_FORMAL_REPORT_SHA256,
+    R9_MAXYIELD_FORMAL_REPORT_SHA256,
+    R9_FORMAL3_ADMISSION_READINESS_REPORT_SHA256,
+    R9_FORMAL_M74_ADMISSION_KIND,
     validate_pending_flat_m74_admission_registry,
 )
 
@@ -217,6 +220,33 @@ def main():
     assert formal_result["formal_claims"]["gen4_copyability_pass_claimed"] is False
     assert formal_result["formal_claims"]["m298_pass_claimed"] is False
 
+    for label in ("3UdE", "EdNc", "GmRK"):
+        r9_wallet = FORMAL_M74_ADMITTED_WALLETS[label]
+        assert TARGETS[label] == r9_wallet
+        r9_rows = [
+            event(
+                r9_wallet,
+                f"{label}{i}",
+                anchor + timedelta(minutes=4 * (i + 1)),
+                "ACCEPTED" if i < 10 else "PROTECTIVE",
+            )
+            for i in range(20)
+        ]
+        r9_result = evaluate_candidate_promotion(
+            wallet=r9_wallet,
+            events=r9_rows,
+            anchor_utc=anchor,
+            terminal_at=anchor + timedelta(hours=2),
+        )
+        assert r9_result["promotion_eligible"] is True
+        assert r9_result["target_admission"]["kind"] == R9_FORMAL_M74_ADMISSION_KIND
+        assert r9_result["target_admission"]["upstream_formal_m74_pass"] is True
+        assert r9_result["target_admission"]["upstream_formal_m74_report_sha256"] == R9_MAXYIELD_FORMAL_REPORT_SHA256
+        assert r9_result["target_admission"]["upstream_admission_readiness_report_sha256"] == R9_FORMAL3_ADMISSION_READINESS_REPORT_SHA256
+        assert r9_result["target_admission"]["candidate_entry_evidence_backfilled"] is False
+        assert r9_result["formal_claims"]["m74_pass_claimed"] is False
+        assert r9_result["formal_claims"]["m298_pass_claimed"] is False
+
     # Flatness-only historical blockers are admitted as a separate provenance.
     pending_registry = validate_pending_flat_m74_admission_registry()
     for label, pending_wallet in PENDING_FLAT_M74_ADMITTED_WALLETS.items():
@@ -256,7 +286,7 @@ def main():
     print(
         "M300_PRE_VERIFY=PASS;"
         "promotion_disarmed=true;"
-        "targets=CGAZ|89F3|5PA|3N7|2MQR|9rDM|D9gQ|37uM;"
+        "targets=CGAZ|89F3|5PA|3UdE|EdNc|GmRK|3N7|2MQR|9rDM|D9gQ|37uM;"
         "attempt_floor_from_m298=true;"
         "accepted_floor_from_m298_closed_floor=true;"
         "protective_reject_not_hard_gate=true;"
