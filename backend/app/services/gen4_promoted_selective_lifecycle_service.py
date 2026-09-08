@@ -64,6 +64,21 @@ M307_FORMAL_LINEAGE_BY_WALLET: dict[str, dict[str, str]] = {
         "m299_acquisition_report_sha256": "d18b388794ac2debe5c38ad56c83ef2dc11b74d7e1c6f5180dec8a96255d8854",
         "m306_terminal_utc": "2026-09-07T20:38:58.512074+00:00",
     },
+    "5pAewyzzyf3bbD2MEdvEjTHR9AqfL9wWouEA8ft2ggEV": {
+        "m306_report_sha256": "5c071d2e07bdbaddc535b5a9384501f4b2c9f9b35027bc2a7f746a32c4c3a5b5",
+        "m299_acquisition_report_sha256": "f17a297be33c331bdb815a26c70cac643c3b551e304e1b78496805cd0ca34c31",
+        "m306_terminal_utc": "2026-09-08T13:08:30.261498+00:00",
+    },
+    "37uM1rp8TK7eVURVRnjtaxGkdJyXjgA9uz83DjApcHvq": {
+        "m306_report_sha256": "04124921b630db49402f906cc7a2ade639b9a7a639ab9a49fc34f414d7dbcc68",
+        "m299_acquisition_report_sha256": "11e5f2c752ccf7a6be4f9c779766f99d3931747c78533cf145487f681e7521de",
+        "m306_terminal_utc": "2026-09-08T13:08:30.261498+00:00",
+    },
+    "9rDMVCH7mQ9N2PkyHw8KT8wraMhF8tyMz9R631yyL1df": {
+        "m306_report_sha256": "4b1bde2585f9a1b7d39fefae6b8baeeecced9d41ae4384b459685dba56bbc389",
+        "m299_acquisition_report_sha256": "eae34ec4e8159e204e230985c55a59ac6e5dee3aacfb01b40161bde417793791",
+        "m306_terminal_utc": "2026-09-08T13:08:30.261498+00:00",
+    },
 }
 
 ACTIVATE_CONFIRMATION = "ACTIVATE_M307_PROMOTED_SELECTIVE_LIFECYCLE"
