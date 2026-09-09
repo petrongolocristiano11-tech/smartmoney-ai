@@ -71,6 +71,10 @@ NINE_RDM = "9rDMVCH7mQ9N2PkyHw8KT8wraMhF8tyMz9R631yyL1df"
 NINE_RDM_M306 = "4b1bde2585f9a1b7d39fefae6b8baeeecced9d41ae4384b459685dba56bbc389"
 NINE_RDM_M299 = "eae34ec4e8159e204e230985c55a59ac6e5dee3aacfb01b40161bde417793791"
 NINE_RDM_TERMINAL = "2026-09-08T13:08:30.261498+00:00"
+THREE_N7 = "3N7aa2Wkg9dEm8kkC4F7M8knExDyEL8Vehu1S9H3NA2K"
+THREE_N7_M306 = "b4c3f08c46f5f36477cedd14bea5c997908a8a4dbf07938afe276ea602c95614"
+THREE_N7_M299 = "b42bbbb4d9f73cbee23d54b94142b8509622d23e7a8ef42dcce386945172f32f"
+THREE_N7_TERMINAL = "2026-09-09T11:10:39.365594+00:00"
 
 
 def _decision(wallet: str = WALLET) -> dict:
@@ -136,7 +140,7 @@ def main() -> None:
     assert M307_SCOPE == "M307_PROMOTED_SELECTIVE_LIFECYCLE_BRIDGE_IMPLEMENTED_DISARMED"
     assert M307_VERSION.endswith("/1")
 
-    assert set(M307_FORMAL_LINEAGE_BY_WALLET) == {CGAZ, WALLET, TWO_MQR, D9GQ, FIVE_PA, THIRTY7_UM, NINE_RDM}
+    assert set(M307_FORMAL_LINEAGE_BY_WALLET) == {CGAZ, WALLET, TWO_MQR, D9GQ, FIVE_PA, THIRTY7_UM, NINE_RDM, THREE_N7}
     assert formal_lineage_for_wallet(WALLET)["m306_report_sha256"] == M306_FORMAL_REPORT_SHA256
     assert formal_lineage_for_wallet(WALLET)["m299_acquisition_report_sha256"] == M299_FORMAL_ACQUISITION_REPORT_SHA256
     assert formal_lineage_for_wallet(CGAZ) == formal_lineage_for_wallet(WALLET)
@@ -164,6 +168,11 @@ def main() -> None:
         "m306_report_sha256": NINE_RDM_M306,
         "m299_acquisition_report_sha256": NINE_RDM_M299,
         "m306_terminal_utc": NINE_RDM_TERMINAL,
+    }
+    assert formal_lineage_for_wallet(THREE_N7) == {
+        "m306_report_sha256": THREE_N7_M306,
+        "m299_acquisition_report_sha256": THREE_N7_M299,
+        "m306_terminal_utc": THREE_N7_TERMINAL,
     }
 
     assert CanonicalParserGen4PromotedSelectiveActivation.__tablename__ == PROMOTED_ACTIVATION_TABLE
@@ -278,6 +287,7 @@ def main() -> None:
         (FIVE_PA, FIVE_PA_M306, FIVE_PA_M299, FIVE_PA_TERMINAL),
         (THIRTY7_UM, THIRTY7_UM_M306, THIRTY7_UM_M299, THIRTY7_UM_TERMINAL),
         (NINE_RDM, NINE_RDM_M306, NINE_RDM_M299, NINE_RDM_TERMINAL),
+        (THREE_N7, THREE_N7_M306, THREE_N7_M299, THREE_N7_TERMINAL),
     ):
         _lineage = formal_lineage_for_wallet(_wallet)
         _package = build_activation_package(
@@ -297,7 +307,7 @@ def main() -> None:
             },
             operational_policy_source_sha256="c" * 64,
             candidate_watchlist_wallets=[_wallet],
-            activation_at=datetime(2026, 9, 8, 14, 0, tzinfo=timezone.utc),
+            activation_at=datetime.fromisoformat(_terminal),
         )
         validate_activation_package(_package)
         assert _package["formal_promotion_lineage"]["m306_report_sha256"] == _m306
@@ -356,6 +366,7 @@ def main() -> None:
         "2mqr_lineage_registered=true;"
         "d9gq_lineage_registered=true;"
         "triple_lineage_registered=true;"
+        "3n7_lineage_registered=true;"
         "live=false;signer=false;paper=0"
     )
 
