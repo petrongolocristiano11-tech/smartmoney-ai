@@ -17,6 +17,10 @@ from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     R10_FORMAL_M74_ADMISSION_KIND,
     R10_MAXYIELD_FORMAL_REPORT_SHA256,
     R10_FORMAL_M74_WALLETS,
+    R12_FORMAL_M74_ADMISSION_KIND,
+    R12_FORMAL_M74_WALLETS,
+    R12_FULL31_REPORT_SHA256,
+    R12_STATE_SHA256,
     validate_pending_flat_m74_admission_registry,
 )
 
@@ -298,10 +302,22 @@ def main():
             assert decision["target_admission"]["candidate_entry_evidence_backfilled"] is False
             assert decision["formal_claims"]["m298_pass_claimed"] is False
 
+    for label, r12_wallet in R12_FORMAL_M74_WALLETS.items():
+        assert TARGETS[label] == r12_wallet
+        fresh = [event(r12_wallet, f"r12-{label}-{i}", anchor + timedelta(minutes=i + 1), "ACCEPTED" if i < 10 else "PROTECTIVE") for i in range(20)]
+        for sample, eligible in (([], False), (fresh[:19], False), (fresh, True)):
+            decision = evaluate_candidate_promotion(wallet=r12_wallet, events=sample, anchor_utc=anchor, terminal_at=anchor + timedelta(hours=2))
+            assert decision["promotion_eligible"] is eligible
+            assert decision["target_admission"]["kind"] == R12_FORMAL_M74_ADMISSION_KIND
+            assert decision["target_admission"]["upstream_formal_m74_report_sha256"] == R12_STATE_SHA256
+            assert decision["target_admission"]["upstream_admission_readiness_report_sha256"] == R12_FULL31_REPORT_SHA256
+            assert decision["target_admission"]["candidate_entry_evidence_backfilled"] is False
+            assert decision["formal_claims"]["m298_pass_claimed"] is False
+
     print(
         "M300_PRE_VERIFY=PASS;"
         "promotion_disarmed=true;"
-        "targets=CGAZ|89F3|5PA|3UdE|EdNc|GmRK|3N7|2MQR|9rDM|D9gQ|37uM|3eN9mk|5949hD|2Ec754;"
+        "target_count=21;r10_selected=3eN9mk|5949hD|2Ec754|HZuErb;r12_formal_selected=Ayjjfu|9Epapg|E9zj6T|BQ9YY6;r12_pending_selected=2SJVK1|EUukvc;"
         "attempt_floor_from_m298=true;"
         "accepted_floor_from_m298_closed_floor=true;"
         "protective_reject_not_hard_gate=true;"
