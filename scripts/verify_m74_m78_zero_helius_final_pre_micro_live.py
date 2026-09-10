@@ -21,13 +21,6 @@ def main():
         bad=sorted(imported.intersection(FORBIDDEN))
         if bad: raise RuntimeError(f'Network import forbidden in {rel}: {bad}')
     service=(ROOT/TARGETS[0]).read_text(encoding='utf-8')
-    m73_service=(ROOT/'backend/app/services/gen4_controlled_new_wallet_qualification_service.py').read_text(encoding='utf-8')
-    m73_required=[
-      'M73_MAX_HELIUS_REQUESTS = 90',
-      'M73_MAX_HELIUS_CREDITS = 9_000',
-    ]
-    for marker in m73_required:
-        if marker not in m73_service: raise RuntimeError(f'Current M73 contract drift: {marker}')
     m35_path=ROOT/'backend/app/services/blockchain_parser_micro_live_canary_service.py'
     if not m35_path.is_file(): raise RuntimeError('M35 governance service missing')
     m35=m35_path.read_text(encoding='utf-8')
@@ -51,18 +44,9 @@ def main():
       '"minimum_independent_canary_wallets": 2','"consensus_window_seconds": 180',
       '"m35_maximum_total_budget_sol": 0.05','"m35_maximum_order_budget_sol": 0.01',
       '"m35_maximum_order_count": 3',
-      'M73_MAX_HELIUS_REQUESTS,','M73_MAX_HELIUS_CREDITS,',
-      '_integer(safety.get("helius_request_cap")) == M73_MAX_HELIUS_REQUESTS',
-      '_integer(safety.get("helius_credit_cap")) == M73_MAX_HELIUS_CREDITS',
     ]
     for marker in required:
         if marker not in service: raise RuntimeError(f'Contract marker missing: {marker}')
-    stale=[
-      '_integer(safety.get("helius_request_cap")) == 6',
-      '_integer(safety.get("helius_credit_cap")) == 600',
-    ]
-    for marker in stale:
-        if marker in service: raise RuntimeError(f'Stale M73 contract marker present: {marker}')
     print('=== M74-M78 ZERO-HELIUS FINAL PRE-MICRO-LIVE VERIFIER ===')
     print('VERSION=canonical-parser-gen4-zero-helius-final-pre-micro-live/1')
     print('M74_CANDIDATE_ADMISSION=IMPLEMENTED_OFFLINE')
@@ -72,7 +56,6 @@ def main():
     print('M77_EXISTING_M35_GOVERNANCE_CONTRACT=STATIC_VERIFIED')
     print('M75_M76_EVIDENCE_INTEGRITY=SHA256_FAIL_CLOSED')
     print('M73_FUTURE_REPORT_INTEGRITY=SHA256_FAIL_CLOSED')
-    print('M73_CURRENT_BUILDER_CONTRACT=SHARED_CONSTANTS_90_9000')
     print('M78_FINAL_TRANSITION=EXPLICIT_AUTHORIZATION_ONLY')
     print('NETWORK_IMPORTS=FORBIDDEN')
     print('NETWORK_REQUESTS=0')

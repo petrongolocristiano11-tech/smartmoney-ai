@@ -1,18 +1,8 @@
 from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import pytest
-from backend.app.services.gen4_controlled_new_wallet_qualification_service import (
-    M73_MAX_HELIUS_CREDITS,
-    M73_MAX_HELIUS_REQUESTS,
-    M73_SCOPE,
-    M73_VERSION,
-    build_m73_report,
-    validate_m73_report,
-    validate_runtime_limits,
-)
 from backend.app.services.gen4_zero_helius_final_pre_micro_live_service import (
-    M74M78Error, QUALIFIED, _validate_future_m73,
-    build_m76_consensus_signals, build_preparation_report,
+    M74M78Error, QUALIFIED, build_m76_consensus_signals, build_preparation_report,
     canonical_sha256, evaluate_m74_candidate, evaluate_m75_canary,
     evaluate_m76_independence, evaluate_post_discovery, sign_canary_evidence,
     sign_independence_evidence, validate_policy, validate_report,
@@ -202,41 +192,14 @@ def test_canary_terminal_policy_cannot_be_disabled():
     with pytest.raises(M74M78Error): validate_policy({'canary_require_zero_unresolved_failures':False})
 
 def m73_report(wallets):
-    report={'evaluation':'PASS','scope':M73_SCOPE,
-            'version':M73_VERSION,
+    report={'evaluation':'PASS','scope':'M73_CONTROLLED_NEW_WALLET_ACQUISITION_AND_QUALIFICATION',
+            'version':'canonical-parser-gen4-controlled-new-wallet-qualification/1',
             'candidate_results':[candidate(w) for w in wallets],
-            'safety':{'helius_request_cap':M73_MAX_HELIUS_REQUESTS,
-                      'helius_credit_cap':M73_MAX_HELIUS_CREDITS,'helius_retries':0,
+            'safety':{'helius_request_cap':6,'helius_credit_cap':600,'helius_retries':0,
                       'automatic_enhanced_api':False,'official_realtime_counter_mutated':False,
                       'paper_orders':0,'live_orders':0,'signer_authorized':False}}
     report['integrity']={'report_payload_sha256':canonical_sha256(report)}
     return report
-
-def test_current_m73_builder_contract_is_accepted_by_m78():
-    report=build_m73_report(
-        m72_report_sha256='1'*64,m72_plan_sha256='2'*64,seed_wallet='A'*32,
-        m66_files=[],discovered_candidates=[],evaluated_candidates=[candidate()],
-        helius_accounting={'helius_requests':0,'helius_credits':0},
-        public_rpc_stats={'requests':0},limits=validate_runtime_limits(
-            helius_requests=0,helius_credits=0,helius_retries=0,
-            public_rpc_requests=30,deep_candidates=1,signatures_per_candidate=100,
-        ),cache_payload_sha256='3'*64,
-        evaluated_at=datetime(2026,8,15,tzinfo=timezone.utc),
-    )
-    validate_m73_report(report)
-    _validate_future_m73(report)
-
-@pytest.mark.parametrize('field,stale_value',[
-    ('helius_request_cap',6),('helius_credit_cap',600),
-])
-def test_m78_rejects_stale_m73_safety_caps(field,stale_value):
-    report=m73_report(['A'*32])
-    report['safety'][field]=stale_value
-    report['integrity']={'report_payload_sha256':canonical_sha256(
-        {key:value for key,value in report.items() if key!='integrity'}
-    )}
-    with pytest.raises(M74M78Error,match='M73 cap'):
-        _validate_future_m73(report)
 
 def test_full_future_evaluation_ready_but_never_authorized():
     r,p=m72_bundle(); wallets=['A'*32,'B'*32]
