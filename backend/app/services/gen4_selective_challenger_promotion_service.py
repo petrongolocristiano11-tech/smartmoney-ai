@@ -22,6 +22,9 @@ from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     R9_MAXYIELD_FORMAL_REPORT_SHA256,
     R9_FORMAL3_ADMISSION_READINESS_REPORT_SHA256,
     R9_FORMAL_M74_ADMISSION_KIND,
+    R10_FORMAL_M74_ADMISSION_KIND,
+    R10_MAXYIELD_FORMAL_REPORT_SHA256,
+    R10_FORMAL_M74_WALLETS,
     formal_m74_admission_for_wallet,
     pending_flat_m74_admission_for_wallet,
     validate_formal_m74_admission_registry,
@@ -71,6 +74,19 @@ def target_admission_provenance(wallet: str) -> dict[str, Any]:
             label for label, admitted in FORMAL_M74_ADMITTED_WALLETS.items()
             if admitted == value
         )
+        if label in R10_FORMAL_M74_WALLETS:
+            return {
+                "kind": R10_FORMAL_M74_ADMISSION_KIND,
+                "label": label,
+                "wallet": value,
+                "upstream_formal_m74_pass": True,
+                "upstream_economic_m74_qualification": True,
+                "upstream_formal_m74_report_sha256": R10_MAXYIELD_FORMAL_REPORT_SHA256,
+                "upstream_admission_readiness_report_sha256": None,
+                "formal_m74_evidence": evidence,
+                "historical_open_positions_quarantined": False,
+                "candidate_entry_evidence_backfilled": False,
+            }
         is_r7 = label == "5PA"
         return {
             "kind": (

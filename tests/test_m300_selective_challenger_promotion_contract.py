@@ -8,6 +8,9 @@ from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     R9_MAXYIELD_FORMAL_REPORT_SHA256,
     R9_FORMAL3_ADMISSION_READINESS_REPORT_SHA256,
     R9_FORMAL_M74_ADMISSION_KIND,
+    R10_FORMAL_M74_ADMISSION_KIND,
+    R10_MAXYIELD_FORMAL_REPORT_SHA256,
+    R10_FORMAL_M74_WALLETS,
     validate_pending_flat_m74_admission_registry,
 )
 
@@ -245,3 +248,17 @@ def test_pending_flat_m74_admission_uses_identical_m300_gate_and_quarantines_his
         assert out["formal_claims"]["m298_pass_claimed"] is False
         assert out["future_selective_lifecycle_bridge"]["historical_pre_anchor_positions_carried_forward"] is False
         assert out["future_selective_lifecycle_bridge"]["pending_flat_historical_positions_quarantined"] is True
+
+
+def test_r10_new_technical_invalidates_preceding_good_sample():
+    anchor = datetime(2026, 9, 10, 15, 0, tzinfo=timezone.utc)
+    for label, wallet in R10_FORMAL_M74_WALLETS.items():
+        good = _dataset(wallet, anchor)
+        fail_at = anchor + timedelta(hours=3)
+        failed = _event(wallet, "r10-technical", fail_at, "TECHNICAL")
+        result = evaluate_candidate_promotion(wallet=wallet, events=good + [failed], anchor_utc=anchor, terminal_at=fail_at + timedelta(minutes=1))
+        assert result["promotion_eligible"] is False
+        assert result["clean_window"]["technical_reset_applied"] is True
+        assert result["clean_window"]["attempts"] == 0
+        assert result["target_admission"]["kind"] == R10_FORMAL_M74_ADMISSION_KIND
+        assert result["target_admission"]["upstream_formal_m74_report_sha256"] == R10_MAXYIELD_FORMAL_REPORT_SHA256

@@ -16,6 +16,9 @@ from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     R9_MAXYIELD_FORMAL_REPORT_SHA256,
     R9_FORMAL3_ADMISSION_READINESS_REPORT_SHA256,
     R9_FORMAL_M74_ADMISSION_KIND,
+    R10_FORMAL_M74_ADMISSION_KIND,
+    R10_MAXYIELD_FORMAL_REPORT_SHA256,
+    R10_FORMAL_M74_WALLETS,
     build_formal_m74_admission_report,
     formal_m74_admission_for_wallet,
     pending_flat_m74_admission_for_wallet,
@@ -65,8 +68,8 @@ def test_formal_m74_registry_is_exact_disarmed_and_does_not_claim_downstream_pas
     assert evidence["gen4_copyability_pass_claimed"] is False
     assert evidence["m75_pass_claimed"] is False
     assert evidence["m298_pass_claimed"] is False
-    assert set(FORMAL_M74_ADMITTED_WALLETS) == {"5PA", "3UdE", "EdNc", "GmRK"}
-    assert len(registry) == 4
+    assert set(FORMAL_M74_ADMITTED_WALLETS) == {"5PA", "3UdE", "EdNc", "GmRK", "3eN9mk", "5949hD", "2Ec754"}
+    assert len(registry) == 7
     for label in ("3UdE", "EdNc", "GmRK"):
         r9_wallet = FORMAL_M74_ADMITTED_WALLETS[label]
         r9_evidence = registry[r9_wallet]
@@ -272,3 +275,23 @@ def test_pending_flat_wallets_are_m300_targets_with_fresh_evidence_only():
         assert out["future_selective_lifecycle_bridge"]["historical_pre_anchor_positions_carried_forward"] is False
         assert out["future_selective_lifecycle_bridge"]["pending_flat_historical_positions_quarantined"] is True
         assert validate_m300_decision(out)["wallet"] == wallet
+
+
+def test_r10_top3_provenance_and_fresh_sample_boundaries():
+    anchor = datetime(2026, 9, 10, 15, 0, tzinfo=timezone.utc)
+    for label, wallet in R10_FORMAL_M74_WALLETS.items():
+        assert TARGETS[label] == wallet
+        fresh = [_event(wallet, f"{label}-{i}", anchor + timedelta(minutes=i + 1), accepted=i < 10) for i in range(20)]
+        old = [_event(wallet, f"old-{label}-{i}", anchor - timedelta(minutes=i + 1), accepted=True) for i in range(20)]
+        nine = [_event(wallet, f"nine-{label}-{i}", anchor + timedelta(minutes=i + 1), accepted=i < 9) for i in range(20)]
+        for sample, eligible in (([], False), (old, False), (fresh[:19], False), (nine, False), (fresh, True)):
+            result = evaluate_candidate_promotion(wallet=wallet, events=sample, anchor_utc=anchor, terminal_at=anchor + timedelta(hours=2))
+            assert result["promotion_eligible"] is eligible
+            admission = result["target_admission"]
+            assert admission["kind"] == R10_FORMAL_M74_ADMISSION_KIND
+            assert admission["upstream_formal_m74_report_sha256"] == R10_MAXYIELD_FORMAL_REPORT_SHA256
+            assert admission["upstream_admission_readiness_report_sha256"] is None
+            assert admission["candidate_entry_evidence_backfilled"] is False
+            assert result["formal_claims"]["m298_pass_claimed"] is False
+            if eligible:
+                assert validate_m300_decision(result)["wallet"] == wallet

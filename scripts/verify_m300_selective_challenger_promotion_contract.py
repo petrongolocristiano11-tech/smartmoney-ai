@@ -14,6 +14,9 @@ from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     R9_MAXYIELD_FORMAL_REPORT_SHA256,
     R9_FORMAL3_ADMISSION_READINESS_REPORT_SHA256,
     R9_FORMAL_M74_ADMISSION_KIND,
+    R10_FORMAL_M74_ADMISSION_KIND,
+    R10_MAXYIELD_FORMAL_REPORT_SHA256,
+    R10_FORMAL_M74_WALLETS,
     validate_pending_flat_m74_admission_registry,
 )
 
@@ -283,10 +286,22 @@ def main():
     assert prep["safety"]["automatic_promotion"] is False
     validate_report(prep)
 
+    for label, r10_wallet in R10_FORMAL_M74_WALLETS.items():
+        assert TARGETS[label] == r10_wallet
+        fresh = [event(r10_wallet, f"r10-{label}-{i}", anchor + timedelta(minutes=i + 1), "ACCEPTED" if i < 10 else "PROTECTIVE") for i in range(20)]
+        for sample, eligible in (([], False), (fresh[:19], False), (fresh, True)):
+            decision = evaluate_candidate_promotion(wallet=r10_wallet, events=sample, anchor_utc=anchor, terminal_at=anchor + timedelta(hours=2))
+            assert decision["promotion_eligible"] is eligible
+            assert decision["target_admission"]["kind"] == R10_FORMAL_M74_ADMISSION_KIND
+            assert decision["target_admission"]["upstream_formal_m74_report_sha256"] == R10_MAXYIELD_FORMAL_REPORT_SHA256
+            assert decision["target_admission"]["upstream_admission_readiness_report_sha256"] is None
+            assert decision["target_admission"]["candidate_entry_evidence_backfilled"] is False
+            assert decision["formal_claims"]["m298_pass_claimed"] is False
+
     print(
         "M300_PRE_VERIFY=PASS;"
         "promotion_disarmed=true;"
-        "targets=CGAZ|89F3|5PA|3UdE|EdNc|GmRK|3N7|2MQR|9rDM|D9gQ|37uM;"
+        "targets=CGAZ|89F3|5PA|3UdE|EdNc|GmRK|3N7|2MQR|9rDM|D9gQ|37uM|3eN9mk|5949hD|2Ec754;"
         "attempt_floor_from_m298=true;"
         "accepted_floor_from_m298_closed_floor=true;"
         "protective_reject_not_hard_gate=true;"

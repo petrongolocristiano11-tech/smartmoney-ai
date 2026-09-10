@@ -7,14 +7,19 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
+from backend.app.services.gen4_controlled_new_wallet_qualification_service import (
+    M73_MAX_HELIUS_CREDITS,
+    M73_MAX_HELIUS_REQUESTS,
+    M73_SCOPE,
+    M73_VERSION,
+)
+
 M74_M78_VERSION = "canonical-parser-gen4-zero-helius-final-pre-micro-live/1"
 M74_M78_SCOPE = "M74_M78_ZERO_HELIUS_FINAL_PRE_MICRO_LIVE_CONTROL_PLANE"
 M74_M78_PREPARE_CONFIRMATION = "PREPARE_M74_M78_ZERO_HELIUS_FINAL_PRE_MICRO_LIVE"
 M74_M78_EVALUATE_CONFIRMATION = "EVALUATE_M74_M78_OFFLINE_POST_DISCOVERY_EVIDENCE"
 M72_SCOPE = "M72_DEFINITIVE_DISCOVERY_ROTATION_READ_ONLY"
 M72_PLAN_SCOPE = "M72_CONTROLLED_NEW_WALLET_ACQUISITION_PLAN_DISARMED"
-M73_SCOPE = "M73_CONTROLLED_NEW_WALLET_ACQUISITION_AND_QUALIFICATION"
-M73_VERSION = "canonical-parser-gen4-controlled-new-wallet-qualification/1"
 M75_EVIDENCE_SCOPE = "M75_SHORT_REALTIME_CANARY_EVIDENCE"
 M75_EVIDENCE_VERSION = "canonical-parser-gen4-short-realtime-canary-evidence/1"
 M76_EVIDENCE_SCOPE = "M76_WALLET_INDEPENDENCE_AND_CONSENSUS_EVIDENCE"
@@ -470,8 +475,14 @@ def _validate_future_m73(report: dict[str, Any]) -> None:
     expected = str(integrity.get("report_payload_sha256") or "")
     _require(len(expected) == 64 and expected == canonical_sha256(_without_integrity(report)), "Hash report M73 futuro non valido.")
     safety = dict(report.get("safety") or {})
-    _require(_integer(safety.get("helius_request_cap")) == 6, "M73 cap Helius inatteso.")
-    _require(_integer(safety.get("helius_credit_cap")) == 600, "M73 cap crediti inatteso.")
+    _require(
+        _integer(safety.get("helius_request_cap")) == M73_MAX_HELIUS_REQUESTS,
+        "M73 cap Helius inatteso.",
+    )
+    _require(
+        _integer(safety.get("helius_credit_cap")) == M73_MAX_HELIUS_CREDITS,
+        "M73 cap crediti inatteso.",
+    )
     _require(_integer(safety.get("helius_retries")) == 0, "M73 retry inatteso.")
     _require(safety.get("automatic_enhanced_api") is False, "M73 Enhanced automatico attivo.")
     _require(safety.get("official_realtime_counter_mutated") is False, "M73 ha mutato il counter ufficiale.")

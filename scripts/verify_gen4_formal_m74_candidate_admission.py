@@ -17,6 +17,9 @@ from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     R9_MAXYIELD_FORMAL_REPORT_SHA256,
     R9_FORMAL3_ADMISSION_READINESS_REPORT_SHA256,
     R9_FORMAL_M74_ADMISSION_KIND,
+    R10_FORMAL_M74_ADMISSION_KIND,
+    R10_MAXYIELD_FORMAL_REPORT_SHA256,
+    R10_FORMAL_M74_WALLETS,
     build_formal_m74_admission_report,
     validate_formal_m74_admission_registry,
     validate_pending_flat_m74_admission_registry,
@@ -60,8 +63,8 @@ def main():
     assert registry[wallet]["r7_fix1_script_sha256"] == R7_FIX1_SCRIPT_SHA256
     assert registry[wallet]["gen4_copyability_pass_claimed"] is False
     assert registry[wallet]["candidate_forward_proof_backfilled"] is False
-    assert set(FORMAL_M74_ADMITTED_WALLETS) == {"5PA", "3UdE", "EdNc", "GmRK"}
-    assert len(registry) == 4
+    assert set(FORMAL_M74_ADMITTED_WALLETS) == {"5PA", "3UdE", "EdNc", "GmRK", "3eN9mk", "5949hD", "2Ec754"}
+    assert len(registry) == 7
     for label in ("3UdE", "EdNc", "GmRK"):
         r9_wallet = FORMAL_M74_ADMITTED_WALLETS[label]
         evidence = registry[r9_wallet]
@@ -155,12 +158,24 @@ def main():
     assert report["safety"]["provider_mutations"] == 0
     assert report["safety"]["live"] is False
 
+    for label, r10_wallet in R10_FORMAL_M74_WALLETS.items():
+        assert TARGETS[label] == r10_wallet
+        fresh = [event(r10_wallet, f"r10-{label}-{i}", anchor + timedelta(minutes=i + 1), i < 10) for i in range(20)]
+        for sample, eligible in (([], False), (fresh[:19], False), (fresh, True)):
+            decision = evaluate_candidate_promotion(wallet=r10_wallet, events=sample, anchor_utc=anchor, terminal_at=anchor + timedelta(hours=2))
+            assert decision["promotion_eligible"] is eligible
+            assert decision["target_admission"]["kind"] == R10_FORMAL_M74_ADMISSION_KIND
+            assert decision["target_admission"]["upstream_formal_m74_report_sha256"] == R10_MAXYIELD_FORMAL_REPORT_SHA256
+            assert decision["target_admission"]["upstream_admission_readiness_report_sha256"] is None
+            assert decision["target_admission"]["candidate_entry_evidence_backfilled"] is False
+            assert decision["formal_claims"]["m298_pass_claimed"] is False
+
     print(
         "FORMAL_M74_CANDIDATE_ADMISSION_VERIFY=PASS;"
         f"wallet={wallet};formal_m74_report_sha={R7_FORMAL_REPORT_SHA256};"
         "m300_target=yes;new_candidate_attempt_floor=20;new_accepted_floor=10;"
         "historical_backfill=no;legacy_gen4_pass_invented=no;"
-        "formal_registry=5PA|3UdE|EdNc|GmRK;pending_flat=3N7|2MQR|9rDM|D9gQ|37uM;historical_positions=quarantined;"
+        "formal_registry=5PA|3UdE|EdNc|GmRK|3eN9mk|5949hD|2Ec754;pending_flat=3N7|2MQR|9rDM|D9gQ|37uM;historical_positions=quarantined;"
         "watchlist_mutation=manual_future_step;provider_mutation=no;"
         "m75_changed=no;m298_changed=no;pam_changed=no;live=no"
     )
