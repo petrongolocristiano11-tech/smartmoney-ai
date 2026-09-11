@@ -25,6 +25,10 @@ from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     R12_PENDING_FLAT_M74_ADMISSION_KIND,
     R12_PENDING_FLAT_M74_WALLETS,
     R12_STATE_SHA256,
+    R13_FORMAL_M74_ADMISSION_KIND,
+    R13_FORMAL_M74_WALLETS,
+    R13_INDEPENDENCE_AUDIT_SHA256,
+    R13_REPORT_SHA256,
     build_formal_m74_admission_report,
     formal_m74_admission_for_wallet,
     pending_flat_m74_admission_for_wallet,
@@ -74,8 +78,8 @@ def test_formal_m74_registry_is_exact_disarmed_and_does_not_claim_downstream_pas
     assert evidence["gen4_copyability_pass_claimed"] is False
     assert evidence["m75_pass_claimed"] is False
     assert evidence["m298_pass_claimed"] is False
-    assert set(FORMAL_M74_ADMITTED_WALLETS) == {"5PA", "3UdE", "EdNc", "GmRK", "3eN9mk", "5949hD", "2Ec754", "HZuErb", "Ayjjfu", "9Epapg", "E9zj6T", "BQ9YY6"}
-    assert len(registry) == 12
+    assert set(FORMAL_M74_ADMITTED_WALLETS) == {"5PA", "3UdE", "EdNc", "GmRK", "3eN9mk", "5949hD", "2Ec754", "HZuErb", "Ayjjfu", "9Epapg", "E9zj6T", "BQ9YY6", "9VhXEPw3", "BQAf3pQz", "yX3wv1tk", "HNULoxt5"}
+    assert len(registry) == 16
     for label in ("3UdE", "EdNc", "GmRK"):
         r9_wallet = FORMAL_M74_ADMITTED_WALLETS[label]
         r9_evidence = registry[r9_wallet]
@@ -349,3 +353,31 @@ def test_r10_top3_provenance_and_fresh_sample_boundaries():
             assert result["formal_claims"]["m298_pass_claimed"] is False
             if eligible:
                 assert validate_m300_decision(result)["wallet"] == wallet
+
+def test_r13_independent_formal_wallets_have_exact_frozen_provenance_and_fresh_m300():
+    anchor = datetime(2026, 9, 11, 10, 30, tzinfo=timezone.utc)
+    registry = validate_formal_m74_admission_registry()
+    for label, wallet in R13_FORMAL_M74_WALLETS.items():
+        assert TARGETS[label] == wallet
+        evidence = registry[wallet]
+        assert evidence["formal_m74_pass"] is True
+        assert evidence["formal_m74_status"] == "PASS"
+        assert evidence["open_positions"] == 0
+        assert evidence["r13_report_sha256"] == R13_REPORT_SHA256
+        assert evidence["r13_independence_audit_sha256"] == R13_INDEPENDENCE_AUDIT_SHA256
+        assert evidence["r13_independence_classification"] == "INDEPENDENCE_CANDIDATE"
+        fresh = [_event(wallet, f"r13-{label}-{i}", anchor + timedelta(minutes=i + 1), accepted=i < 10) for i in range(20)]
+        result = evaluate_candidate_promotion(
+            wallet=wallet,
+            events=fresh,
+            anchor_utc=anchor,
+            terminal_at=anchor + timedelta(hours=2),
+        )
+        assert result["promotion_eligible"] is True
+        admission = result["target_admission"]
+        assert admission["kind"] == R13_FORMAL_M74_ADMISSION_KIND
+        assert admission["upstream_formal_m74_report_sha256"] == R13_REPORT_SHA256
+        assert admission["upstream_admission_readiness_report_sha256"] == R13_INDEPENDENCE_AUDIT_SHA256
+        assert admission["candidate_entry_evidence_backfilled"] is False
+        assert result["formal_claims"]["m298_pass_claimed"] is False
+
