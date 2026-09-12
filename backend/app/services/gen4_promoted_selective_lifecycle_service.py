@@ -84,6 +84,11 @@ M307_FORMAL_LINEAGE_BY_WALLET: dict[str, dict[str, str]] = {
         "m299_acquisition_report_sha256": "b42bbbb4d9f73cbee23d54b94142b8509622d23e7a8ef42dcce386945172f32f",
         "m306_terminal_utc": "2026-09-09T11:10:39.365594+00:00",
     },
+    "2Ec7546mqCuq1PPGSWTaQZ6DdTGWhpPhEuVicJ3sTQnr": {
+        "m306_report_sha256": "ffbe82a65eac609ae2fdc6e90287385c6566ec39a22a0e17be3a0dd03b23cb36",
+        "m299_acquisition_report_sha256": "09be1de4549b03f447b9bd020234f48298eb80797fe165930543ea3ba18dfe49",
+        "m306_terminal_utc": "2026-09-12T01:10:39.474599+00:00",
+    },
 }
 
 ACTIVATE_CONFIRMATION = "ACTIVATE_M307_PROMOTED_SELECTIVE_LIFECYCLE"
