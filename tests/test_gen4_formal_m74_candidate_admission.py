@@ -29,6 +29,10 @@ from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     R13_FORMAL_M74_WALLETS,
     R13_INDEPENDENCE_AUDIT_SHA256,
     R13_REPORT_SHA256,
+    R14_DIVERSIFICATION_AUDIT_SHA256,
+    R14_FORMAL_M74_ADMISSION_KIND,
+    R14_FORMAL_M74_WALLETS,
+    R14_REPORT_SHA256,
     build_formal_m74_admission_report,
     formal_m74_admission_for_wallet,
     pending_flat_m74_admission_for_wallet,
@@ -78,8 +82,8 @@ def test_formal_m74_registry_is_exact_disarmed_and_does_not_claim_downstream_pas
     assert evidence["gen4_copyability_pass_claimed"] is False
     assert evidence["m75_pass_claimed"] is False
     assert evidence["m298_pass_claimed"] is False
-    assert set(FORMAL_M74_ADMITTED_WALLETS) == {"5PA", "3UdE", "EdNc", "GmRK", "3eN9mk", "5949hD", "2Ec754", "HZuErb", "Ayjjfu", "9Epapg", "E9zj6T", "BQ9YY6", "9VhXEPw3", "BQAf3pQz", "yX3wv1tk", "HNULoxt5"}
-    assert len(registry) == 16
+    assert set(FORMAL_M74_ADMITTED_WALLETS) == {"5PA", "3UdE", "EdNc", "GmRK", "3eN9mk", "5949hD", "2Ec754", "HZuErb", "Ayjjfu", "9Epapg", "E9zj6T", "BQ9YY6", "9VhXEPw3", "BQAf3pQz", "yX3wv1tk", "HNULoxt5", "CU4L8"}
+    assert len(registry) == 17
     for label in ("3UdE", "EdNc", "GmRK"):
         r9_wallet = FORMAL_M74_ADMITTED_WALLETS[label]
         r9_evidence = registry[r9_wallet]
@@ -379,5 +383,39 @@ def test_r13_independent_formal_wallets_have_exact_frozen_provenance_and_fresh_m
         assert admission["upstream_formal_m74_report_sha256"] == R13_REPORT_SHA256
         assert admission["upstream_admission_readiness_report_sha256"] == R13_INDEPENDENCE_AUDIT_SHA256
         assert admission["candidate_entry_evidence_backfilled"] is False
+        assert result["formal_claims"]["m298_pass_claimed"] is False
+
+def test_r14_cu4l8_has_exact_frozen_provenance_diversification_and_fresh_m300():
+    anchor = datetime(2026, 9, 12, 13, 0, tzinfo=timezone.utc)
+    registry = validate_formal_m74_admission_registry()
+    assert R14_FORMAL_M74_WALLETS == {"CU4L8": "CU4L8gvTNGVu6FGGaLQKbSKbia5adhhA6ERVTF1DNr4Y"}
+    for label, wallet in R14_FORMAL_M74_WALLETS.items():
+        assert TARGETS[label] == wallet
+        evidence = registry[wallet]
+        assert evidence["formal_m74_pass"] is True
+        assert evidence["formal_m74_status"] == "PASS"
+        assert evidence["formal_failure_reasons"] == []
+        assert evidence["history_complete"] is True
+        assert evidence["open_positions"] == 0
+        assert evidence["r14_report_sha256"] == R14_REPORT_SHA256
+        assert evidence["r14_diversification_audit_sha256"] == R14_DIVERSIFICATION_AUDIT_SHA256
+        assert evidence["r14_diversification_classification"] == "SLOT20_DIVERSIFICATION_CANDIDATE"
+        assert evidence["candidate_forward_proof_backfilled"] is False
+        assert evidence["m75_pass_claimed"] is False
+        assert evidence["m298_pass_claimed"] is False
+        fresh = [_event(wallet, f"r14-{label}-{i}", anchor + timedelta(minutes=i + 1), accepted=i < 10) for i in range(20)]
+        result = evaluate_candidate_promotion(
+            wallet=wallet,
+            events=fresh,
+            anchor_utc=anchor,
+            terminal_at=anchor + timedelta(hours=2),
+        )
+        assert result["promotion_eligible"] is True
+        admission = result["target_admission"]
+        assert admission["kind"] == R14_FORMAL_M74_ADMISSION_KIND
+        assert admission["upstream_formal_m74_report_sha256"] == R14_REPORT_SHA256
+        assert admission["upstream_admission_readiness_report_sha256"] == R14_DIVERSIFICATION_AUDIT_SHA256
+        assert admission["candidate_entry_evidence_backfilled"] is False
+        assert result["formal_claims"]["m74_pass_claimed"] is False
         assert result["formal_claims"]["m298_pass_claimed"] is False
 

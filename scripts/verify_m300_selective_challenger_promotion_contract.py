@@ -25,6 +25,10 @@ from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     R13_FORMAL_M74_WALLETS,
     R13_INDEPENDENCE_AUDIT_SHA256,
     R13_REPORT_SHA256,
+    R14_DIVERSIFICATION_AUDIT_SHA256,
+    R14_FORMAL_M74_ADMISSION_KIND,
+    R14_FORMAL_M74_WALLETS,
+    R14_REPORT_SHA256,
     validate_pending_flat_m74_admission_registry,
 )
 
@@ -330,10 +334,23 @@ def main():
             assert decision["target_admission"]["candidate_entry_evidence_backfilled"] is False
             assert decision["formal_claims"]["m298_pass_claimed"] is False
 
+
+    for label, r14_wallet in R14_FORMAL_M74_WALLETS.items():
+        assert TARGETS[label] == r14_wallet
+        fresh = [event(r14_wallet, f"r14-{label}-{i}", anchor + timedelta(minutes=i + 1), "ACCEPTED" if i < 10 else "PROTECTIVE") for i in range(20)]
+        for sample, eligible in (([], False), (fresh[:19], False), (fresh, True)):
+            decision = evaluate_candidate_promotion(wallet=r14_wallet, events=sample, anchor_utc=anchor, terminal_at=anchor + timedelta(hours=2))
+            assert decision["promotion_eligible"] is eligible
+            assert decision["target_admission"]["kind"] == R14_FORMAL_M74_ADMISSION_KIND
+            assert decision["target_admission"]["upstream_formal_m74_report_sha256"] == R14_REPORT_SHA256
+            assert decision["target_admission"]["upstream_admission_readiness_report_sha256"] == R14_DIVERSIFICATION_AUDIT_SHA256
+            assert decision["target_admission"]["candidate_entry_evidence_backfilled"] is False
+            assert decision["formal_claims"]["m298_pass_claimed"] is False
+
     print(
         "M300_PRE_VERIFY=PASS;"
         "promotion_disarmed=true;"
-        "target_count=25;r10_selected=3eN9mk|5949hD|2Ec754|HZuErb;r12_formal_selected=Ayjjfu|9Epapg|E9zj6T|BQ9YY6;r12_pending_selected=2SJVK1|EUukvc;r13_independent_selected=9VhXEPw3|BQAf3pQz|yX3wv1tk|HNULoxt5;"
+        "target_count=26;r10_selected=3eN9mk|5949hD|2Ec754|HZuErb;r12_formal_selected=Ayjjfu|9Epapg|E9zj6T|BQ9YY6;r12_pending_selected=2SJVK1|EUukvc;r13_independent_selected=9VhXEPw3|BQAf3pQz|yX3wv1tk|HNULoxt5;r14_diversified_selected=CU4L8;"
         "attempt_floor_from_m298=true;"
         "accepted_floor_from_m298_closed_floor=true;"
         "protective_reject_not_hard_gate=true;"

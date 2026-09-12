@@ -19,6 +19,10 @@ from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     R13_FORMAL_M74_WALLETS,
     R13_INDEPENDENCE_AUDIT_SHA256,
     R13_REPORT_SHA256,
+    R14_DIVERSIFICATION_AUDIT_SHA256,
+    R14_FORMAL_M74_ADMISSION_KIND,
+    R14_FORMAL_M74_WALLETS,
+    R14_REPORT_SHA256,
     validate_pending_flat_m74_admission_registry,
 )
 
@@ -306,6 +310,26 @@ def test_r13_independent_formal_wallets_use_fresh_m300_gate_and_exact_provenance
         assert out["target_admission"]["upstream_formal_m74_pass"] is True
         assert out["target_admission"]["upstream_formal_m74_report_sha256"] == R13_REPORT_SHA256
         assert out["target_admission"]["upstream_admission_readiness_report_sha256"] == R13_INDEPENDENCE_AUDIT_SHA256
+        assert out["target_admission"]["candidate_entry_evidence_backfilled"] is False
+        assert out["formal_claims"]["m74_pass_claimed"] is False
+        assert out["formal_claims"]["m298_pass_claimed"] is False
+
+def test_r14_cu4l8_uses_fresh_m300_gate_and_exact_diversification_provenance():
+    anchor = datetime(2026, 9, 12, 13, 0, tzinfo=timezone.utc)
+    assert R14_FORMAL_M74_WALLETS == {"CU4L8": "CU4L8gvTNGVu6FGGaLQKbSKbia5adhhA6ERVTF1DNr4Y"}
+    for label, wallet in R14_FORMAL_M74_WALLETS.items():
+        assert TARGETS[label] == wallet
+        out = evaluate_candidate_promotion(
+            wallet=wallet,
+            events=_dataset(wallet, anchor, prefix=f"R14-{label}"),
+            anchor_utc=anchor,
+            terminal_at=anchor + timedelta(hours=2),
+        )
+        assert out["promotion_eligible"] is True
+        assert out["target_admission"]["kind"] == R14_FORMAL_M74_ADMISSION_KIND
+        assert out["target_admission"]["upstream_formal_m74_pass"] is True
+        assert out["target_admission"]["upstream_formal_m74_report_sha256"] == R14_REPORT_SHA256
+        assert out["target_admission"]["upstream_admission_readiness_report_sha256"] == R14_DIVERSIFICATION_AUDIT_SHA256
         assert out["target_admission"]["candidate_entry_evidence_backfilled"] is False
         assert out["formal_claims"]["m74_pass_claimed"] is False
         assert out["formal_claims"]["m298_pass_claimed"] is False

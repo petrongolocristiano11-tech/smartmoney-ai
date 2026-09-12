@@ -30,6 +30,10 @@ from backend.app.services.gen4_formal_m74_candidate_admission_service import (
     R13_FORMAL_M74_WALLETS,
     R13_INDEPENDENCE_AUDIT_SHA256,
     R13_REPORT_SHA256,
+    R14_DIVERSIFICATION_AUDIT_SHA256,
+    R14_FORMAL_M74_ADMISSION_KIND,
+    R14_FORMAL_M74_WALLETS,
+    R14_REPORT_SHA256,
     build_formal_m74_admission_report,
     validate_formal_m74_admission_registry,
     validate_pending_flat_m74_admission_registry,
@@ -73,8 +77,8 @@ def main():
     assert registry[wallet]["r7_fix1_script_sha256"] == R7_FIX1_SCRIPT_SHA256
     assert registry[wallet]["gen4_copyability_pass_claimed"] is False
     assert registry[wallet]["candidate_forward_proof_backfilled"] is False
-    assert set(FORMAL_M74_ADMITTED_WALLETS) == {"5PA", "3UdE", "EdNc", "GmRK", "3eN9mk", "5949hD", "2Ec754", "HZuErb", "Ayjjfu", "9Epapg", "E9zj6T", "BQ9YY6", "9VhXEPw3", "BQAf3pQz", "yX3wv1tk", "HNULoxt5"}
-    assert len(registry) == 16
+    assert set(FORMAL_M74_ADMITTED_WALLETS) == {"5PA", "3UdE", "EdNc", "GmRK", "3eN9mk", "5949hD", "2Ec754", "HZuErb", "Ayjjfu", "9Epapg", "E9zj6T", "BQ9YY6", "9VhXEPw3", "BQAf3pQz", "yX3wv1tk", "HNULoxt5", "CU4L8"}
+    assert len(registry) == 17
     for label in ("3UdE", "EdNc", "GmRK"):
         r9_wallet = FORMAL_M74_ADMITTED_WALLETS[label]
         evidence = registry[r9_wallet]
@@ -216,12 +220,34 @@ def main():
             assert decision["target_admission"]["candidate_entry_evidence_backfilled"] is False
             assert decision["formal_claims"]["m298_pass_claimed"] is False
 
+
+    for label, r14_wallet in R14_FORMAL_M74_WALLETS.items():
+        assert TARGETS[label] == r14_wallet
+        evidence = registry[r14_wallet]
+        assert evidence["formal_m74_pass"] is True
+        assert evidence["formal_m74_status"] == "PASS"
+        assert evidence["formal_failure_reasons"] == []
+        assert evidence["history_complete"] is True
+        assert evidence["open_positions"] == 0
+        assert evidence["r14_report_sha256"] == R14_REPORT_SHA256
+        assert evidence["r14_diversification_audit_sha256"] == R14_DIVERSIFICATION_AUDIT_SHA256
+        assert evidence["r14_diversification_classification"] == "SLOT20_DIVERSIFICATION_CANDIDATE"
+        fresh = [event(r14_wallet, f"r14-{label}-{i}", anchor + timedelta(minutes=i + 1), i < 10) for i in range(20)]
+        for sample, eligible in (([], False), (fresh[:19], False), (fresh, True)):
+            decision = evaluate_candidate_promotion(wallet=r14_wallet, events=sample, anchor_utc=anchor, terminal_at=anchor + timedelta(hours=2))
+            assert decision["promotion_eligible"] is eligible
+            assert decision["target_admission"]["kind"] == R14_FORMAL_M74_ADMISSION_KIND
+            assert decision["target_admission"]["upstream_formal_m74_report_sha256"] == R14_REPORT_SHA256
+            assert decision["target_admission"]["upstream_admission_readiness_report_sha256"] == R14_DIVERSIFICATION_AUDIT_SHA256
+            assert decision["target_admission"]["candidate_entry_evidence_backfilled"] is False
+            assert decision["formal_claims"]["m298_pass_claimed"] is False
+
     print(
         "FORMAL_M74_CANDIDATE_ADMISSION_VERIFY=PASS;"
         f"wallet={wallet};formal_m74_report_sha={R7_FORMAL_REPORT_SHA256};"
         "m300_target=yes;new_candidate_attempt_floor=20;new_accepted_floor=10;"
         "historical_backfill=no;legacy_gen4_pass_invented=no;"
-        "formal_registry_count=16;pending_flat_count=7;r10_selected=3eN9mk|5949hD|2Ec754|HZuErb;r12_formal_selected=Ayjjfu|9Epapg|E9zj6T|BQ9YY6;r12_pending_selected=2SJVK1|EUukvc;r13_independent_selected=9VhXEPw3|BQAf3pQz|yX3wv1tk|HNULoxt5;historical_positions=quarantined;"
+        "formal_registry_count=17;pending_flat_count=7;r10_selected=3eN9mk|5949hD|2Ec754|HZuErb;r12_formal_selected=Ayjjfu|9Epapg|E9zj6T|BQ9YY6;r12_pending_selected=2SJVK1|EUukvc;r13_independent_selected=9VhXEPw3|BQAf3pQz|yX3wv1tk|HNULoxt5;r14_diversified_selected=CU4L8;historical_positions=quarantined;"
         "watchlist_mutation=manual_future_step;provider_mutation=no;"
         "m75_changed=no;m298_changed=no;pam_changed=no;live=no"
     )

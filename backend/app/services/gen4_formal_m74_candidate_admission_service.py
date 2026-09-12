@@ -49,6 +49,13 @@ R13_FORMAL_M74_WALLETS = {
     "HNULoxt5": "HNULoxt5zLwMzQKdysbxw5L69pRJBr8vFFqnD1WRLqHq",
 }
 
+R14_REPORT_SHA256 = "fe9157a9ccd46981f01a234db1a3b80cdc515f786cf48e0d9ffd4d8ff49785bd"
+R14_DIVERSIFICATION_AUDIT_SHA256 = "a6463a3e413eeb3a13404907398f0fc254dfe7a9c0f7d26e8f8603e07e58e56c"
+R14_FORMAL_M74_ADMISSION_KIND = "R14_FORMAL_M74_PASS_DIVERSIFIED_ADMISSION"
+R14_FORMAL_M74_WALLETS = {
+    "CU4L8": "CU4L8gvTNGVu6FGGaLQKbSKbia5adhhA6ERVTF1DNr4Y",
+}
+
 R12_PENDING_FLAT_M74_ADMISSION_KIND = "R12_M74_QUALIFIED_PENDING_FLAT_ADMISSION"
 R12_PENDING_FLAT_M74_WALLETS = {
     "2SJVK1": "2SJVK1Xhz2WWmsFhLHNpP9CM8q1mTwW7EXSVpHgsFJEs",
@@ -72,6 +79,7 @@ FORMAL_M74_ADMITTED_WALLETS: dict[str, str] = {
     "BQAf3pQz": R13_FORMAL_M74_WALLETS["BQAf3pQz"],
     "yX3wv1tk": R13_FORMAL_M74_WALLETS["yX3wv1tk"],
     "HNULoxt5": R13_FORMAL_M74_WALLETS["HNULoxt5"],
+    "CU4L8": R14_FORMAL_M74_WALLETS["CU4L8"],
 }
 
 
@@ -707,6 +715,32 @@ FORMAL_M74_ADMISSION_EVIDENCE: dict[str, dict[str, Any]] = {
         "live_execution_authorized": False,
     },
 
+    FORMAL_M74_ADMITTED_WALLETS["CU4L8"]: {
+        "admission_kind": R14_FORMAL_M74_ADMISSION_KIND,
+        "wallet_address": FORMAL_M74_ADMITTED_WALLETS["CU4L8"],
+        "formal_m74_pass": True,
+        "formal_m74_status": "PASS",
+        "formal_evaluator": R7_FORMAL_EVALUATOR,
+        "formal_failure_reasons": [],
+        "history_complete": True,
+        "r14_report_sha256": R14_REPORT_SHA256,
+        "r14_diversification_audit_sha256": R14_DIVERSIFICATION_AUDIT_SHA256,
+        "closed_trade_count": 152,
+        "history_span_days": 43.98631944,
+        "profit_factor": 3.72260756,
+        "net_pnl_sol": 0.911959932,
+        "maximum_drawdown_percent": 6.21180883,
+        "recent_profit_factor": 2.49518108,
+        "recent_net_pnl_sol": 0.04120906,
+        "open_positions": 0,
+        "historical_evidence_only": True,
+        "r14_diversification_classification": "SLOT20_DIVERSIFICATION_CANDIDATE",
+        "candidate_forward_proof_backfilled": False,
+        "m75_pass_claimed": False,
+        "m298_pass_claimed": False,
+        "gen4_copyability_pass_claimed": False,
+        "live_execution_authorized": False,
+    },
 }
 
 
@@ -737,6 +771,7 @@ def validate_formal_m74_admission_registry() -> dict[str, dict[str, Any]]:
             "3eN9mk", "5949hD", "2Ec754", "HZuErb",
             "Ayjjfu", "9Epapg", "E9zj6T", "BQ9YY6",
             "9VhXEPw3", "BQAf3pQz", "yX3wv1tk", "HNULoxt5",
+            "CU4L8",
         },
         "Unexpected formal M74 admission registry labels.",
     )
@@ -900,8 +935,21 @@ def validate_formal_m74_admission_registry() -> dict[str, dict[str, Any]]:
             "recent_net_pnl_sol": 0.069785959,
         },
     })
+    expected.update({
+        "CU4L8": {
+            "admission_kind": R14_FORMAL_M74_ADMISSION_KIND,
+            "closed_trade_count": 152,
+            "history_span_days": 43.98631944,
+            "profit_factor": 3.72260756,
+            "net_pnl_sol": 0.911959932,
+            "maximum_drawdown_percent": 6.21180883,
+            "recent_profit_factor": 2.49518108,
+            "recent_net_pnl_sol": 0.04120906,
+        },
+    })
     _require({k: FORMAL_M74_ADMITTED_WALLETS[k] for k in R10_FORMAL_M74_WALLETS} == R10_FORMAL_M74_WALLETS, "R10 exact wallets drift.")
     _require({k: FORMAL_M74_ADMITTED_WALLETS[k] for k in R13_FORMAL_M74_WALLETS} == R13_FORMAL_M74_WALLETS, "R13 exact wallets drift.")
+    _require({k: FORMAL_M74_ADMITTED_WALLETS[k] for k in R14_FORMAL_M74_WALLETS} == R14_FORMAL_M74_WALLETS, "R14 exact wallets drift.")
     _require({k: FORMAL_M74_ADMITTED_WALLETS[k] for k in R12_FORMAL_M74_WALLETS} == R12_FORMAL_M74_WALLETS, "R12 exact wallets drift.")
 
     registry: dict[str, dict[str, Any]] = {}
@@ -942,6 +990,14 @@ def validate_formal_m74_admission_registry() -> dict[str, dict[str, Any]]:
             _require(evidence.get("r12_full31_report_sha256") == R12_FULL31_REPORT_SHA256, f"{label} R12 FULL31 SHA drift.")
             for key in ("recent_profit_factor", "recent_net_pnl_sol"):
                 _require(abs(float(evidence.get(key) or 0.0) - metrics[key]) < 1e-12, f"{label} R12 recent metric drift: {key}")
+        elif label in R14_FORMAL_M74_WALLETS:
+            _require(evidence.get("history_complete") is True, f"{label} R14 history incomplete.")
+            _require(evidence.get("formal_failure_reasons") == [], f"{label} R14 failures present.")
+            _require(evidence.get("r14_report_sha256") == R14_REPORT_SHA256, f"{label} R14 report SHA drift.")
+            _require(evidence.get("r14_diversification_audit_sha256") == R14_DIVERSIFICATION_AUDIT_SHA256, f"{label} R14 diversification audit SHA drift.")
+            _require(evidence.get("r14_diversification_classification") == "SLOT20_DIVERSIFICATION_CANDIDATE", f"{label} R14 diversification classification drift.")
+            for key in ("recent_profit_factor", "recent_net_pnl_sol"):
+                _require(abs(float(evidence.get(key) or 0.0) - metrics[key]) < 1e-12, f"{label} R14 recent metric drift: {key}")
         elif label in R13_FORMAL_M74_WALLETS:
             _require(evidence.get("history_complete") is True, f"{label} R13 history incomplete.")
             _require(evidence.get("formal_failure_reasons") == [], f"{label} R13 failures present.")
