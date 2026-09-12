@@ -1497,6 +1497,523 @@ def record_fastpath_notification(
     }
 
 
+
+M314_CANDIDATE_ROUNDTRIP_VERSION = "m314-candidate-forward-roundtrip-shadow/1"
+M314_CANDIDATE_ROUNDTRIP_SCOPE = "M314_CANDIDATE_ROUNDTRIP"
+M314_CANDIDATE_ROUNDTRIP_GATE_ARMED = False
+M314_CANDIDATE_ROUNDTRIP_MIN_CLOSED = 10
+M314_CANDIDATE_ROUNDTRIP_MIN_PROFIT_FACTOR = 1.30
+M314_CANDIDATE_ROUNDTRIP_MAX_DRAWDOWN_PERCENT = 15.0
+M314_CANDIDATE_ROUNDTRIP_EVIDENCE_KEY = "m314_candidate_roundtrip"
+
+
+def _candidate_roundtrip_fee_lamports() -> int:
+    return int(
+        getattr(
+            settings,
+            "CANONICAL_PARSER_GEN4_COPYABILITY_ESTIMATED_NETWORK_FEE_LAMPORTS",
+            100_000,
+        )
+    )
+
+
+def _candidate_roundtrip_state(row: Any) -> dict[str, Any] | None:
+    evidence = dict(getattr(row, "evidence", None) or {})
+    value = evidence.get(M314_CANDIDATE_ROUNDTRIP_EVIDENCE_KEY)
+    if not isinstance(value, dict):
+        return None
+    if str(value.get("version") or "") != M314_CANDIDATE_ROUNDTRIP_VERSION:
+        return None
+    if str(value.get("scope") or "") != M314_CANDIDATE_ROUNDTRIP_SCOPE:
+        return None
+    return dict(value)
+
+
+def _set_candidate_roundtrip_state(row: Any, state: dict[str, Any]) -> None:
+    evidence = dict(getattr(row, "evidence", None) or {})
+    evidence[M314_CANDIDATE_ROUNDTRIP_EVIDENCE_KEY] = dict(state)
+    row.evidence = evidence
+
+
+def _new_candidate_roundtrip_state(
+    *,
+    event: CanonicalParserGen4FastpathShadowEvent,
+    signal: Any,
+    policy: dict[str, Any],
+    quote: Any,
+    conservative_out: int,
+    deterioration_bps: float | None,
+    price_impact_bps: float,
+) -> dict[str, Any]:
+    opened_at = _aware(quote.received_at) or _utc_now()
+    fee = _candidate_roundtrip_fee_lamports()
+    return {
+        "version": M314_CANDIDATE_ROUNDTRIP_VERSION,
+        "scope": M314_CANDIDATE_ROUNDTRIP_SCOPE,
+        "gate_armed": False,
+        "strict_forward_only": True,
+        "backfill": False,
+        "status": "OPEN",
+        "position_id": str(uuid4()),
+        "entry_fast_event_id": str(event.event_id),
+        "wallet_address": str(signal.wallet_address),
+        "token_mint": str(signal.token_mint),
+        "token_decimals": int(signal.token_decimals),
+        "entry_signature": str(signal.signature),
+        "entry_received_at": (_aware(event.fast_received_at) or _utc_now()).isoformat(),
+        "opened_at": opened_at.isoformat(),
+        "closed_at": None,
+        "entry_quote_latency_ms": int(quote.latency_ms),
+        "entry_price_deterioration_bps": deterioration_bps,
+        "entry_price_impact_bps": float(price_impact_bps),
+        "entry_transaction_built": bool(quote.result.transaction),
+        "entry_input_lamports": int(quote.result.in_amount),
+        "entry_output_token_raw": int(conservative_out),
+        "remaining_token_raw": int(conservative_out),
+        "allocated_entry_fee_lamports": fee,
+        "realized_output_lamports": 0,
+        "allocated_exit_fee_lamports": 0,
+        "pnl_lamports": None,
+        "return_percent": None,
+        "last_exit_signature": None,
+        "exit_quote_latency_ms": None,
+        "exit_price_impact_bps": None,
+        "exit_transaction_built": False,
+        "exit_copyable": False,
+        "close_reason": None,
+        "entry_quote": {
+            **dict(quote.sanitized or {}),
+            "expected_out_amount": int(quote.result.out_amount),
+            "conservative_out_amount": int(conservative_out),
+            "slippage_haircut_applied": True,
+        },
+        "exit_quotes": [],
+        "exit_failures": [],
+        "policy_snapshot": {
+            "simulated_input_lamports": int(policy["simulated_input_lamports"]),
+            "slippage_bps": int(policy["slippage_bps"]),
+            "max_quote_latency_ms": int(policy["max_quote_latency_ms"]),
+            "max_price_impact_bps": float(policy["max_price_impact_bps"]),
+            "max_price_deterioration_bps": float(policy["max_price_deterioration_bps"]),
+            "estimated_network_fee_lamports": fee,
+        },
+        "mutates_m300": False,
+        "mutates_m298": False,
+        "mutates_m307": False,
+        "live_execution": False,
+        "paper_execution": False,
+        "signer_access": False,
+    }
+
+
+def _candidate_roundtrip_record_exit_failure(
+    rows: list[CanonicalParserGen4FastpathShadowEvent],
+    *,
+    signature: str,
+    code: str,
+    observed_at: datetime,
+) -> None:
+    for row in rows:
+        state = _candidate_roundtrip_state(row)
+        if state is None:
+            continue
+        failures = [
+            dict(item)
+            for item in list(state.get("exit_failures") or [])
+            if isinstance(item, dict)
+        ]
+        failures.append(
+            {
+                "signature": str(signature),
+                "code": str(code),
+                "observed_at": observed_at.isoformat(),
+            }
+        )
+        state["exit_failures"] = failures[-100:]
+        _set_candidate_roundtrip_state(row, state)
+
+
+def _candidate_roundtrip_apply_allocations(
+    rows: list[CanonicalParserGen4FastpathShadowEvent],
+    *,
+    signal: Any,
+    quote: Any,
+    conservative_out: int,
+    amount_to_sell: int,
+    fee_lamports: int,
+) -> dict[str, int]:
+    states = [_candidate_roundtrip_state(row) for row in rows]
+    if any(state is None for state in states):
+        raise ValueError("M314_ROUNDTRIP_STATE_MISSING")
+
+    concrete_states = [state for state in states if state is not None]
+    weights = [int(state["remaining_token_raw"]) for state in concrete_states]
+    sold_allocations = _allocate_integer(int(amount_to_sell), weights)
+    out_allocations = _allocate_integer(int(conservative_out), sold_allocations)
+    fee_allocations = _allocate_integer(int(fee_lamports), sold_allocations)
+    impact_bps = max(0.0, float(quote.result.price_impact_percent) * 100.0)
+    fraction = float(signal.sell_fraction)
+
+    affected = 0
+    closed = 0
+    for row, state, sold_raw, out_lamports, allocated_fee in zip(
+        rows, concrete_states, sold_allocations, out_allocations, fee_allocations
+    ):
+        if int(sold_raw) <= 0:
+            continue
+        affected += 1
+        state["remaining_token_raw"] = max(
+            0, int(state["remaining_token_raw"]) - int(sold_raw)
+        )
+        state["realized_output_lamports"] = (
+            int(state.get("realized_output_lamports") or 0) + int(out_lamports)
+        )
+        state["allocated_exit_fee_lamports"] = (
+            int(state.get("allocated_exit_fee_lamports") or 0) + int(allocated_fee)
+        )
+        state["last_exit_signature"] = str(signal.signature)
+        state["exit_quote_latency_ms"] = int(quote.latency_ms)
+        state["exit_price_impact_bps"] = float(impact_bps)
+        state["exit_transaction_built"] = bool(quote.result.transaction)
+        state["exit_copyable"] = True
+        exit_quotes = [
+            dict(item)
+            for item in list(state.get("exit_quotes") or [])
+            if isinstance(item, dict)
+        ]
+        exit_quotes.append(
+            {
+                "signature": str(signal.signature),
+                "sell_fraction": fraction,
+                "sold_token_raw": int(sold_raw),
+                "out_lamports": int(out_lamports),
+                "allocated_fee_lamports": int(allocated_fee),
+                "quote": {
+                    **dict(quote.sanitized or {}),
+                    "expected_out_amount": int(quote.result.out_amount),
+                    "conservative_out_amount": int(conservative_out),
+                    "slippage_haircut_applied": True,
+                },
+                "quote_requested_at": quote.requested_at.isoformat(),
+                "quote_received_at": quote.received_at.isoformat(),
+            }
+        )
+        state["exit_quotes"] = exit_quotes[-100:]
+        dust_limit = max(1, int(int(state["entry_output_token_raw"]) * 0.001))
+        if int(state["remaining_token_raw"]) <= dust_limit or fraction >= 0.999:
+            state["remaining_token_raw"] = 0
+            state["status"] = "CLOSED"
+            state["closed_at"] = (_aware(quote.received_at) or _utc_now()).isoformat()
+            state["close_reason"] = "MIRRORED_WALLET_EXIT"
+            cost = int(state["entry_input_lamports"]) + int(
+                state["allocated_entry_fee_lamports"]
+            )
+            proceeds = int(state["realized_output_lamports"]) - int(
+                state["allocated_exit_fee_lamports"]
+            )
+            pnl = proceeds - cost
+            state["pnl_lamports"] = int(pnl)
+            state["return_percent"] = (pnl / cost * 100.0) if cost > 0 else None
+            closed += 1
+        else:
+            state["status"] = "OPEN_PARTIAL"
+        _set_candidate_roundtrip_state(row, state)
+    return {"positions_affected": affected, "positions_closed": closed}
+
+
+def _apply_candidate_roundtrip_sell_shadow(
+    db: Session,
+    *,
+    event: CanonicalParserGen4FastpathShadowEvent,
+    signal: Any,
+    policy: dict[str, Any],
+    jupiter_client: JupiterSwapClient,
+) -> dict[str, Any]:
+    candidates = list(
+        db.scalars(
+            select(CanonicalParserGen4FastpathShadowEvent)
+            .where(
+                CanonicalParserGen4FastpathShadowEvent.wallet_address
+                == str(signal.wallet_address),
+                CanonicalParserGen4FastpathShadowEvent.token_mint
+                == str(signal.token_mint),
+                CanonicalParserGen4FastpathShadowEvent.fast_received_at
+                < (_aware(event.fast_received_at) or _utc_now()),
+            )
+            .order_by(
+                CanonicalParserGen4FastpathShadowEvent.fast_received_at,
+                CanonicalParserGen4FastpathShadowEvent.id,
+            )
+        )
+    )
+    positions = []
+    for row in candidates:
+        if not _is_candidate_event(row):
+            continue
+        state = _candidate_roundtrip_state(row)
+        if state is None:
+            continue
+        if str(state.get("status") or "") not in {"OPEN", "OPEN_PARTIAL"}:
+            continue
+        if int(state.get("remaining_token_raw") or 0) <= 0:
+            continue
+        positions.append(row)
+
+    base = {
+        "version": M314_CANDIDATE_ROUNDTRIP_VERSION,
+        "scope": M314_CANDIDATE_ROUNDTRIP_SCOPE,
+        "side": "SELL",
+        "open_positions_found": len(positions),
+        "quote_attempted": False,
+        "exit_applied": False,
+        "positions_closed": 0,
+        "gate_armed": False,
+        "strict_forward_only": True,
+        "backfill": False,
+        "mutates_m300": False,
+        "mutates_m298": False,
+        "mutates_m307": False,
+        "live_execution": False,
+        "paper_execution": False,
+        "signer_access": False,
+    }
+    if not positions:
+        return {**base, "reason": "NO_OPEN_M314_CANDIDATE_POSITION"}
+
+    fraction = signal.sell_fraction
+    if fraction is None or float(fraction) <= 0:
+        return {**base, "reason": "SELL_FRACTION_UNAVAILABLE"}
+
+    weights = [
+        int((_candidate_roundtrip_state(row) or {}).get("remaining_token_raw") or 0)
+        for row in positions
+    ]
+    total_remaining = sum(weights)
+    if total_remaining <= 0:
+        return {**base, "reason": "NO_REMAINING_M314_CANDIDATE_TOKEN"}
+
+    amount_to_sell = min(
+        total_remaining,
+        max(1, int(total_remaining * float(fraction))),
+    )
+
+    try:
+        quote = _quote(
+            input_mint=str(signal.token_mint),
+            output_mint=SOL_MINT,
+            amount_raw=int(amount_to_sell),
+            slippage_bps=int(policy["slippage_bps"]),
+            client=jupiter_client,
+        )
+    except JupiterSwapError as exc:
+        code = str(exc.code)
+        _candidate_roundtrip_record_exit_failure(
+            positions,
+            signature=str(signal.signature),
+            code=code,
+            observed_at=_utc_now(),
+        )
+        return {
+            **base,
+            "quote_attempted": True,
+            "quote_error": code,
+            "reason": "EXIT_QUOTE_ERROR",
+        }
+
+    conservative_out = _conservative_out_amount(
+        quote.result, int(policy["slippage_bps"])
+    )
+    impact_bps = max(0.0, float(quote.result.price_impact_percent) * 100.0)
+    rejection = _selective_exit_rejection(
+        policy,
+        quote_latency_ms=int(quote.latency_ms),
+        out_amount=int(quote.result.out_amount),
+        transaction_built=bool(quote.result.transaction),
+        price_impact_bps=impact_bps,
+    )
+    if rejection is not None:
+        _candidate_roundtrip_record_exit_failure(
+            positions,
+            signature=str(signal.signature),
+            code=rejection,
+            observed_at=_aware(quote.received_at) or _utc_now(),
+        )
+        return {
+            **base,
+            "quote_attempted": True,
+            "quote_built": bool(quote.result.transaction),
+            "quote_latency_ms": int(quote.latency_ms),
+            "price_impact_bps": impact_bps,
+            "reason": rejection,
+        }
+
+    applied = _candidate_roundtrip_apply_allocations(
+        positions,
+        signal=signal,
+        quote=quote,
+        conservative_out=int(conservative_out),
+        amount_to_sell=int(amount_to_sell),
+        fee_lamports=_candidate_roundtrip_fee_lamports(),
+    )
+    return {
+        **base,
+        "quote_attempted": True,
+        "quote_built": bool(quote.result.transaction),
+        "quote_latency_ms": int(quote.latency_ms),
+        "price_impact_bps": impact_bps,
+        "sell_fraction": float(fraction),
+        **applied,
+        "exit_applied": True,
+    }
+
+
+def _candidate_roundtrip_metrics_from_events(
+    events: list[Any],
+    *,
+    recent_limit: int = 100,
+) -> dict[str, Any]:
+    entries = []
+    for row in events:
+        state = _candidate_roundtrip_state(row)
+        if state is not None:
+            entries.append((row, state))
+
+    closed = [
+        (row, state)
+        for row, state in entries
+        if str(state.get("status") or "") == "CLOSED"
+        and state.get("pnl_lamports") is not None
+        and bool(state.get("exit_copyable"))
+    ]
+    closed.sort(
+        key=lambda item: (
+            str(item[1].get("closed_at") or ""),
+            str(getattr(item[0], "event_id", "") or ""),
+        )
+    )
+    pnl_values = [int(state["pnl_lamports"]) for _, state in closed]
+    total_cost = sum(
+        int(state["entry_input_lamports"])
+        + int(state["allocated_entry_fee_lamports"])
+        for _, state in closed
+    )
+    gross_profit = sum(value for value in pnl_values if value > 0)
+    gross_loss = abs(sum(value for value in pnl_values if value < 0))
+    profit_factor = (
+        gross_profit / gross_loss
+        if gross_loss > 0
+        else (999.0 if gross_profit > 0 else 0.0)
+    )
+    net_pnl = sum(pnl_values)
+    cumulative = 0
+    peak = 0
+    max_drawdown_lamports = 0
+    for value in pnl_values:
+        cumulative += value
+        peak = max(peak, cumulative)
+        max_drawdown_lamports = max(max_drawdown_lamports, peak - cumulative)
+    max_drawdown_percent = (
+        max_drawdown_lamports / total_cost * 100.0 if total_cost > 0 else 0.0
+    )
+    best_trade = max(pnl_values) if pnl_values else None
+    net_without_best = (net_pnl - best_trade) if best_trade is not None else None
+    failures = [
+        dict(item)
+        for _, state in entries
+        for item in list(state.get("exit_failures") or [])
+        if isinstance(item, dict)
+    ]
+    unique_failures = {
+        (str(item.get("signature") or ""), str(item.get("code") or ""))
+        for item in failures
+    }
+    economics_pass = bool(
+        len(closed) >= M314_CANDIDATE_ROUNDTRIP_MIN_CLOSED
+        and net_pnl > 0
+        and profit_factor >= M314_CANDIDATE_ROUNDTRIP_MIN_PROFIT_FACTOR
+        and max_drawdown_percent <= M314_CANDIDATE_ROUNDTRIP_MAX_DRAWDOWN_PERCENT
+        and net_without_best is not None
+        and net_without_best > 0
+    )
+    recent = sorted(
+        entries,
+        key=lambda item: (
+            str(item[1].get("opened_at") or ""),
+            str(getattr(item[0], "event_id", "") or ""),
+        ),
+        reverse=True,
+    )[: max(1, min(int(recent_limit), 500))]
+    return {
+        "version": M314_CANDIDATE_ROUNDTRIP_VERSION,
+        "scope": M314_CANDIDATE_ROUNDTRIP_SCOPE,
+        "gate_armed": M314_CANDIDATE_ROUNDTRIP_GATE_ARMED,
+        "strict_forward_only": True,
+        "backfill": False,
+        "entry_count": len(entries),
+        "open_position_count": sum(
+            str(state.get("status") or "") in {"OPEN", "OPEN_PARTIAL"}
+            for _, state in entries
+        ),
+        "closed_trade_count": len(closed),
+        "net_pnl_lamports": net_pnl,
+        "net_pnl_sol": net_pnl / 1_000_000_000,
+        "gross_profit_lamports": gross_profit,
+        "gross_loss_lamports": gross_loss,
+        "profit_factor": round(profit_factor, 8),
+        "maximum_drawdown_lamports": max_drawdown_lamports,
+        "maximum_drawdown_percent": round(max_drawdown_percent, 8),
+        "best_trade_lamports": best_trade,
+        "net_without_best_trade_lamports": net_without_best,
+        "technical_exit_failure_count": len(unique_failures),
+        "economic_observation_pass": economics_pass,
+        "m307_authorized": False,
+        "recent_positions": [
+            {
+                "event_id": str(getattr(row, "event_id", "") or ""),
+                "wallet": state.get("wallet_address"),
+                "token_mint": state.get("token_mint"),
+                "entry_signature": state.get("entry_signature"),
+                "status": state.get("status"),
+                "opened_at": state.get("opened_at"),
+                "closed_at": state.get("closed_at"),
+                "pnl_lamports": state.get("pnl_lamports"),
+                "return_percent": state.get("return_percent"),
+            }
+            for row, state in recent
+        ],
+        "safety": {
+            "observation_only": True,
+            "m300_changed": False,
+            "m298_changed": False,
+            "m307_changed": False,
+            "live_execution": False,
+            "paper_execution": False,
+            "signer_access": False,
+            "automatic_promotion": False,
+        },
+    }
+
+
+def get_gen4_candidate_roundtrip_shadow_status(
+    db: Session,
+    *,
+    recent_limit: int = 100,
+) -> dict[str, Any]:
+    rows = list(
+        db.scalars(
+            select(CanonicalParserGen4FastpathShadowEvent)
+            .order_by(
+                CanonicalParserGen4FastpathShadowEvent.fast_received_at,
+                CanonicalParserGen4FastpathShadowEvent.id,
+            )
+        )
+    )
+    candidate_rows = [row for row in rows if _is_candidate_event(row)]
+    return _candidate_roundtrip_metrics_from_events(
+        candidate_rows,
+        recent_limit=recent_limit,
+    )
+
 def record_fastpath_candidate_notification(
     db: Session,
     *,
@@ -1515,6 +2032,8 @@ def record_fastpath_candidate_notification(
     promoted_sell_context: tuple[
         Any, CanonicalParserGen4PromotedSelectiveActivation
     ] | None = None
+
+    candidate_roundtrip_sell_context: tuple[Any, dict[str, Any]] | None = None
 
     event = CanonicalParserGen4FastpathShadowEvent(
         event_id=str(uuid4()),
@@ -1611,6 +2130,22 @@ def record_fastpath_candidate_notification(
                 event.fast_transaction_built = built
                 event.fast_provisional_copyable = reason is None
                 event.fast_provisional_rejection_reason = reason
+                if reason is None:
+                    conservative_out = _conservative_out_amount(
+                        quote.result, int(policy["slippage_bps"])
+                    )
+                    event.evidence = {
+                        **dict(event.evidence or {}),
+                        M314_CANDIDATE_ROUNDTRIP_EVIDENCE_KEY: _new_candidate_roundtrip_state(
+                            event=event,
+                            signal=signal,
+                            policy=policy,
+                            quote=quote,
+                            conservative_out=int(conservative_out),
+                            deterioration_bps=deterioration,
+                            price_impact_bps=impact_bps,
+                        ),
+                    }
                 if promoted_activation is not None:
                     lifecycle = {
                         "version": PROMOTED_SELECTIVE_POSITION_VERSION,
@@ -1670,6 +2205,23 @@ def record_fastpath_candidate_notification(
                 _record_jupiter_entry_error(event, exc)
         else:
             event.fast_provisional_rejection_reason = "NOT_A_BUY_SIGNAL"
+            if signal.side == "SELL":
+                policy = dict(event.policy_snapshot or {})
+                event.evidence = {
+                    **dict(event.evidence or {}),
+                    "m314_candidate_roundtrip_sell": {
+                        "version": M314_CANDIDATE_ROUNDTRIP_VERSION,
+                        "scope": M314_CANDIDATE_ROUNDTRIP_SCOPE,
+                        "sell_fraction": signal.sell_fraction,
+                        "strict_forward_only": True,
+                        "backfill": False,
+                        "quote_attempted": False,
+                        "live_execution": False,
+                        "paper_execution": False,
+                        "signer_access": False,
+                    },
+                }
+                candidate_roundtrip_sell_context = (signal, policy)
             if signal.side == "SELL" and promoted_activation is not None:
                 promoted_sell_context = (signal, promoted_activation)
     except CanonicalParserGen4CopyabilityError as exc:
@@ -1688,6 +2240,26 @@ def record_fastpath_candidate_notification(
         with db.begin_nested():
             db.add(event)
             db.flush()
+            if candidate_roundtrip_sell_context is not None:
+                candidate_signal, candidate_policy = candidate_roundtrip_sell_context
+                m314_sell = _apply_candidate_roundtrip_sell_shadow(
+                    db,
+                    event=event,
+                    signal=candidate_signal,
+                    policy=candidate_policy,
+                    jupiter_client=jupiter_client,
+                )
+                sell_evidence = dict(
+                    dict(event.evidence or {}).get("m314_candidate_roundtrip_sell") or {}
+                )
+                event.evidence = {
+                    **dict(event.evidence or {}),
+                    "m314_candidate_roundtrip_sell": {
+                        **sell_evidence,
+                        **m314_sell,
+                    },
+                }
+                db.flush()
             if promoted_position is not None:
                 db.add(promoted_position)
             if promoted_sell_context is not None:
