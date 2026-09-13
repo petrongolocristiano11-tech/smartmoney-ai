@@ -2961,6 +2961,10 @@ def get_gen4_fastpath_shadow_status(
         "selective_position_shadow": _selective_position_status(
             db, official_events=all_rows, recent_limit=limit
         ),
+        "m316_copyable_alpha_diagnostics": build_m316_candidate_alpha_diagnostics(
+            events=candidate_rows,
+            evaluated_at=_utc_now(),
+        ),
         "safety": {
             "live_execution": False,
             "signer_access": False,
@@ -2969,5 +2973,7 @@ def get_gen4_fastpath_shadow_status(
             "m114_m117_metrics_mutated": False,
             "m117d_official_counters_include_candidate_rows": False,
             "m138_selective_positions_mutate_m114_m117_metrics": False,
+            "m316_diagnostics_observation_only": True,
+            "m316_shadow_filter_armed": False,
         },
     }

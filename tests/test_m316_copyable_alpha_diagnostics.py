@@ -185,3 +185,37 @@ def test_candidate_roundtrip_status_exposes_per_wallet_and_m316_diagnostics_with
     assert status["m316_copyable_alpha_diagnostics"]["shadow_filter_armed"] is False
     assert status["safety"]["m316_diagnostics_observation_only"] is True
     assert status["safety"]["m316_shadow_filter_armed"] is False
+def test_fastpath_status_exposes_m316_diagnostics_disarmed(monkeypatch):
+    import backend.app.services.gen4_fastpath_shadow_service as fastpath
+
+    class EmptyDb:
+        def scalars(self, statement):
+            return []
+
+    monkeypatch.setattr(fastpath, "active_fastpath_wallets", lambda db: [])
+    monkeypatch.setattr(
+        fastpath,
+        "_selective_position_status",
+        lambda db, *, official_events, recent_limit: {},
+    )
+
+    result = fastpath.get_gen4_fastpath_shadow_status(
+        EmptyDb(),
+        recent_limit=20,
+    )
+
+    assert "m316_copyable_alpha_diagnostics" in result
+    diagnostics = result["m316_copyable_alpha_diagnostics"]
+    assert diagnostics["shadow_filter_armed"] is False
+
+    safety = diagnostics["safety"]
+    assert safety["observation_only"] is True
+    assert safety["automatic_entry_filtering"] is False
+    assert safety["automatic_promotion"] is False
+    assert safety["live_execution"] is False
+    assert safety["paper_execution"] is False
+    assert safety["signer_access"] is False
+    assert safety["backfill"] is False
+
+    assert result["safety"]["m316_diagnostics_observation_only"] is True
+    assert result["safety"]["m316_shadow_filter_armed"] is False
