@@ -43,6 +43,8 @@ class EmbeddedGen4FastpathShadowRuntime:
         self._candidate_connected = False
         self._candidate_messages = 0
         self._candidate_errors = 0
+        self._candidate_wallet_locks: dict[str, asyncio.Lock] = {}
+        self._candidate_fallback_lock = asyncio.Lock()
         self._official_wallet_locks: dict[str, asyncio.Lock] = {}
         self._official_fallback_lock = asyncio.Lock()
         self._reconcile_task: asyncio.Task | None = None
@@ -303,16 +305,24 @@ class EmbeddedGen4FastpathShadowRuntime:
         semaphore: asyncio.Semaphore,
         received_at: datetime,
     ) -> None:
-        async with semaphore:
-            try:
-                await asyncio.to_thread(
-                    self._record_candidate,
-                    message,
-                    received_at,
-                )
-            except Exception:
-                self._candidate_errors += 1
-                logger.exception("gen4_fastpath_candidate_shadow_event_failed")
+        wallets = configured_fastpath_candidate_wallets()
+        wallet_hint = fastpath_notification_wallet_hint(message, wallets)
+        if wallet_hint is None:
+            lock = self._candidate_fallback_lock
+        else:
+            lock = self._candidate_wallet_locks.setdefault(wallet_hint, asyncio.Lock())
+
+        async with lock:
+            async with semaphore:
+                try:
+                    await asyncio.to_thread(
+                        self._record_candidate,
+                        message,
+                        received_at,
+                    )
+                except Exception:
+                    self._candidate_errors += 1
+                    logger.exception("gen4_fastpath_candidate_shadow_event_failed")
 
     async def _run(self) -> None:
         reconnect = float(
