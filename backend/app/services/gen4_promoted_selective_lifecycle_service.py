@@ -29,6 +29,9 @@ from backend.app.services.gen4_selective_challenger_lifecycle_bridge_design_serv
 from backend.app.services.gen4_zero_helius_final_pre_micro_live_service import (
     canonical_sha256,
 )
+from backend.app.services.gen4_m315_execution_reality_promotion_guard_service import (
+    validate_m315_execution_reality_guard,
+)
 
 M307_VERSION = "canonical-parser-gen4-promoted-selective-lifecycle-bridge/1"
 M307_SCOPE = "M307_PROMOTED_SELECTIVE_LIFECYCLE_BRIDGE_IMPLEMENTED_DISARMED"
@@ -38,6 +41,21 @@ M307_AUTOMATIC_PROMOTION = False
 M307_PREPROMOTION_BACKFILL = False
 M307_LEGACY_ENDPOINT_USED = False
 M307_PROVIDER_MUTATION_REQUIRED = False
+
+# Frozen compatibility set: these wallets had formal M307 lineage before M314/M315
+# execution-reality evidence existed. Any wallet added after this baseline must carry
+# a validated M315 execution-reality guard in its activation package.
+M307_PRE_M315_LEGACY_LINEAGE_WALLETS = frozenset({
+    "CGAZ8ysbcmc6a14uYRqDJfnQvjRF4fVSZBYiTsZgRwcH",
+    "89f3DSmRiFsAZWQXCQMYPwyEUtxbVeCDP7JEjsXrbWST",
+    "2mqrindMAjJEQPLhroYWyiYPo5h9iAsahfdd4QtsjwdY",
+    "D9gQ6RhKEpnobPBUdWY5bPQt2p3zGk3iVz6ChpUi2ArA",
+    "5pAewyzzyf3bbD2MEdvEjTHR9AqfL9wWouEA8ft2ggEV",
+    "37uM1rp8TK7eVURVRnjtaxGkdJyXjgA9uz83DjApcHvq",
+    "9rDMVCH7mQ9N2PkyHw8KT8wraMhF8tyMz9R631yyL1df",
+    "3N7aa2Wkg9dEm8kkC4F7M8knExDyEL8Vehu1S9H3NA2K",
+    "2Ec7546mqCuq1PPGSWTaQZ6DdTGWhpPhEuVicJ3sTQnr",
+})
 
 M306_FORMAL_REPORT_SHA256 = "05796e4cc3d771752e10f61490d4c763288b7f3c8844db11c5c04132dec90a2b"
 M299_FORMAL_ACQUISITION_REPORT_SHA256 = "b0893640854362cb28a084cc6f6ddd07b4f457299727bf627d21703114b63c19"
@@ -172,6 +190,7 @@ def build_activation_package(
     operational_policy_source_sha256: str,
     candidate_watchlist_wallets: list[str],
     activation_at: datetime | str,
+    m315_execution_reality_guard: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     decision = validate_m300_decision(dict(m300_decision or {}))
     _require(
@@ -183,6 +202,22 @@ def build_activation_package(
 
     wallet = str(decision["wallet"])
     formal_lineage = formal_lineage_for_wallet(wallet)
+    m315_required = wallet not in M307_PRE_M315_LEGACY_LINEAGE_WALLETS
+    m315_guard = None
+    if m315_required:
+        _require(
+            m315_execution_reality_guard is not None,
+            "M307 nuovo lineage richiede M315 execution-reality guard.",
+        )
+        m315_guard = validate_m315_execution_reality_guard(
+            dict(m315_execution_reality_guard or {}),
+            expected_wallet=wallet,
+        )
+    elif m315_execution_reality_guard is not None:
+        m315_guard = validate_m315_execution_reality_guard(
+            dict(m315_execution_reality_guard or {}),
+            expected_wallet=wallet,
+        )
     m306_sha = _sha64(m306_report_sha256, label="M306 formal report")
     _require(
         m306_sha == formal_lineage["m306_report_sha256"],
@@ -252,6 +287,12 @@ def build_activation_package(
             "paper": False,
         },
     }
+    # Preserve the exact pre-M315 package shape for frozen legacy lineages.
+    # New/future lineages must carry the guard, while an optional guard on a
+    # legacy lineage is still validated and recorded.
+    if m315_required or m315_guard is not None:
+        payload["m315_execution_reality_guard"] = m315_guard
+        payload["m315_execution_reality_guard_required"] = m315_required
     payload["integrity"] = {"payload_sha256": canonical_sha256(payload)}
     return payload
 
@@ -265,6 +306,26 @@ def validate_activation_package(package: dict[str, Any]) -> dict[str, Any]:
     _require(p.get("version") == M307_VERSION, "M307 activation package version inattesa.")
     wallet = str(p.get("wallet") or "")
     expected_lineage = formal_lineage_for_wallet(wallet)
+    m315_required = wallet not in M307_PRE_M315_LEGACY_LINEAGE_WALLETS
+    raw_m315_required = p.get("m315_execution_reality_guard_required")
+    raw_m315_guard = p.get("m315_execution_reality_guard")
+    if m315_required:
+        _require(raw_m315_required is True, "M307 M315 guard-required claim mancante per nuovo lineage.")
+        _require(isinstance(raw_m315_guard, dict), "M307 M315 guard mancante per nuovo lineage.")
+        validate_m315_execution_reality_guard(
+            dict(raw_m315_guard or {}),
+            expected_wallet=wallet,
+        )
+    else:
+        _require(
+            raw_m315_required in (None, False),
+            "M307 legacy lineage non puo dichiarare M315 required=true.",
+        )
+        if raw_m315_guard is not None:
+            validate_m315_execution_reality_guard(
+                dict(raw_m315_guard or {}),
+                expected_wallet=wallet,
+            )
     lineage = dict(p.get("formal_promotion_lineage") or {})
     _require(
         str(lineage.get("m306_report_sha256") or "")
@@ -426,6 +487,29 @@ def activate_promoted_selective_lifecycle(
     blueprint = dict(package["activation_blueprint"])
     frozen = dict(blueprint["frozen_operational_policy"])
     envelope = dict(package["decision_envelope"])
+    activation_evidence: dict[str, Any] = {
+        "version": M307_VERSION,
+        "scope": M307_SCOPE,
+        "activation_package_sha256": str(dict(package.get("integrity") or {}).get("payload_sha256") or ""),
+        "activation_blueprint": blueprint,
+        "formal_promotion_lineage": dict(package["formal_promotion_lineage"]),
+        "candidate_watchlist_snapshot": dict(package["candidate_watchlist_snapshot"]),
+        "prepromotion_backfill": False,
+        "legacy_endpoint_used": False,
+        "provider_mutation_required": False,
+        "live_execution": False,
+        "paper_execution": False,
+        "signer_access": False,
+    }
+    if "m315_execution_reality_guard_required" in package:
+        activation_evidence["m315_execution_reality_guard_required"] = bool(
+            package.get("m315_execution_reality_guard_required")
+        )
+    if isinstance(package.get("m315_execution_reality_guard"), dict):
+        activation_evidence["m315_execution_reality_guard"] = dict(
+            package["m315_execution_reality_guard"]
+        )
+
     activation = CanonicalParserGen4PromotedSelectiveActivation(
         activation_id=str(uuid4()),
         wallet_address=wallet,
@@ -438,20 +522,7 @@ def activate_promoted_selective_lifecycle(
         policy_hash=str(frozen["policy_hash"]),
         policy_snapshot=frozen,
         decision_envelope=envelope,
-        evidence={
-            "version": M307_VERSION,
-            "scope": M307_SCOPE,
-            "activation_package_sha256": str(dict(package.get("integrity") or {}).get("payload_sha256") or ""),
-            "activation_blueprint": blueprint,
-            "formal_promotion_lineage": dict(package["formal_promotion_lineage"]),
-            "candidate_watchlist_snapshot": dict(package["candidate_watchlist_snapshot"]),
-            "prepromotion_backfill": False,
-            "legacy_endpoint_used": False,
-            "provider_mutation_required": False,
-            "live_execution": False,
-            "paper_execution": False,
-            "signer_access": False,
-        },
+        evidence=activation_evidence,
         draining_at=None,
         stopped_at=None,
     )
