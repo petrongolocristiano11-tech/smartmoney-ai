@@ -44,6 +44,10 @@ from backend.app.services.gen4_promoted_selective_lifecycle_service import (
 from backend.app.services.gen4_selective_challenger_lifecycle_bridge_design_service import (
     PROMOTED_SELECTIVE_SCOPE,
 )
+from backend.app.services.gen4_m316_copyable_alpha_diagnostics_service import (
+    build_m316_candidate_alpha_diagnostics,
+    m316_closed_trade_metrics,
+)
 from backend.app.services.jupiter_swap_client import JupiterSwapClient
 from backend.app.services.live_trading_errors import JupiterSwapError
 from backend.app.services.gen4_promoted_exit_recovery_service import (
@@ -1915,6 +1919,12 @@ def _candidate_roundtrip_metrics_from_events(
     max_drawdown_percent = (
         max_drawdown_lamports / total_cost * 100.0 if total_cost > 0 else 0.0
     )
+    realized_equity_metrics = m316_closed_trade_metrics(
+        [state for _, state in closed]
+    )
+    realized_equity_drawdown_percent = float(
+        realized_equity_metrics["maximum_realized_equity_drawdown_percent"]
+    )
     best_trade = max(pnl_values) if pnl_values else None
     net_without_best = (net_pnl - best_trade) if best_trade is not None else None
     failures = [
@@ -1927,14 +1937,26 @@ def _candidate_roundtrip_metrics_from_events(
         (str(item.get("signature") or ""), str(item.get("code") or ""))
         for item in failures
     }
-    economics_pass = bool(
-        len(closed) >= M314_CANDIDATE_ROUNDTRIP_MIN_CLOSED
-        and net_pnl > 0
-        and profit_factor >= M314_CANDIDATE_ROUNDTRIP_MIN_PROFIT_FACTOR
-        and max_drawdown_percent <= M314_CANDIDATE_ROUNDTRIP_MAX_DRAWDOWN_PERCENT
-        and net_without_best is not None
-        and net_without_best > 0
+    open_position_count = sum(
+        str(state.get("status") or "") in {"OPEN", "OPEN_PARTIAL"}
+        and int(state.get("remaining_token_raw") or 0) > 0
+        for _, state in entries
     )
+    economic_gate = {
+        "minimum_closed_trades": len(closed) >= M314_CANDIDATE_ROUNDTRIP_MIN_CLOSED,
+        "positive_net_pnl": net_pnl > 0,
+        "minimum_profit_factor": profit_factor >= M314_CANDIDATE_ROUNDTRIP_MIN_PROFIT_FACTOR,
+        "maximum_realized_equity_drawdown": (
+            realized_equity_drawdown_percent
+            <= M314_CANDIDATE_ROUNDTRIP_MAX_DRAWDOWN_PERCENT
+        ),
+        "positive_net_without_best_trade": (
+            net_without_best is not None and net_without_best > 0
+        ),
+        "zero_technical_exit_failures": len(unique_failures) == 0,
+        "zero_open_positions": open_position_count == 0,
+    }
+    economics_pass = bool(entries) and all(economic_gate.values())
     recent = sorted(
         entries,
         key=lambda item: (
@@ -1950,10 +1972,7 @@ def _candidate_roundtrip_metrics_from_events(
         "strict_forward_only": True,
         "backfill": False,
         "entry_count": len(entries),
-        "open_position_count": sum(
-            str(state.get("status") or "") in {"OPEN", "OPEN_PARTIAL"}
-            for _, state in entries
-        ),
+        "open_position_count": open_position_count,
         "closed_trade_count": len(closed),
         "net_pnl_lamports": net_pnl,
         "net_pnl_sol": net_pnl / 1_000_000_000,
@@ -1962,9 +1981,13 @@ def _candidate_roundtrip_metrics_from_events(
         "profit_factor": round(profit_factor, 8),
         "maximum_drawdown_lamports": max_drawdown_lamports,
         "maximum_drawdown_percent": round(max_drawdown_percent, 8),
+        "maximum_realized_equity_drawdown_percent": round(
+            realized_equity_drawdown_percent, 8
+        ),
         "best_trade_lamports": best_trade,
         "net_without_best_trade_lamports": net_without_best,
         "technical_exit_failure_count": len(unique_failures),
+        "economic_gate": economic_gate,
         "economic_observation_pass": economics_pass,
         "m307_authorized": False,
         "recent_positions": [
@@ -2009,10 +2032,45 @@ def get_gen4_candidate_roundtrip_shadow_status(
         )
     )
     candidate_rows = [row for row in rows if _is_candidate_event(row)]
-    return _candidate_roundtrip_metrics_from_events(
+    aggregate = _candidate_roundtrip_metrics_from_events(
         candidate_rows,
         recent_limit=recent_limit,
     )
+    grouped: dict[str, list[Any]] = {}
+    for row in candidate_rows:
+        state = _candidate_roundtrip_state(row)
+        if state is None:
+            continue
+        wallet = str(state.get("wallet_address") or "").strip()
+        if not wallet:
+            continue
+        grouped.setdefault(wallet, []).append(row)
+
+    wallet_summaries: dict[str, Any] = {}
+    for wallet, wallet_rows in sorted(grouped.items()):
+        metrics = _candidate_roundtrip_metrics_from_events(
+            wallet_rows,
+            recent_limit=min(max(1, int(recent_limit)), 20),
+        )
+        wallet_summaries[wallet] = {
+            key: value
+            for key, value in metrics.items()
+            if key != "recent_positions"
+        }
+
+    aggregate["wallets"] = wallet_summaries
+    aggregate["m316_copyable_alpha_diagnostics"] = (
+        build_m316_candidate_alpha_diagnostics(
+            events=candidate_rows,
+            evaluated_at=_utc_now(),
+        )
+    )
+    aggregate["safety"] = {
+        **dict(aggregate.get("safety") or {}),
+        "m316_diagnostics_observation_only": True,
+        "m316_shadow_filter_armed": False,
+    }
+    return aggregate
 
 def record_fastpath_candidate_notification(
     db: Session,
