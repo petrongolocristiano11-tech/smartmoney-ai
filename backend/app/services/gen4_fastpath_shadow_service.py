@@ -351,7 +351,11 @@ def normalize_helius_transaction_notification(message: dict[str, Any]) -> dict[s
     return {
         "signature": signature,
         "slot": result.get("slot"),
-        "blockTime": None,
+        "blockTime": (
+            result.get("blockTime")
+            if result.get("blockTime") is not None
+            else outer.get("blockTime")
+        ),
         "transaction": transaction,
         "meta": meta,
     }
@@ -1507,6 +1511,174 @@ def record_fastpath_notification(
 
 
 
+
+M319_COPYABLE_EDGE_VERSION = "m319-copyable-edge-instrumentation/1"
+M319_COPYABLE_EDGE_SCOPE = "M319_COPYABLE_EDGE_FORWARD_INSTRUMENTATION"
+M319_COPYABLE_EDGE_EVIDENCE_KEY = "m319_copyable_edge"
+M319_COPYABLE_EDGE_RECONCILE_WINDOW_MINUTES = 15
+
+
+def _m319_elapsed_ms(
+    later: datetime | None,
+    earlier: datetime | None,
+) -> int | None:
+    end = _aware(later)
+    start = _aware(earlier)
+    if end is None or start is None:
+        return None
+    return max(0, int((end - start).total_seconds() * 1000))
+
+
+def _m319_source_trade_snapshot(signal: Any) -> dict[str, Any]:
+    parser_evidence = dict(getattr(signal, "evidence", None) or {})
+    return {
+        "side": str(getattr(signal, "side", "") or ""),
+        "wallet_address": str(getattr(signal, "wallet_address", "") or ""),
+        "token_mint": str(getattr(signal, "token_mint", "") or ""),
+        "token_decimals": int(getattr(signal, "token_decimals", 0) or 0),
+        "token_delta_raw": int(getattr(signal, "token_delta_raw", 0) or 0),
+        "token_pre_raw": int(getattr(signal, "token_pre_raw", 0) or 0),
+        "sol_equivalent_delta_lamports": (
+            int(signal.sol_equivalent_delta_lamports)
+            if getattr(signal, "sol_equivalent_delta_lamports", None) is not None
+            else None
+        ),
+        "network_fee_lamports": int(parser_evidence.get("fee_lamports") or 0),
+        "wallet_effective_price_sol": (
+            float(signal.wallet_effective_price_sol)
+            if getattr(signal, "wallet_effective_price_sol", None) is not None
+            else None
+        ),
+        "sell_fraction": (
+            float(signal.sell_fraction)
+            if getattr(signal, "sell_fraction", None) is not None
+            else None
+        ),
+    }
+
+
+def _new_m319_candidate_observation(
+    *,
+    event: CanonicalParserGen4FastpathShadowEvent,
+    signal: Any,
+    received_at: datetime,
+    parsed_at: datetime,
+) -> dict[str, Any]:
+    received = _aware(received_at) or _utc_now()
+    parsed = _aware(parsed_at) or received
+    block_time = _aware(getattr(signal, "block_time", None))
+    return {
+        "version": M319_COPYABLE_EDGE_VERSION,
+        "scope": M319_COPYABLE_EDGE_SCOPE,
+        "observation_only": True,
+        "strict_forward_only": True,
+        "backfill": False,
+        "automatic_filtering": False,
+        "automatic_promotion": False,
+        "mutates_m74": False,
+        "mutates_m75": False,
+        "mutates_m298": False,
+        "mutates_m307": False,
+        "live_execution": False,
+        "paper_execution": False,
+        "signer_access": False,
+        "source_slot": (
+            int(getattr(signal, "slot"))
+            if getattr(signal, "slot", None) is not None
+            else getattr(event, "slot", None)
+        ),
+        "source_block_time_utc": block_time.isoformat() if block_time is not None else None,
+        "source_block_time_origin": (
+            "WSS_NOTIFICATION" if block_time is not None else "PENDING_RAW_WEBHOOK_RECONCILIATION"
+        ),
+        "candidate_received_at_utc": received.isoformat(),
+        "parse_completed_at_utc": parsed.isoformat(),
+        "chain_to_receive_ms": _m319_elapsed_ms(received, block_time),
+        "receive_to_parse_ms": _m319_elapsed_ms(parsed, received),
+        "chain_to_parse_ms": _m319_elapsed_ms(parsed, block_time),
+        "source_trade": _m319_source_trade_snapshot(signal),
+        "follower_entry": None,
+        "follower_exit": None,
+        "reconciliation": {
+            "attempted": False,
+            "matched_raw_webhook": False,
+        },
+    }
+
+
+def _m319_set_candidate_observation(
+    event: CanonicalParserGen4FastpathShadowEvent,
+    observation: dict[str, Any],
+) -> None:
+    evidence = dict(event.evidence or {})
+    evidence[M319_COPYABLE_EDGE_EVIDENCE_KEY] = dict(observation)
+    event.evidence = evidence
+
+
+def _m319_update_buy_quote(
+    event: CanonicalParserGen4FastpathShadowEvent,
+    *,
+    quote: Any,
+    deterioration_bps: float | None,
+    price_impact_bps: float,
+    rejection_reason: str | None,
+) -> None:
+    evidence = dict(event.evidence or {})
+    current = evidence.get(M319_COPYABLE_EDGE_EVIDENCE_KEY)
+    if not isinstance(current, dict):
+        return
+    observation = dict(current)
+    requested = _aware(getattr(quote, "requested_at", None))
+    received = _aware(getattr(quote, "received_at", None))
+    candidate_received = _aware(event.fast_received_at)
+    block_time = None
+    raw_block = observation.get("source_block_time_utc")
+    if raw_block:
+        try:
+            block_time = _aware(datetime.fromisoformat(str(raw_block).replace("Z", "+00:00")))
+        except (TypeError, ValueError):
+            block_time = None
+    observation["follower_entry"] = {
+        "quote_requested_at_utc": requested.isoformat() if requested is not None else None,
+        "quote_received_at_utc": received.isoformat() if received is not None else None,
+        "quote_latency_ms": int(getattr(quote, "latency_ms", 0) or 0),
+        "receive_to_quote_request_ms": _m319_elapsed_ms(requested, candidate_received),
+        "receive_to_quote_received_ms": _m319_elapsed_ms(received, candidate_received),
+        "chain_to_quote_received_ms": _m319_elapsed_ms(received, block_time),
+        "price_deterioration_bps": (
+            float(deterioration_bps) if deterioration_bps is not None else None
+        ),
+        "price_impact_bps": float(price_impact_bps),
+        "transaction_built": bool(getattr(quote.result, "transaction", None)),
+        "rejection_reason": rejection_reason,
+    }
+    evidence[M319_COPYABLE_EDGE_EVIDENCE_KEY] = observation
+    event.evidence = evidence
+
+
+def _m319_update_sell_shadow(
+    event: CanonicalParserGen4FastpathShadowEvent,
+    sell_evidence: dict[str, Any],
+) -> None:
+    evidence = dict(event.evidence or {})
+    current = evidence.get(M319_COPYABLE_EDGE_EVIDENCE_KEY)
+    if not isinstance(current, dict):
+        return
+    observation = dict(current)
+    observation["follower_exit"] = {
+        "quote_attempted": bool(sell_evidence.get("quote_attempted")),
+        "quote_built": bool(sell_evidence.get("quote_built")),
+        "quote_latency_ms": sell_evidence.get("quote_latency_ms"),
+        "price_impact_bps": sell_evidence.get("price_impact_bps"),
+        "exit_applied": bool(sell_evidence.get("exit_applied")),
+        "positions_closed": int(sell_evidence.get("positions_closed") or 0),
+        "reason": sell_evidence.get("reason"),
+        "quote_error": sell_evidence.get("quote_error"),
+    }
+    evidence[M319_COPYABLE_EDGE_EVIDENCE_KEY] = observation
+    event.evidence = evidence
+
+
 M314_CANDIDATE_ROUNDTRIP_VERSION = "m314-candidate-forward-roundtrip-shadow/1"
 M314_CANDIDATE_ROUNDTRIP_SCOPE = "M314_CANDIDATE_ROUNDTRIP"
 M314_CANDIDATE_ROUNDTRIP_GATE_ARMED = False
@@ -2632,6 +2804,15 @@ def record_fastpath_candidate_notification(
         event.fast_prequote_ms = max(
             0, int((parsed_at - observed).total_seconds() * 1000)
         )
+        _m319_set_candidate_observation(
+            event,
+            _new_m319_candidate_observation(
+                event=event,
+                signal=signal,
+                received_at=observed,
+                parsed_at=parsed_at,
+            ),
+        )
         promoted_activation = get_promoted_activation_for_event(
             db,
             wallet=str(signal.wallet_address),
@@ -2687,6 +2868,13 @@ def record_fastpath_candidate_notification(
                 event.fast_transaction_built = built
                 event.fast_provisional_copyable = reason is None
                 event.fast_provisional_rejection_reason = reason
+                _m319_update_buy_quote(
+                    event,
+                    quote=quote,
+                    deterioration_bps=deterioration,
+                    price_impact_bps=impact_bps,
+                    rejection_reason=reason,
+                )
                 if reason is None:
                     conservative_out = _conservative_out_amount(
                         quote.result, int(policy["slippage_bps"])
@@ -2816,6 +3004,10 @@ def record_fastpath_candidate_notification(
                         **m314_sell,
                     },
                 }
+                _m319_update_sell_shadow(
+                    event,
+                    dict(event.evidence or {}).get("m314_candidate_roundtrip_sell") or {},
+                )
                 db.flush()
             if promoted_position is not None:
                 db.add(promoted_position)
@@ -3306,6 +3498,125 @@ def _reconciled_rejection(event: CanonicalParserGen4FastpathShadowEvent) -> str 
     if not event.fast_transaction_built:
         return "UNSIGNED_TRANSACTION_NOT_BUILT"
     return None
+
+
+
+def reconcile_m319_candidate_edge_instrumentation(
+    db: Session,
+    *,
+    limit: int = 200,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Reconcile only prospective M319 candidate rows with existing raw webhook receipts.
+
+    Historical candidate rows have no M319 marker and are intentionally ignored.
+    No provider request is made here; this reads already-persisted webhook receipts.
+    """
+    observed = _aware(now) or _utc_now()
+    window_start = observed - timedelta(minutes=M319_COPYABLE_EDGE_RECONCILE_WINDOW_MINUTES)
+    scan_limit = max(1, min(max(int(limit) * 5, int(limit)), 1000))
+    rows = list(
+        db.scalars(
+            select(CanonicalParserGen4FastpathShadowEvent)
+            .where(
+                CanonicalParserGen4FastpathShadowEvent.webhook_reconciled_at.is_(None),
+                CanonicalParserGen4FastpathShadowEvent.fast_received_at >= window_start,
+            )
+            .order_by(
+                CanonicalParserGen4FastpathShadowEvent.fast_received_at,
+                CanonicalParserGen4FastpathShadowEvent.id,
+            )
+            .limit(scan_limit)
+        )
+    )
+    checked = 0
+    reconciled = 0
+    for event in rows:
+        if not _is_candidate_event(event):
+            continue
+        evidence = dict(event.evidence or {})
+        current = evidence.get(M319_COPYABLE_EDGE_EVIDENCE_KEY)
+        if not isinstance(current, dict):
+            continue
+        if str(current.get("version") or "") != M319_COPYABLE_EDGE_VERSION:
+            continue
+        checked += 1
+        receipt = db.scalar(
+            select(CanonicalParserGen4WebhookReceipt)
+            .where(
+                CanonicalParserGen4WebhookReceipt.signature == event.signature,
+                CanonicalParserGen4WebhookReceipt.source == SOURCE_WEBHOOK,
+            )
+            .order_by(CanonicalParserGen4WebhookReceipt.received_at.asc())
+            .limit(1)
+        )
+        if receipt is None:
+            continue
+
+        webhook_received = _aware(receipt.received_at)
+        block_time = _aware(receipt.block_time)
+        event.webhook_received_at = webhook_received
+        event.webhook_block_time = block_time
+        event.webhook_reconciled_at = observed
+        event.fast_lead_vs_webhook_ms = (
+            _m319_elapsed_ms(webhook_received, _aware(event.fast_received_at))
+            if webhook_received is not None
+            else None
+        )
+        if event.fast_quote_received_at is not None and block_time is not None:
+            event.fast_end_to_quote_ms = _m319_elapsed_ms(
+                _aware(event.fast_quote_received_at),
+                block_time,
+            )
+
+        observation = dict(current)
+        if block_time is not None:
+            observation["source_block_time_utc"] = block_time.isoformat()
+            observation["source_block_time_origin"] = "RAW_WEBHOOK_RECEIPT"
+            observation["chain_to_receive_ms"] = _m319_elapsed_ms(
+                _aware(event.fast_received_at),
+                block_time,
+            )
+            observation["chain_to_parse_ms"] = _m319_elapsed_ms(
+                _aware(event.fast_parse_completed_at),
+                block_time,
+            )
+            follower_entry = observation.get("follower_entry")
+            if isinstance(follower_entry, dict):
+                updated_entry = dict(follower_entry)
+                updated_entry["chain_to_quote_received_ms"] = _m319_elapsed_ms(
+                    _aware(event.fast_quote_received_at),
+                    block_time,
+                )
+                observation["follower_entry"] = updated_entry
+        observation["reconciliation"] = {
+            "attempted": True,
+            "matched_raw_webhook": True,
+            "reconciled_at_utc": observed.isoformat(),
+            "raw_webhook_received_at_utc": (
+                webhook_received.isoformat() if webhook_received is not None else None
+            ),
+            "raw_webhook_block_time_utc": (
+                block_time.isoformat() if block_time is not None else None
+            ),
+            "fast_lead_vs_webhook_ms": event.fast_lead_vs_webhook_ms,
+        }
+        evidence[M319_COPYABLE_EDGE_EVIDENCE_KEY] = observation
+        event.evidence = evidence
+        reconciled += 1
+
+    return {
+        "version": M319_COPYABLE_EDGE_VERSION,
+        "scope": M319_COPYABLE_EDGE_SCOPE,
+        "window_minutes": M319_COPYABLE_EDGE_RECONCILE_WINDOW_MINUTES,
+        "checked_m319_candidate_rows": checked,
+        "reconciled_m319_candidate_rows": reconciled,
+        "provider_calls": 0,
+        "backfill": False,
+        "automatic_filtering": False,
+        "automatic_promotion": False,
+        "live_execution": False,
+    }
 
 
 def reconcile_fastpath_events(db: Session, *, limit: int = 200) -> dict[str, int]:

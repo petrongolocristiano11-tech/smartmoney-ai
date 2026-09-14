@@ -1729,6 +1729,39 @@ def _sol_equivalent_delta(
     )
 
 
+def _wallet_effective_price_sol_from_raw(
+    *,
+    side: str,
+    sol_equivalent_delta_lamports: int,
+    token_delta_raw: int,
+    token_decimals: int,
+    fee_lamports: int,
+) -> float | None:
+    """Return the wallet's swap price excluding the network fee.
+
+    BUY native balance deltas include the paid network fee, so remove it from
+    the absolute SOL-equivalent spend. SELL native balance deltas are net of
+    the paid fee, so add it back to recover swap proceeds. This is observation
+    only and never changes entry/exit eligibility.
+    """
+    decimals = max(0, int(token_decimals))
+    token_units = abs(int(token_delta_raw)) / (10 ** decimals)
+    if token_units <= 0:
+        return None
+    fee = max(0, int(fee_lamports))
+    sol_delta = int(sol_equivalent_delta_lamports)
+    normalized_side = str(side or "").upper()
+    if normalized_side == "BUY" and sol_delta < 0 and int(token_delta_raw) > 0:
+        trade_lamports = max(0, abs(sol_delta) - fee)
+    elif normalized_side == "SELL" and sol_delta > 0 and int(token_delta_raw) < 0:
+        trade_lamports = max(0, sol_delta + fee)
+    else:
+        return None
+    if trade_lamports <= 0:
+        return None
+    return (trade_lamports / LAMPORTS_PER_SOL) / token_units
+
+
 def parse_raw_copyability_signal(
     payload: dict[str, Any],
     *,
@@ -1930,12 +1963,13 @@ def parse_raw_copyability_signal(
             code="GEN4_COPYABILITY_RAW_NOT_SOL_PAIRED_SELL",
         )
 
-    effective_price: float | None = None
-    if side == "BUY" and sol_equivalent_delta < 0 and delta > 0:
-        spent = max(0, abs(sol_equivalent_delta) - max(0, fee))
-        token_units = delta / (10 ** int(values["decimals"]))
-        if spent > 0 and token_units > 0:
-            effective_price = (spent / LAMPORTS_PER_SOL) / token_units
+    effective_price = _wallet_effective_price_sol_from_raw(
+        side=side,
+        sol_equivalent_delta_lamports=int(sol_equivalent_delta),
+        token_delta_raw=int(delta),
+        token_decimals=int(values["decimals"]),
+        fee_lamports=int(fee),
+    )
     sell_fraction: float | None = None
     if side == "SELL":
         pre_raw = max(0, int(values.get("pre") or 0))

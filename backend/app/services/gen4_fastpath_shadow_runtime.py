@@ -20,6 +20,7 @@ from backend.app.services.gen4_fastpath_shadow_service import (
     record_fastpath_candidate_notification,
     record_fastpath_notification,
     reconcile_fastpath_events,
+    reconcile_m319_candidate_edge_instrumentation,
 )
 from backend.app.services.jupiter_swap_client import JupiterSwapClient
 from backend.app.services.gen4_promoted_exit_recovery_service import (
@@ -314,6 +315,7 @@ class EmbeddedGen4FastpathShadowRuntime:
         with SessionLocal() as db:
             try:
                 reconcile_fastpath_events(db, limit=200)
+                reconcile_m319_candidate_edge_instrumentation(db, limit=200)
                 db.commit()
             except Exception:
                 db.rollback()
