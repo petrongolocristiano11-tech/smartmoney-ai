@@ -4,7 +4,8 @@ import base64
 import math
 import re
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
@@ -51,6 +52,10 @@ from backend.app.services.gen4_m316_copyable_alpha_diagnostics_service import (
 from backend.app.services.jupiter_swap_client import JupiterSwapClient
 from backend.app.services.live_trading_errors import JupiterSwapError
 from backend.app.services.gen4_promoted_exit_recovery_service import (
+    PROMOTED_EXIT_RECOVERY_BACKOFF_SECONDS,
+    PROMOTED_EXIT_RECOVERY_MAX_AGE_SECONDS,
+    PROMOTED_EXIT_RECOVERY_MAX_ATTEMPTS,
+    PROMOTED_EXIT_RECOVERY_TICK_SECONDS,
     is_recoverable_promoted_exit_error,
     promoted_exit_error_snapshot,
     schedule_promoted_exit_recovery,
@@ -1509,6 +1514,12 @@ M314_CANDIDATE_ROUNDTRIP_MIN_CLOSED = 10
 M314_CANDIDATE_ROUNDTRIP_MIN_PROFIT_FACTOR = 1.30
 M314_CANDIDATE_ROUNDTRIP_MAX_DRAWDOWN_PERCENT = 15.0
 M314_CANDIDATE_ROUNDTRIP_EVIDENCE_KEY = "m314_candidate_roundtrip"
+M314_CANDIDATE_EXIT_RECOVERY_VERSION = "m314-candidate-exit-autonomous-recovery-shadow/1"
+M314_CANDIDATE_EXIT_RECOVERY_MAX_ATTEMPTS = PROMOTED_EXIT_RECOVERY_MAX_ATTEMPTS
+M314_CANDIDATE_EXIT_RECOVERY_MAX_AGE_SECONDS = PROMOTED_EXIT_RECOVERY_MAX_AGE_SECONDS
+M314_CANDIDATE_EXIT_RECOVERY_BACKOFF_SECONDS = PROMOTED_EXIT_RECOVERY_BACKOFF_SECONDS
+M314_CANDIDATE_EXIT_RECOVERY_TICK_SECONDS = PROMOTED_EXIT_RECOVERY_TICK_SECONDS
+M314_CANDIDATE_EXIT_RECOVERY_SCAN_LIMIT = 1000
 
 
 def _candidate_roundtrip_fee_lamports() -> int:
@@ -1616,6 +1627,8 @@ def _candidate_roundtrip_record_exit_failure(
     signature: str,
     code: str,
     observed_at: datetime,
+    details: dict[str, Any] | None = None,
+    recovery_id: str | None = None,
 ) -> None:
     for row in rows:
         state = _candidate_roundtrip_state(row)
@@ -1626,15 +1639,197 @@ def _candidate_roundtrip_record_exit_failure(
             for item in list(state.get("exit_failures") or [])
             if isinstance(item, dict)
         ]
-        failures.append(
-            {
-                "signature": str(signature),
-                "code": str(code),
-                "observed_at": observed_at.isoformat(),
-            }
-        )
+        record: dict[str, Any] = {
+            "signature": str(signature),
+            "code": str(code),
+            "observed_at": observed_at.isoformat(),
+        }
+        if details:
+            record["details"] = dict(details)
+        if recovery_id:
+            record["recovery_id"] = str(recovery_id)
+            record["terminal_after_autonomous_recovery"] = True
+        failures.append(record)
         state["exit_failures"] = failures[-100:]
         _set_candidate_roundtrip_state(row, state)
+
+
+def _candidate_roundtrip_recovery_history_append(
+    state: dict[str, Any], item: dict[str, Any]
+) -> None:
+    history = [
+        dict(value)
+        for value in list(state.get("exit_recovery_history") or [])
+        if isinstance(value, dict)
+    ]
+    history.append(dict(item))
+    state["exit_recovery_history"] = history[-100:]
+
+
+def _candidate_roundtrip_schedule_exit_recovery(
+    rows: list[CanonicalParserGen4FastpathShadowEvent],
+    *,
+    signature: str,
+    sell_fraction: float,
+    sold_allocations: list[int],
+    observed_at: datetime,
+    error: JupiterSwapError,
+) -> dict[str, Any]:
+    if len(rows) != len(sold_allocations):
+        raise ValueError("M314_EXIT_RECOVERY_ALLOCATION_LENGTH_MISMATCH")
+    recovery_id = str(uuid4())
+    now = _aware(observed_at) or _utc_now()
+    next_retry = now + timedelta(seconds=M314_CANDIDATE_EXIT_RECOVERY_BACKOFF_SECONDS[0])
+    error_snapshot = promoted_exit_error_snapshot(error)
+    scheduled = 0
+    requested_total = 0
+    for row, sold_raw in zip(rows, sold_allocations):
+        state = _candidate_roundtrip_state(row)
+        if state is None:
+            continue
+        requested_raw = max(
+            0, min(int(state.get("remaining_token_raw") or 0), int(sold_raw))
+        )
+        if requested_raw <= 0:
+            continue
+        target_remaining = max(
+            0, int(state.get("remaining_token_raw") or 0) - requested_raw
+        )
+        pending = {
+            "version": M314_CANDIDATE_EXIT_RECOVERY_VERSION,
+            "state": "PENDING",
+            "recovery_id": recovery_id,
+            "source_signature": str(signature),
+            "source_sell_fraction": float(sell_fraction),
+            "requested_sell_token_raw": requested_raw,
+            "target_remaining_token_raw": target_remaining,
+            "scheduled_at_utc": now.isoformat(),
+            "next_retry_at_utc": next_retry.isoformat(),
+            "recovery_attempts": 0,
+            "max_recovery_attempts": M314_CANDIDATE_EXIT_RECOVERY_MAX_ATTEMPTS,
+            "max_recovery_age_seconds": M314_CANDIDATE_EXIT_RECOVERY_MAX_AGE_SECONDS,
+            "initial_error": error_snapshot,
+            "last_error": error_snapshot,
+            "live_execution": False,
+            "paper_execution": False,
+            "signer_access": False,
+            "transaction_submission": False,
+        }
+        state["pending_exit_recovery"] = pending
+        _candidate_roundtrip_recovery_history_append(
+            state,
+            {
+                "recovery_id": recovery_id,
+                "state": "SCHEDULED",
+                "observed_at_utc": now.isoformat(),
+                "source_signature": str(signature),
+                "requested_sell_token_raw": requested_raw,
+                "target_remaining_token_raw": target_remaining,
+                "error": error_snapshot,
+            },
+        )
+        _set_candidate_roundtrip_state(row, state)
+        scheduled += 1
+        requested_total += requested_raw
+    return {
+        "scheduled": scheduled > 0,
+        "recovery_id": recovery_id,
+        "positions_scheduled": scheduled,
+        "requested_sell_token_raw": requested_total,
+        "next_retry_at_utc": next_retry.isoformat(),
+        "max_recovery_attempts": M314_CANDIDATE_EXIT_RECOVERY_MAX_ATTEMPTS,
+        "max_recovery_age_seconds": M314_CANDIDATE_EXIT_RECOVERY_MAX_AGE_SECONDS,
+        "initial_error": error_snapshot,
+        "live_execution": False,
+        "paper_execution": False,
+        "signer_access": False,
+        "transaction_submission": False,
+    }
+
+
+def _candidate_roundtrip_pending(state: dict[str, Any]) -> dict[str, Any] | None:
+    raw = state.get("pending_exit_recovery")
+    if not isinstance(raw, dict):
+        return None
+    if str(raw.get("state") or "").upper() != "PENDING":
+        return None
+    if str(raw.get("version") or "") != M314_CANDIDATE_EXIT_RECOVERY_VERSION:
+        return None
+    if not str(raw.get("recovery_id") or "").strip():
+        return None
+    return dict(raw)
+
+
+def _candidate_roundtrip_mark_recovery_state(
+    row: CanonicalParserGen4FastpathShadowEvent,
+    *,
+    state_name: str,
+    observed_at: datetime,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    state = _candidate_roundtrip_state(row)
+    if state is None:
+        return
+    pending = dict(state.get("pending_exit_recovery") or {})
+    if not pending:
+        return
+    pending["state"] = str(state_name)
+    pending["resolved_at_utc"] = observed_at.isoformat()
+    if extra:
+        pending.update(dict(extra))
+    state["pending_exit_recovery"] = pending
+    _candidate_roundtrip_recovery_history_append(
+        state,
+        {
+            "recovery_id": pending.get("recovery_id"),
+            "state": str(state_name),
+            "observed_at_utc": observed_at.isoformat(),
+            **(dict(extra) if extra else {}),
+        },
+    )
+    _set_candidate_roundtrip_state(row, state)
+
+
+def _candidate_roundtrip_next_backoff(attempt_number: int) -> float:
+    index = max(
+        0,
+        min(
+            int(attempt_number),
+            len(M314_CANDIDATE_EXIT_RECOVERY_BACKOFF_SECONDS) - 1,
+        ),
+    )
+    return float(M314_CANDIDATE_EXIT_RECOVERY_BACKOFF_SECONDS[index])
+
+
+def _candidate_roundtrip_terminalize_recovery(
+    rows: list[CanonicalParserGen4FastpathShadowEvent],
+    *,
+    pending_by_position: dict[str, dict[str, Any]],
+    observed_at: datetime,
+    code: str,
+    details: dict[str, Any] | None,
+    terminal_state: str,
+) -> None:
+    for row in rows:
+        state = _candidate_roundtrip_state(row)
+        if state is None:
+            continue
+        key = str(state.get("position_id") or getattr(row, "event_id", ""))
+        pending = pending_by_position[key]
+        _candidate_roundtrip_record_exit_failure(
+            [row],
+            signature=str(pending.get("source_signature") or ""),
+            code=str(code),
+            observed_at=observed_at,
+            details=details,
+            recovery_id=str(pending.get("recovery_id") or ""),
+        )
+        _candidate_roundtrip_mark_recovery_state(
+            row,
+            state_name=terminal_state,
+            observed_at=observed_at,
+            extra={"terminal_code": str(code), "terminal_details": details or {}},
+        )
 
 
 def _candidate_roundtrip_apply_allocations(
@@ -1748,6 +1943,7 @@ def _apply_candidate_roundtrip_sell_shadow(
                 CanonicalParserGen4FastpathShadowEvent.fast_received_at,
                 CanonicalParserGen4FastpathShadowEvent.id,
             )
+            .with_for_update()
         )
     )
     positions = []
@@ -1800,6 +1996,7 @@ def _apply_candidate_roundtrip_sell_shadow(
         total_remaining,
         max(1, int(total_remaining * float(fraction))),
     )
+    sold_allocations = _allocate_integer(int(amount_to_sell), weights)
 
     try:
         quote = _quote(
@@ -1811,16 +2008,36 @@ def _apply_candidate_roundtrip_sell_shadow(
         )
     except JupiterSwapError as exc:
         code = str(exc.code)
+        observed_at = _aware(event.fast_received_at) or _utc_now()
+        error_details = promoted_exit_error_snapshot(exc)
+        if is_recoverable_promoted_exit_error(exc):
+            recovery = _candidate_roundtrip_schedule_exit_recovery(
+                positions,
+                signature=str(signal.signature),
+                sell_fraction=float(fraction),
+                sold_allocations=sold_allocations,
+                observed_at=observed_at,
+                error=exc,
+            )
+            return {
+                **base,
+                "quote_attempted": True,
+                "quote_error": code,
+                "reason": "EXIT_RECOVERY_SCHEDULED",
+                "autonomous_exit_recovery": recovery,
+            }
         _candidate_roundtrip_record_exit_failure(
             positions,
             signature=str(signal.signature),
             code=code,
-            observed_at=_utc_now(),
+            observed_at=observed_at,
+            details=error_details,
         )
         return {
             **base,
             "quote_attempted": True,
             "quote_error": code,
+            "quote_error_details": error_details,
             "reason": "EXIT_QUOTE_ERROR",
         }
 
@@ -1869,6 +2086,288 @@ def _apply_candidate_roundtrip_sell_shadow(
         **applied,
         "exit_applied": True,
     }
+
+
+def _recover_candidate_roundtrip_rows(
+    rows: list[CanonicalParserGen4FastpathShadowEvent],
+    *,
+    jupiter_client: JupiterSwapClient,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    observed = _aware(now) or _utc_now()
+    due: dict[str, list[CanonicalParserGen4FastpathShadowEvent]] = {}
+    pending_by_position: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if not _is_candidate_event(row):
+            continue
+        state = _candidate_roundtrip_state(row)
+        if state is None:
+            continue
+        if str(state.get("status") or "") not in {"OPEN", "OPEN_PARTIAL"}:
+            continue
+        if int(state.get("remaining_token_raw") or 0) <= 0:
+            continue
+        pending = _candidate_roundtrip_pending(state)
+        if pending is None:
+            continue
+        next_retry = _aware(
+            datetime.fromisoformat(str(pending.get("next_retry_at_utc")).replace("Z", "+00:00"))
+            if pending.get("next_retry_at_utc")
+            else None
+        )
+        if next_retry is not None and observed < next_retry:
+            continue
+        recovery_id = str(pending["recovery_id"])
+        due.setdefault(recovery_id, []).append(row)
+        key = str(state.get("position_id") or getattr(row, "event_id", ""))
+        pending_by_position[key] = pending
+
+    summary = {
+        "version": M314_CANDIDATE_EXIT_RECOVERY_VERSION,
+        "checked_open_positions": sum(
+            1
+            for row in rows
+            if _is_candidate_event(row)
+            and (_candidate_roundtrip_state(row) or {}).get("status") in {"OPEN", "OPEN_PARTIAL"}
+        ),
+        "due_recovery_groups": len(due),
+        "attempted_groups": 0,
+        "recovered_groups": 0,
+        "superseded_groups": 0,
+        "rescheduled_groups": 0,
+        "terminal_groups": 0,
+        "positions_closed": 0,
+        "positions_partially_reduced": 0,
+        "jupiter_quote_attempted": 0,
+        "live_execution": False,
+        "paper_execution": False,
+        "signer_access": False,
+        "transaction_submission": False,
+        "backfill": False,
+    }
+
+    for recovery_id, positions in due.items():
+        summary["attempted_groups"] += 1
+        first_state = _candidate_roundtrip_state(positions[0]) or {}
+        first_key = str(
+            first_state.get("position_id") or getattr(positions[0], "event_id", "")
+        )
+        first_pending = pending_by_position[first_key]
+        desired_raw: list[int] = []
+        all_satisfied = True
+        for row in positions:
+            state = _candidate_roundtrip_state(row) or {}
+            key = str(state.get("position_id") or getattr(row, "event_id", ""))
+            pending = pending_by_position[key]
+            target = max(0, int(pending.get("target_remaining_token_raw") or 0))
+            desired = max(0, int(state.get("remaining_token_raw") or 0) - target)
+            desired_raw.append(desired)
+            if desired > 0:
+                all_satisfied = False
+        if all_satisfied:
+            for row in positions:
+                _candidate_roundtrip_mark_recovery_state(
+                    row,
+                    state_name="SUPERSEDED_BY_LATER_EXIT",
+                    observed_at=observed,
+                )
+            summary["superseded_groups"] += 1
+            continue
+
+        scheduled_at_raw = first_pending.get("scheduled_at_utc")
+        scheduled_at = (
+            _aware(
+                datetime.fromisoformat(str(scheduled_at_raw).replace("Z", "+00:00"))
+            )
+            if scheduled_at_raw
+            else observed
+        ) or observed
+        age_seconds = max(0.0, (observed - scheduled_at).total_seconds())
+        previous_attempts = max(0, int(first_pending.get("recovery_attempts") or 0))
+        if (
+            previous_attempts >= M314_CANDIDATE_EXIT_RECOVERY_MAX_ATTEMPTS
+            or age_seconds > M314_CANDIDATE_EXIT_RECOVERY_MAX_AGE_SECONDS
+        ):
+            _candidate_roundtrip_terminalize_recovery(
+                positions,
+                pending_by_position=pending_by_position,
+                observed_at=observed,
+                code="EXIT_RECOVERY_EXHAUSTED",
+                details={
+                    "recovery_attempts": previous_attempts,
+                    "age_seconds": age_seconds,
+                    "last_error": first_pending.get("last_error"),
+                },
+                terminal_state="TERMINAL_EXHAUSTED",
+            )
+            summary["terminal_groups"] += 1
+            continue
+
+        amount_to_sell = sum(desired_raw)
+        if amount_to_sell <= 0:
+            continue
+        policy = dict(first_state.get("policy_snapshot") or {})
+        summary["jupiter_quote_attempted"] += 1
+        try:
+            quote = _quote(
+                input_mint=str(first_state.get("token_mint") or ""),
+                output_mint=SOL_MINT,
+                amount_raw=int(amount_to_sell),
+                slippage_bps=int(policy["slippage_bps"]),
+                client=jupiter_client,
+            )
+        except JupiterSwapError as exc:
+            error = promoted_exit_error_snapshot(exc)
+            attempts = previous_attempts + 1
+            terminal = (
+                not is_recoverable_promoted_exit_error(exc)
+                or attempts >= M314_CANDIDATE_EXIT_RECOVERY_MAX_ATTEMPTS
+                or age_seconds >= M314_CANDIDATE_EXIT_RECOVERY_MAX_AGE_SECONDS
+            )
+            if terminal:
+                _candidate_roundtrip_terminalize_recovery(
+                    positions,
+                    pending_by_position=pending_by_position,
+                    observed_at=observed,
+                    code=str(exc.code),
+                    details={
+                        "recovery_attempts": attempts,
+                        "age_seconds": age_seconds,
+                        "jupiter_error": error,
+                    },
+                    terminal_state="TERMINAL_JUPITER_FAILURE",
+                )
+                summary["terminal_groups"] += 1
+            else:
+                next_retry = observed + timedelta(
+                    seconds=_candidate_roundtrip_next_backoff(attempts)
+                )
+                for row in positions:
+                    state = _candidate_roundtrip_state(row)
+                    if state is None:
+                        continue
+                    pending = dict(state.get("pending_exit_recovery") or {})
+                    pending["recovery_attempts"] = attempts
+                    pending["last_attempt_at_utc"] = observed.isoformat()
+                    pending["next_retry_at_utc"] = next_retry.isoformat()
+                    pending["last_error"] = error
+                    state["pending_exit_recovery"] = pending
+                    _candidate_roundtrip_recovery_history_append(
+                        state,
+                        {
+                            "recovery_id": recovery_id,
+                            "state": "RETRY_FAILED_RESCHEDULED",
+                            "observed_at_utc": observed.isoformat(),
+                            "attempt": attempts,
+                            "next_retry_at_utc": next_retry.isoformat(),
+                            "error": error,
+                        },
+                    )
+                    _set_candidate_roundtrip_state(row, state)
+                summary["rescheduled_groups"] += 1
+            continue
+
+        conservative_out = _conservative_out_amount(
+            quote.result, int(policy["slippage_bps"])
+        )
+        impact_bps = max(0.0, float(quote.result.price_impact_percent) * 100.0)
+        rejection = _selective_exit_rejection(
+            policy,
+            quote_latency_ms=int(quote.latency_ms),
+            out_amount=int(quote.result.out_amount),
+            transaction_built=bool(quote.result.transaction),
+            price_impact_bps=impact_bps,
+        )
+        if rejection is not None:
+            _candidate_roundtrip_terminalize_recovery(
+                positions,
+                pending_by_position=pending_by_position,
+                observed_at=_aware(quote.received_at) or observed,
+                code=rejection,
+                details={
+                    "quote_latency_ms": int(quote.latency_ms),
+                    "price_impact_bps": impact_bps,
+                    "transaction_built": bool(quote.result.transaction),
+                },
+                terminal_state="TERMINAL_POLICY_REJECTION",
+            )
+            summary["terminal_groups"] += 1
+            continue
+
+        source_signature = str(first_pending.get("source_signature") or "")
+        source_fraction = float(first_pending.get("source_sell_fraction") or 0.0)
+        applied = _candidate_roundtrip_apply_allocations(
+            positions,
+            signal=SimpleNamespace(
+                signature=source_signature, sell_fraction=source_fraction
+            ),
+            quote=quote,
+            conservative_out=int(conservative_out),
+            amount_to_sell=int(amount_to_sell),
+            fee_lamports=_candidate_roundtrip_fee_lamports(),
+        )
+        recovered_at = _aware(quote.received_at) or observed
+        for row in positions:
+            state = _candidate_roundtrip_state(row)
+            if state is None:
+                continue
+            quotes = [
+                dict(item)
+                for item in list(state.get("exit_quotes") or [])
+                if isinstance(item, dict)
+            ]
+            if quotes and str(quotes[-1].get("signature") or "") == source_signature:
+                quotes[-1]["autonomous_exit_recovery"] = True
+                quotes[-1]["recovery_id"] = recovery_id
+                state["exit_quotes"] = quotes[-100:]
+            if str(state.get("status") or "") == "CLOSED":
+                state["close_reason"] = "MIRRORED_WALLET_EXIT_RECOVERED"
+            _set_candidate_roundtrip_state(row, state)
+            _candidate_roundtrip_mark_recovery_state(
+                row,
+                state_name="RECOVERED",
+                observed_at=recovered_at,
+                extra={
+                    "quote_latency_ms": int(quote.latency_ms),
+                    "price_impact_bps": impact_bps,
+                },
+            )
+        summary["recovered_groups"] += 1
+        summary["positions_closed"] += int(applied.get("positions_closed") or 0)
+        summary["positions_partially_reduced"] += max(
+            0,
+            int(applied.get("positions_affected") or 0)
+            - int(applied.get("positions_closed") or 0),
+        )
+
+    return summary
+
+
+def recover_candidate_roundtrip_exits(
+    db: Session,
+    *,
+    jupiter_client: JupiterSwapClient,
+    now: datetime | None = None,
+    limit: int = M314_CANDIDATE_EXIT_RECOVERY_SCAN_LIMIT,
+) -> dict[str, Any]:
+    rows = list(
+        db.scalars(
+            select(CanonicalParserGen4FastpathShadowEvent)
+            .where(CanonicalParserGen4FastpathShadowEvent.side == "BUY")
+            .order_by(
+                CanonicalParserGen4FastpathShadowEvent.fast_received_at.desc(),
+                CanonicalParserGen4FastpathShadowEvent.id.desc(),
+            )
+            .limit(max(1, min(int(limit), M314_CANDIDATE_EXIT_RECOVERY_SCAN_LIMIT)))
+            .with_for_update()
+        )
+    )
+    return _recover_candidate_roundtrip_rows(
+        rows,
+        jupiter_client=jupiter_client,
+        now=now,
+    )
+
 
 
 def _candidate_roundtrip_metrics_from_events(

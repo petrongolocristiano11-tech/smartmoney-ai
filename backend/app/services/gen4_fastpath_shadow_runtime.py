@@ -12,9 +12,11 @@ from websockets.asyncio.client import connect
 from backend.app.core.config import settings
 from backend.app.database.session import SessionLocal
 from backend.app.services.gen4_fastpath_shadow_service import (
+    M314_CANDIDATE_EXIT_RECOVERY_TICK_SECONDS,
     active_fastpath_wallets,
     configured_fastpath_candidate_wallets,
     fastpath_notification_wallet_hint,
+    recover_candidate_roundtrip_exits,
     record_fastpath_candidate_notification,
     record_fastpath_notification,
     reconcile_fastpath_events,
@@ -52,6 +54,10 @@ class EmbeddedGen4FastpathShadowRuntime:
         self._promoted_exit_recovery_runs = 0
         self._promoted_exit_recovery_groups = 0
         self._promoted_exit_recovery_errors = 0
+        self._candidate_exit_recovery_task: asyncio.Task | None = None
+        self._candidate_exit_recovery_runs = 0
+        self._candidate_exit_recovery_groups = 0
+        self._candidate_exit_recovery_errors = 0
 
     @property
     def enabled(self) -> bool:
@@ -117,6 +123,20 @@ class EmbeddedGen4FastpathShadowRuntime:
                 "signer_access": False,
                 "transaction_submission": False,
             },
+            "candidate_exit_recovery": {
+                "running": bool(
+                    self._candidate_exit_recovery_task is not None
+                    and not self._candidate_exit_recovery_task.done()
+                ),
+                "runs": self._candidate_exit_recovery_runs,
+                "recovered_groups": self._candidate_exit_recovery_groups,
+                "errors": self._candidate_exit_recovery_errors,
+                "live_execution": False,
+                "paper_execution": False,
+                "signer_access": False,
+                "transaction_submission": False,
+                "backfill": False,
+            },
             "live_execution": False,
             "signer_access": False,
         }
@@ -139,6 +159,10 @@ class EmbeddedGen4FastpathShadowRuntime:
             self._candidate_task = asyncio.create_task(
                 self._run_candidate(),
                 name="gen4-fastpath-candidate-shadow",
+            )
+            self._candidate_exit_recovery_task = asyncio.create_task(
+                self._run_candidate_exit_recovery(),
+                name="gen4-m314-candidate-exit-recovery-shadow",
             )
             logger.info(
                 "gen4_fastpath_candidate_shadow_started wallet_count=%s",
@@ -173,6 +197,11 @@ class EmbeddedGen4FastpathShadowRuntime:
             with suppress(asyncio.CancelledError, Exception):
                 await self._promoted_exit_recovery_task
         self._promoted_exit_recovery_task = None
+        if self._candidate_exit_recovery_task is not None:
+            self._candidate_exit_recovery_task.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await self._candidate_exit_recovery_task
+        self._candidate_exit_recovery_task = None
         if self._jupiter is not None:
             await asyncio.to_thread(self._jupiter.close)
         self._jupiter = None
@@ -220,6 +249,36 @@ class EmbeddedGen4FastpathShadowRuntime:
             except Exception:
                 db.rollback()
                 raise
+
+    def _recover_candidate_exits(self) -> dict[str, Any]:
+        if self._candidate_jupiter is None:
+            return {"recovered_groups": 0}
+        with SessionLocal() as db:
+            try:
+                result = recover_candidate_roundtrip_exits(
+                    db,
+                    jupiter_client=self._candidate_jupiter,
+                )
+                db.commit()
+                return result
+            except Exception:
+                db.rollback()
+                raise
+
+    async def _run_candidate_exit_recovery(self) -> None:
+        while not self._stop_requested and self.candidate_enabled:
+            try:
+                result = await asyncio.to_thread(self._recover_candidate_exits)
+                self._candidate_exit_recovery_runs += 1
+                self._candidate_exit_recovery_groups += int(
+                    result.get("recovered_groups") or 0
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self._candidate_exit_recovery_errors += 1
+                logger.exception("gen4_m314_candidate_exit_recovery_failed")
+            await asyncio.sleep(M314_CANDIDATE_EXIT_RECOVERY_TICK_SECONDS)
 
     def _recover_promoted_exits(self) -> dict[str, Any]:
         if self._jupiter is None:
