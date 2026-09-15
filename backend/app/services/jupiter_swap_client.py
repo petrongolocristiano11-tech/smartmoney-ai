@@ -33,6 +33,7 @@ class _SharedJupiterRateLimitCoordinator:
         self._next_request_at = 0.0
         self._blocked_until = 0.0
         self._observed_limit = _JUPITER_RATE_LIMIT_FALLBACK_RPS
+        self._critical_waiters = 0
 
     def _target_rps_locked(self) -> int:
         return max(
@@ -43,22 +44,62 @@ class _SharedJupiterRateLimitCoordinator:
             ),
         )
 
-    def acquire(self) -> None:
-        while True:
+    def acquire(self, *, priority: str = "normal") -> None:
+        normalized_priority = str(priority or "normal").strip().lower()
+        if normalized_priority not in {"normal", "critical", "diagnostic"}:
+            raise ValueError("JUPITER_RATE_LIMIT_PRIORITY_INVALID")
+
+        critical_registered = False
+        if normalized_priority == "critical":
             with self._lock:
-                now = time.monotonic()
-                ready_at = max(
-                    self._next_request_at,
-                    self._blocked_until,
-                )
-                if ready_at <= now:
-                    interval = 1.0 / float(
-                        self._target_rps_locked()
+                self._critical_waiters += 1
+                critical_registered = True
+
+        try:
+            while True:
+                with self._lock:
+                    now = time.monotonic()
+                    ready_at = max(
+                        self._next_request_at,
+                        self._blocked_until,
                     )
-                    self._next_request_at = now + interval
-                    return
-                delay = max(0.0, ready_at - now)
-            time.sleep(delay)
+                    if (
+                        normalized_priority == "diagnostic"
+                        and self._critical_waiters > 0
+                    ):
+                        interval = 1.0 / float(
+                            self._target_rps_locked()
+                        )
+                        delay = max(
+                            0.005,
+                            min(
+                                0.050,
+                                max(0.0, ready_at - now)
+                                or (interval / 4.0),
+                            ),
+                        )
+                    elif ready_at <= now:
+                        interval = 1.0 / float(
+                            self._target_rps_locked()
+                        )
+                        self._next_request_at = now + interval
+                        if critical_registered:
+                            self._critical_waiters = max(
+                                0,
+                                self._critical_waiters - 1,
+                            )
+                            critical_registered = False
+                        return
+                    else:
+                        delay = max(0.0, ready_at - now)
+                time.sleep(delay)
+        finally:
+            if critical_registered:
+                with self._lock:
+                    self._critical_waiters = max(
+                        0,
+                        self._critical_waiters - 1,
+                    )
 
     def observe(self, headers: Any) -> None:
         current = _parse_nonnegative_int_header(
@@ -338,7 +379,22 @@ class JupiterSwapClient:
         json: dict[str, Any] | None = None,
         retryable: bool = False,
         timing_sink: dict[str, Any] | None = None,
+        request_priority: str = "normal",
     ) -> dict[str, Any]:
+        normalized_request_priority = str(
+            request_priority or "normal"
+        ).strip().lower()
+        if normalized_request_priority not in {
+            "normal",
+            "critical",
+            "diagnostic",
+        }:
+            raise JupiterSwapError(
+                "Priorità interna Jupiter non valida.",
+                code="JUPITER_REQUEST_PRIORITY_INVALID",
+                status_code=500,
+            )
+
         maximum_attempts = (
             self.max_retries + 1
             if retryable
@@ -408,6 +464,7 @@ class JupiterSwapClient:
                         self._persistent_client is not None
                     ),
                     "observation_only": True,
+                    "request_priority": normalized_request_priority,
                 }
             )
 
@@ -427,7 +484,16 @@ class JupiterSwapClient:
                     if timing_enabled
                     else 0.0
                 )
-                _SHARED_JUPITER_RATE_LIMIT_COORDINATOR.acquire()
+                if normalized_request_priority == "normal":
+                    # Preserve the historical coordinator call contract exactly.
+                    # Existing fakes/tests and legacy callers expose acquire()
+                    # with no keyword arguments. Priority is an opt-in extension
+                    # used only by the new candidate critical/diagnostic paths.
+                    _SHARED_JUPITER_RATE_LIMIT_COORDINATOR.acquire()
+                else:
+                    _SHARED_JUPITER_RATE_LIMIT_COORDINATOR.acquire(
+                        priority=normalized_request_priority,
+                    )
                 if timing_enabled:
                     pacing_wait_ms += max(
                         0.0,
@@ -1122,6 +1188,303 @@ class JupiterSwapClient:
             last_valid_block_height=str(last_valid_block_height),
             request_timing=component_timing,
         )
+
+
+    def get_build_priority_unsigned(
+        self,
+        *,
+        input_mint: str,
+        output_mint: str,
+        amount_raw: int,
+        taker: str,
+        slippage_bps: int | None = None,
+        mode: str = "fast",
+    ) -> JupiterOrderResult:
+        """Build-priority candidate quote with explicit order-diagnostic omission.
+
+        This path is intended only for candidate-entry shadow validation. It
+        performs the existing Jupiter /build request, preserves every unsigned
+        build safety validation, never signs/submits/executes, and returns the
+        executable quote fields directly from /build. The historical /order
+        comparison is intentionally not collected on the critical path and is
+        marked explicitly in evidence rather than silently dropped.
+        """
+        if amount_raw <= 0:
+            raise JupiterSwapError(
+                "L'importo della quotazione deve essere positivo.",
+                code="INVALID_ORDER_AMOUNT",
+                status_code=422,
+            )
+
+        normalized_taker = str(taker or "").strip()
+        if not normalized_taker:
+            raise JupiterSwapError(
+                "Il taker pubblico per /build è obbligatorio.",
+                code="JUPITER_BUILD_TAKER_REQUIRED",
+                status_code=422,
+            )
+
+        normalized_mode = str(mode or "fast").strip().lower()
+        if normalized_mode != "fast":
+            raise JupiterSwapError(
+                "M58-M60 consente solo Jupiter /build mode=fast.",
+                code="JUPITER_BUILD_MODE_INVALID",
+                status_code=422,
+            )
+
+        build_params = {
+            "inputMint": input_mint,
+            "outputMint": output_mint,
+            "amount": str(amount_raw),
+            "taker": normalized_taker,
+            "mode": normalized_mode,
+        }
+        if slippage_bps is not None:
+            build_params["slippageBps"] = str(slippage_bps)
+
+        build_timing: dict[str, Any] = {}
+        build_started = time.perf_counter()
+        build_payload = self._request_json(
+            "GET",
+            "/build",
+            params=build_params,
+            retryable=True,
+            timing_sink=build_timing,
+            request_priority="critical",
+        )
+        build_wall_ms = max(
+            0.0,
+            (time.perf_counter() - build_started) * 1000.0,
+        )
+        component_timing = {
+            "version": "jupiter-component-timing/1",
+            "parallel_wall_ms": round(build_wall_ms, 3),
+            "order": None,
+            "build": dict(build_timing),
+            "observation_only": True,
+            "pacing_changed": False,
+            "retry_changed": False,
+            "request_concurrency_changed": True,
+            "build_priority": True,
+            "order_diagnostic_available": False,
+            "order_diagnostic_mode": "NOT_CALLED_ON_CANDIDATE_CRITICAL_PATH",
+        }
+
+        request_id = str(build_payload.get("requestId") or "").strip()
+        if not request_id:
+            raise JupiterSwapError(
+                "Risposta Jupiter /build priva di requestId.",
+                code="JUPITER_BUILD_REQUEST_ID_MISSING",
+                status_code=502,
+            )
+
+        forbidden_artifacts = (
+            "signedTransaction",
+            "signature",
+            "transactionSignature",
+            "txid",
+        )
+        if any(build_payload.get(key) not in (None, "") for key in forbidden_artifacts):
+            raise JupiterSwapError(
+                "Jupiter /build ha restituito un artefatto firmato inatteso.",
+                code="JUPITER_SIGNED_ARTIFACT_FORBIDDEN",
+                status_code=502,
+            )
+
+        if not self._valid_unsigned_build_instruction(
+            build_payload.get("swapInstruction")
+        ):
+            raise JupiterSwapError(
+                "Jupiter /build privo di swapInstruction valida.",
+                code="JUPITER_BUILD_INSTRUCTION_MISSING",
+                status_code=502,
+            )
+
+        blockhash_metadata = build_payload.get("blockhashWithMetadata")
+        if not isinstance(blockhash_metadata, dict):
+            raise JupiterSwapError(
+                "Jupiter /build privo di blockhashWithMetadata.",
+                code="JUPITER_BUILD_BLOCKHASH_MISSING",
+                status_code=502,
+            )
+        last_valid_block_height = int(
+            self._parse_int(
+                blockhash_metadata.get("lastValidBlockHeight"),
+                "lastValidBlockHeight",
+            )
+        )
+        if last_valid_block_height <= 0:
+            raise JupiterSwapError(
+                "Jupiter /build con lastValidBlockHeight non positivo.",
+                code="JUPITER_BUILD_BLOCKHASH_INVALID",
+                status_code=502,
+            )
+
+        build_in_amount = int(
+            self._parse_int(build_payload.get("inAmount"), "inAmount")
+        )
+        build_out_amount = int(
+            self._parse_int(build_payload.get("outAmount"), "outAmount")
+        )
+        threshold = int(
+            self._parse_int(
+                build_payload.get("otherAmountThreshold"),
+                "otherAmountThreshold",
+            )
+        )
+        if build_in_amount <= 0 or build_out_amount <= 0 or threshold <= 0:
+            raise JupiterSwapError(
+                "Jupiter /build ha restituito importi non positivi.",
+                code="JUPITER_BUILD_AMOUNTS_INVALID",
+                status_code=502,
+            )
+
+        resolved_slippage = int(
+            self._parse_int(
+                build_payload.get("slippageBps", slippage_bps or 0),
+                "slippageBps",
+            )
+        )
+
+        price_impact = build_payload.get(
+            "priceImpact",
+            build_payload.get("priceImpactPct"),
+        )
+        if price_impact in (None, ""):
+            raise JupiterSwapError(
+                "Jupiter /build privo di priceImpact.",
+                code="JUPITER_BUILD_PRICE_IMPACT_MISSING",
+                status_code=502,
+            )
+
+        router = str(build_payload.get("router") or "metis").strip() or "metis"
+
+        evidence = {
+            "requestId": request_id,
+            "inAmount": str(build_in_amount),
+            "outAmount": str(build_out_amount),
+            "otherAmountThreshold": str(threshold),
+            "slippageBps": resolved_slippage,
+            "router": router,
+            "priceImpact": price_impact,
+            "quoteOnlyOutAmount": None,
+            "buildVsOrderOutBps": None,
+            "unsignedBuild": True,
+            "swapInstructionValid": True,
+            "setupInstructionCount": len(build_payload.get("setupInstructions") or []),
+            "computeBudgetInstructionCount": len(
+                build_payload.get("computeBudgetInstructions") or []
+            ),
+            "otherInstructionCount": len(build_payload.get("otherInstructions") or []),
+            "lookupTableCount": len(
+                build_payload.get("addressesByLookupTableAddress") or {}
+            ),
+            "endpointSequence": ["build"],
+            "orderHadTaker": None,
+            "buildHadTaker": True,
+            "orderDiagnosticAvailable": False,
+            "orderDiagnosticMode": "NOT_CALLED_ON_CANDIDATE_CRITICAL_PATH",
+            "buildPriorityCriticalPath": True,
+            "executeEndpointCalled": False,
+            "signedTransactionCreated": False,
+            "signatureCreated": False,
+            "componentTiming": component_timing,
+        }
+
+        return JupiterOrderResult(
+            raw=evidence,
+            request_id=request_id,
+            transaction="UNSIGNED_INSTRUCTIONS_BUILT_NO_SIGNATURE",
+            in_amount=build_in_amount,
+            out_amount=build_out_amount,
+            slippage_bps=resolved_slippage,
+            router=router,
+            price_impact_percent=self._parse_float(price_impact, 0.0),
+            last_valid_block_height=str(last_valid_block_height),
+            request_timing=component_timing,
+        )
+
+    def get_order_diagnostic(
+        self,
+        *,
+        input_mint: str,
+        output_mint: str,
+        amount_raw: int,
+        slippage_bps: int | None = None,
+    ) -> dict[str, Any]:
+        """Low-priority post-commit /order diagnostic; never part of entry gating."""
+        if amount_raw <= 0:
+            raise JupiterSwapError(
+                "L'importo diagnostico deve essere positivo.",
+                code="INVALID_ORDER_AMOUNT",
+                status_code=422,
+            )
+
+        params = {
+            "inputMint": input_mint,
+            "outputMint": output_mint,
+            "amount": str(amount_raw),
+        }
+        if slippage_bps is not None:
+            params["slippageBps"] = str(slippage_bps)
+
+        timing: dict[str, Any] = {}
+        payload = self._request_json(
+            "GET",
+            "/order",
+            params=params,
+            retryable=True,
+            timing_sink=timing,
+            request_priority="diagnostic",
+        )
+
+        request_id = str(payload.get("requestId") or "").strip()
+        if not request_id:
+            raise JupiterSwapError(
+                "Risposta Jupiter /order diagnostica priva di requestId.",
+                code="JUPITER_DIAGNOSTIC_ORDER_REQUEST_ID_MISSING",
+                status_code=502,
+            )
+        if payload.get("transaction") not in (None, ""):
+            raise JupiterSwapError(
+                "Jupiter /order diagnostico ha restituito una transazione inattesa.",
+                code="JUPITER_UNEXPECTED_TRANSACTION",
+                status_code=502,
+            )
+
+        in_amount = int(
+            self._parse_int(payload.get("inAmount"), "inAmount")
+        )
+        out_amount = int(
+            self._parse_int(payload.get("outAmount"), "outAmount")
+        )
+        if in_amount <= 0 or out_amount <= 0:
+            raise JupiterSwapError(
+                "Jupiter /order diagnostico ha restituito importi non positivi.",
+                code="JUPITER_DIAGNOSTIC_ORDER_AMOUNTS_INVALID",
+                status_code=502,
+            )
+
+        price_impact = payload.get(
+            "priceImpact",
+            payload.get("priceImpactPct"),
+        )
+        router = str(payload.get("router") or "").strip() or None
+
+        return {
+            "version": "candidate-deferred-order-diagnostic/1",
+            "requestId": request_id,
+            "inAmount": str(in_amount),
+            "outAmount": str(out_amount),
+            "router": router,
+            "priceImpact": price_impact,
+            "componentTiming": dict(timing),
+            "criticalPath": False,
+            "requestPriority": "diagnostic",
+            "executeEndpointCalled": False,
+            "signedTransactionCreated": False,
+            "signatureCreated": False,
+        }
 
     def execute_order(
         self,

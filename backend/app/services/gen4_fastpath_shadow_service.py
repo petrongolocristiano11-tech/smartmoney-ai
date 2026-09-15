@@ -1516,6 +1516,8 @@ M319_COPYABLE_EDGE_VERSION = "m319-copyable-edge-instrumentation/1"
 M319_COPYABLE_EDGE_SCOPE = "M319_COPYABLE_EDGE_FORWARD_INSTRUMENTATION"
 M319_COPYABLE_EDGE_EVIDENCE_KEY = "m319_copyable_edge"
 M319_COPYABLE_EDGE_RECONCILE_WINDOW_MINUTES = 15
+M320_CANDIDATE_ORDER_DIAGNOSTIC_VERSION = "m320-candidate-deferred-order-diagnostic/1"
+M320_CANDIDATE_ORDER_DIAGNOSTIC_EVIDENCE_KEY = "m320_candidate_order_diagnostic"
 
 
 def _m319_elapsed_ms(
@@ -1756,7 +1758,18 @@ def _m319_jupiter_component_timing_snapshot(
         "observation_only": True,
         "pacing_changed": False,
         "retry_changed": False,
-        "request_concurrency_changed": False,
+        "request_concurrency_changed": bool(
+            raw.get("request_concurrency_changed")
+        ),
+        "build_priority": bool(raw.get("build_priority")),
+        "order_diagnostic_available": bool(
+            raw.get("order_diagnostic_available")
+        ),
+        "order_diagnostic_mode": (
+            str(raw.get("order_diagnostic_mode"))
+            if raw.get("order_diagnostic_mode")
+            else None
+        ),
     }
 
 def _m319_update_buy_quote(
@@ -2902,6 +2915,77 @@ def get_gen4_candidate_roundtrip_shadow_status(
     }
     return aggregate
 
+
+def _candidate_entry_quote(
+    *,
+    input_mint: str,
+    output_mint: str,
+    amount_raw: int,
+    slippage_bps: int,
+    client: JupiterSwapClient,
+) -> Any:
+    """Candidate BUY build-priority quote; test doubles keep legacy fallback."""
+    build_priority = getattr(client, "get_build_priority_unsigned", None)
+    if not callable(build_priority):
+        return _quote(
+            input_mint=input_mint,
+            output_mint=output_mint,
+            amount_raw=amount_raw,
+            slippage_bps=slippage_bps,
+            client=client,
+        )
+
+    requested = _utc_now()
+    taker = str(
+        getattr(
+            settings,
+            "CANONICAL_PARSER_GEN4_COPYABILITY_QUOTE_TAKER",
+            "",
+        )
+        or ""
+    ).strip() or None
+    if not taker:
+        raise JupiterSwapError(
+            "CANONICAL_PARSER_GEN4_COPYABILITY_QUOTE_TAKER mancante.",
+            code="GEN4_COPYABILITY_QUOTE_TAKER_MISSING",
+            status_code=503,
+        )
+    result = build_priority(
+        input_mint=input_mint,
+        output_mint=output_mint,
+        amount_raw=int(amount_raw),
+        taker=taker,
+        slippage_bps=int(slippage_bps),
+        mode="fast",
+    )
+    received = _utc_now()
+    latency = max(
+        0,
+        int((received - requested).total_seconds() * 1000),
+    )
+    sanitized = dict(getattr(result, "raw", None) or {})
+    sanitized.update(
+        {
+            "request_id": result.request_id,
+            "in_amount": result.in_amount,
+            "out_amount": result.out_amount,
+            "slippage_bps": result.slippage_bps,
+            "router": result.router,
+            "price_impact_percent": result.price_impact_percent,
+            "transaction_built": bool(result.transaction),
+            "candidate_build_priority": True,
+            "order_diagnostic_available": False,
+        }
+    )
+    return SimpleNamespace(
+        requested_at=requested,
+        received_at=received,
+        latency_ms=latency,
+        result=result,
+        sanitized=sanitized,
+    )
+
+
 def record_fastpath_candidate_notification(
     db: Session,
     *,
@@ -2923,6 +3007,7 @@ def record_fastpath_candidate_notification(
     ] | None = None
 
     candidate_roundtrip_sell_context: tuple[Any, dict[str, Any]] | None = None
+    candidate_order_diagnostic_request: dict[str, Any] | None = None
 
     event = CanonicalParserGen4FastpathShadowEvent(
         event_id=str(uuid4()),
@@ -2996,7 +3081,7 @@ def record_fastpath_candidate_notification(
                 "pump_shadow": pump_shadow,
             }
             try:
-                quote = _quote(
+                quote = _candidate_entry_quote(
                     input_mint=SOL_MINT,
                     output_mint=signal.token_mint,
                     amount_raw=int(policy["simulated_input_lamports"]),
@@ -3036,6 +3121,50 @@ def record_fastpath_candidate_notification(
                     price_impact_bps=impact_bps,
                     rejection_reason=reason,
                 )
+                if bool(
+                    dict(getattr(quote, "sanitized", None) or {}).get(
+                        "candidate_build_priority"
+                    )
+                ):
+                    build_received_at = (
+                        _aware(quote.received_at) or _utc_now()
+                    )
+                    candidate_order_diagnostic_request = {
+                        "version": M320_CANDIDATE_ORDER_DIAGNOSTIC_VERSION,
+                        "event_id": str(event.event_id),
+                        "signature": str(signature),
+                        "wallet_address": str(signal.wallet_address),
+                        "input_mint": SOL_MINT,
+                        "output_mint": str(signal.token_mint),
+                        "amount_raw": int(policy["simulated_input_lamports"]),
+                        "slippage_bps": int(policy["slippage_bps"]),
+                        "build_request_id": str(quote.result.request_id),
+                        "build_out_amount": int(quote.result.out_amount),
+                        "build_received_at_utc": build_received_at.isoformat(),
+                    }
+                    event.evidence = {
+                        **dict(event.evidence or {}),
+                        M320_CANDIDATE_ORDER_DIAGNOSTIC_EVIDENCE_KEY: {
+                            "version": M320_CANDIDATE_ORDER_DIAGNOSTIC_VERSION,
+                            "state": "PENDING_POST_COMMIT_LOW_PRIORITY",
+                            "critical_path": False,
+                            "affects_entry_decision": False,
+                            "covers_rejected_buys": True,
+                            "build_request_id": str(quote.result.request_id),
+                            "build_out_amount": int(quote.result.out_amount),
+                            "build_received_at_utc": build_received_at.isoformat(),
+                            "event_id": str(event.event_id),
+                            "signature": str(signature),
+                            "wallet_address": str(signal.wallet_address),
+                            "input_mint": SOL_MINT,
+                            "output_mint": str(signal.token_mint),
+                            "amount_raw": int(policy["simulated_input_lamports"]),
+                            "slippage_bps": int(policy["slippage_bps"]),
+                            "order_called_before_build_decision": False,
+                            "live_execution": False,
+                            "signer_access": False,
+                        },
+                    }
                 if reason is None:
                     conservative_out = _conservative_out_amount(
                         quote.result, int(policy["slippage_bps"])
@@ -3213,7 +3342,244 @@ def record_fastpath_candidate_notification(
         "promoted_selective_lifecycle": promoted_evidence,
         "promoted_position_created": promoted_position is not None,
         "promoted_exit_applied": bool(promoted_evidence.get("exit_applied")),
+        "deferred_order_diagnostic": (
+            dict(candidate_order_diagnostic_request)
+            if isinstance(candidate_order_diagnostic_request, dict)
+            else None
+        ),
     }
+
+
+def record_candidate_order_diagnostic(
+    db: Session,
+    *,
+    request: dict[str, Any],
+    jupiter_client: JupiterSwapClient,
+) -> dict[str, Any]:
+    """Persist low-priority /order evidence after the candidate BUY commit."""
+    version = str(request.get("version") or "")
+    if version != M320_CANDIDATE_ORDER_DIAGNOSTIC_VERSION:
+        return {
+            "status": "IGNORED_DIAGNOSTIC_VERSION",
+            "version": version,
+        }
+
+    event_id = str(request.get("event_id") or "").strip()
+    signature = str(request.get("signature") or "").strip()
+    wallet = str(request.get("wallet_address") or "").strip()
+    if not event_id or not signature or not wallet:
+        return {"status": "IGNORED_DIAGNOSTIC_IDENTITY"}
+
+    event = db.scalar(
+        select(CanonicalParserGen4FastpathShadowEvent).where(
+            CanonicalParserGen4FastpathShadowEvent.event_id == event_id,
+        )
+    )
+    if event is None or not _is_candidate_event(event):
+        return {"status": "DIAGNOSTIC_EVENT_NOT_FOUND"}
+    if (
+        str(event.signature) != signature
+        or str(event.wallet_address) != wallet
+        or str(event.side or "") != "BUY"
+    ):
+        return {"status": "DIAGNOSTIC_EVENT_IDENTITY_MISMATCH"}
+
+    evidence = dict(event.evidence or {})
+    current = dict(
+        evidence.get(M320_CANDIDATE_ORDER_DIAGNOSTIC_EVIDENCE_KEY) or {}
+    )
+    if str(current.get("version") or "") != M320_CANDIDATE_ORDER_DIAGNOSTIC_VERSION:
+        return {"status": "DIAGNOSTIC_PENDING_EVIDENCE_MISSING"}
+    if str(current.get("state") or "") == "COMPLETE":
+        return {"status": "DIAGNOSTIC_ALREADY_COMPLETE"}
+
+    build_out = int(request.get("build_out_amount") or 0)
+    build_received = None
+    raw_build_received = request.get("build_received_at_utc")
+    if raw_build_received:
+        try:
+            build_received = datetime.fromisoformat(
+                str(raw_build_received).replace("Z", "+00:00")
+            )
+            build_received = _aware(build_received)
+        except ValueError:
+            build_received = None
+
+    diagnostic_requested = _utc_now()
+    delay_from_build_ms = (
+        max(
+            0,
+            int(
+                (
+                    diagnostic_requested - build_received
+                ).total_seconds()
+                * 1000
+            ),
+        )
+        if build_received is not None
+        else None
+    )
+
+    order_diagnostic = getattr(
+        jupiter_client,
+        "get_order_diagnostic",
+        None,
+    )
+    if not callable(order_diagnostic):
+        current.update(
+            {
+                "state": "FAILED_UNSUPPORTED_CLIENT",
+                "completed_at_utc": _utc_now().isoformat(),
+                "critical_path": False,
+                "affects_entry_decision": False,
+            }
+        )
+        evidence[M320_CANDIDATE_ORDER_DIAGNOSTIC_EVIDENCE_KEY] = current
+        event.evidence = evidence
+        db.flush()
+        return {"status": "DIAGNOSTIC_UNSUPPORTED_CLIENT"}
+
+    try:
+        result = order_diagnostic(
+            input_mint=str(request.get("input_mint") or ""),
+            output_mint=str(request.get("output_mint") or ""),
+            amount_raw=int(request.get("amount_raw") or 0),
+            slippage_bps=int(request.get("slippage_bps") or 0),
+        )
+    except JupiterSwapError as exc:
+        current.update(
+            {
+                "state": "FAILED",
+                "completed_at_utc": _utc_now().isoformat(),
+                "diagnostic_delay_from_build_ms": delay_from_build_ms,
+                "jupiter_error": _jupiter_error_snapshot(exc),
+                "critical_path": False,
+                "affects_entry_decision": False,
+                "live_execution": False,
+                "signer_access": False,
+            }
+        )
+        evidence[M320_CANDIDATE_ORDER_DIAGNOSTIC_EVIDENCE_KEY] = current
+        event.evidence = evidence
+        db.flush()
+        return {
+            "status": "DIAGNOSTIC_FAILED",
+            "code": str(exc.code),
+        }
+
+    order_out = int(result.get("outAmount") or 0)
+    if build_out <= 0 or order_out <= 0:
+        current.update(
+            {
+                "state": "FAILED_INVALID_AMOUNT",
+                "completed_at_utc": _utc_now().isoformat(),
+                "diagnostic_delay_from_build_ms": delay_from_build_ms,
+                "critical_path": False,
+                "affects_entry_decision": False,
+            }
+        )
+        evidence[M320_CANDIDATE_ORDER_DIAGNOSTIC_EVIDENCE_KEY] = current
+        event.evidence = evidence
+        db.flush()
+        return {"status": "DIAGNOSTIC_INVALID_AMOUNT"}
+
+    build_vs_order_out_bps = (
+        (float(build_out) / float(order_out)) - 1.0
+    ) * 10_000.0
+    completed = _utc_now()
+
+    current.update(
+        {
+            "state": "COMPLETE",
+            "completed_at_utc": completed.isoformat(),
+            "diagnostic_delay_from_build_ms": delay_from_build_ms,
+            "order_request_id": str(result.get("requestId") or ""),
+            "order_in_amount": int(result.get("inAmount") or 0),
+            "order_out_amount": order_out,
+            "order_router": result.get("router"),
+            "order_price_impact": result.get("priceImpact"),
+            "order_component_timing": dict(
+                result.get("componentTiming") or {}
+            ),
+            "build_vs_order_out_bps": round(
+                build_vs_order_out_bps,
+                4,
+            ),
+            "critical_path": False,
+            "affects_entry_decision": False,
+            "order_called_before_build_decision": False,
+            "live_execution": False,
+            "signer_access": False,
+        }
+    )
+    evidence[M320_CANDIDATE_ORDER_DIAGNOSTIC_EVIDENCE_KEY] = current
+    event.evidence = evidence
+    db.flush()
+    return {
+        "status": "DIAGNOSTIC_COMPLETE",
+        "build_vs_order_out_bps": float(build_vs_order_out_bps),
+    }
+
+
+def load_pending_candidate_order_diagnostics(
+    db: Session,
+    *,
+    limit: int = 256,
+) -> list[dict[str, Any]]:
+    """Recover persisted pending diagnostics after a process restart."""
+    bounded = max(1, min(int(limit), 256))
+    scan_limit = min(5000, max(512, bounded * 12))
+    rows = list(
+        db.scalars(
+            select(CanonicalParserGen4FastpathShadowEvent)
+            .where(CanonicalParserGen4FastpathShadowEvent.side == "BUY")
+            .order_by(
+                CanonicalParserGen4FastpathShadowEvent.fast_received_at.desc()
+            )
+            .limit(scan_limit)
+        )
+    )
+    pending: list[dict[str, Any]] = []
+    for event in rows:
+        if not _is_candidate_event(event):
+            continue
+        evidence = dict(event.evidence or {})
+        item = evidence.get(M320_CANDIDATE_ORDER_DIAGNOSTIC_EVIDENCE_KEY)
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("version") or "") != M320_CANDIDATE_ORDER_DIAGNOSTIC_VERSION:
+            continue
+        if str(item.get("state") or "") != "PENDING_POST_COMMIT_LOW_PRIORITY":
+            continue
+        request = {
+            "version": M320_CANDIDATE_ORDER_DIAGNOSTIC_VERSION,
+            "event_id": str(item.get("event_id") or event.event_id),
+            "signature": str(item.get("signature") or event.signature),
+            "wallet_address": str(
+                item.get("wallet_address") or event.wallet_address
+            ),
+            "input_mint": str(item.get("input_mint") or ""),
+            "output_mint": str(item.get("output_mint") or event.token_mint or ""),
+            "amount_raw": int(item.get("amount_raw") or 0),
+            "slippage_bps": int(item.get("slippage_bps") or 0),
+            "build_request_id": str(item.get("build_request_id") or ""),
+            "build_out_amount": int(item.get("build_out_amount") or 0),
+            "build_received_at_utc": item.get("build_received_at_utc"),
+        }
+        if (
+            request["event_id"]
+            and request["signature"]
+            and request["wallet_address"]
+            and request["input_mint"]
+            and request["output_mint"]
+            and request["amount_raw"] > 0
+            and request["build_out_amount"] > 0
+        ):
+            pending.append(request)
+        if len(pending) >= bounded:
+            break
+    pending.reverse()
+    return pending
 
 
 def _candidate_status(

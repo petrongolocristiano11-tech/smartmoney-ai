@@ -18,6 +18,8 @@ from backend.app.services.gen4_fastpath_shadow_service import (
     fastpath_notification_wallet_hint,
     recover_candidate_roundtrip_exits,
     record_fastpath_candidate_notification,
+    record_candidate_order_diagnostic,
+    load_pending_candidate_order_diagnostics,
     record_fastpath_notification,
     reconcile_fastpath_events,
     reconcile_m319_candidate_edge_instrumentation,
@@ -64,6 +66,12 @@ class EmbeddedGen4FastpathShadowRuntime:
         self._candidate_exit_recovery_runs = 0
         self._candidate_exit_recovery_groups = 0
         self._candidate_exit_recovery_errors = 0
+        self._candidate_order_diagnostic_task: asyncio.Task | None = None
+        self._candidate_order_diagnostic_queue: asyncio.Queue[dict[str, Any]] | None = None
+        self._candidate_order_diagnostic_enqueued = 0
+        self._candidate_order_diagnostic_completed = 0
+        self._candidate_order_diagnostic_failed = 0
+        self._candidate_order_diagnostic_recovered_pending = 0
 
     @property
     def enabled(self) -> bool:
@@ -150,6 +158,26 @@ class EmbeddedGen4FastpathShadowRuntime:
                 "transaction_submission": False,
                 "backfill": False,
             },
+            "candidate_order_diagnostic": {
+                "running": bool(
+                    self._candidate_order_diagnostic_task is not None
+                    and not self._candidate_order_diagnostic_task.done()
+                ),
+                "queue_size": (
+                    self._candidate_order_diagnostic_queue.qsize()
+                    if self._candidate_order_diagnostic_queue is not None
+                    else 0
+                ),
+                "enqueued": self._candidate_order_diagnostic_enqueued,
+                "completed": self._candidate_order_diagnostic_completed,
+                "failed": self._candidate_order_diagnostic_failed,
+                "recovered_pending": self._candidate_order_diagnostic_recovered_pending,
+                "critical_path": False,
+                "low_priority": True,
+                "live_execution": False,
+                "signer_access": False,
+                "transaction_submission": False,
+            },
             "live_execution": False,
             "signer_access": False,
         }
@@ -176,6 +204,20 @@ class EmbeddedGen4FastpathShadowRuntime:
             self._candidate_exit_recovery_task = asyncio.create_task(
                 self._run_candidate_exit_recovery(),
                 name="gen4-m314-candidate-exit-recovery-shadow",
+            )
+            self._candidate_order_diagnostic_queue = asyncio.Queue(maxsize=256)
+            recovered_pending = await asyncio.to_thread(
+                self._load_pending_candidate_order_diagnostics
+            )
+            for request in recovered_pending:
+                self._candidate_order_diagnostic_queue.put_nowait(
+                    dict(request)
+                )
+                self._candidate_order_diagnostic_enqueued += 1
+                self._candidate_order_diagnostic_recovered_pending += 1
+            self._candidate_order_diagnostic_task = asyncio.create_task(
+                self._run_candidate_order_diagnostics(),
+                name="gen4-candidate-order-diagnostic-shadow",
             )
             logger.info(
                 "gen4_fastpath_candidate_shadow_started wallet_count=%s",
@@ -217,6 +259,12 @@ class EmbeddedGen4FastpathShadowRuntime:
             with suppress(asyncio.CancelledError, Exception):
                 await self._candidate_exit_recovery_task
         self._candidate_exit_recovery_task = None
+        if self._candidate_order_diagnostic_task is not None:
+            self._candidate_order_diagnostic_task.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await self._candidate_order_diagnostic_task
+        self._candidate_order_diagnostic_task = None
+        self._candidate_order_diagnostic_queue = None
         if self._jupiter is not None:
             await asyncio.to_thread(self._jupiter.close)
         self._jupiter = None
@@ -317,9 +365,9 @@ class EmbeddedGen4FastpathShadowRuntime:
         self,
         message: dict[str, Any],
         received_at: datetime,
-    ) -> None:
+    ) -> dict[str, Any]:
         if self._candidate_jupiter is None:
-            return
+            return {"status": "CANDIDATE_JUPITER_UNAVAILABLE"}
         provider_slot_clock = (
             dict(message.get("_m319_provider_slot_clock"))
             if isinstance(message.get("_m319_provider_slot_clock"), dict)
@@ -327,7 +375,7 @@ class EmbeddedGen4FastpathShadowRuntime:
         )
         with SessionLocal() as db:
             try:
-                record_fastpath_candidate_notification(
+                result = record_fastpath_candidate_notification(
                     db,
                     message=message,
                     jupiter_client=self._candidate_jupiter,
@@ -335,9 +383,74 @@ class EmbeddedGen4FastpathShadowRuntime:
                     provider_slot_clock=provider_slot_clock,
                 )
                 db.commit()
+                return dict(result or {})
             except Exception:
                 db.rollback()
                 raise
+
+    def _load_pending_candidate_order_diagnostics(
+        self,
+    ) -> list[dict[str, Any]]:
+        with SessionLocal() as db:
+            return load_pending_candidate_order_diagnostics(
+                db,
+                limit=256,
+            )
+
+    def _record_candidate_order_diagnostic(
+        self,
+        request: dict[str, Any],
+    ) -> dict[str, Any]:
+        if self._candidate_jupiter is None:
+            return {"status": "DIAGNOSTIC_JUPITER_UNAVAILABLE"}
+        with SessionLocal() as db:
+            try:
+                result = record_candidate_order_diagnostic(
+                    db,
+                    request=request,
+                    jupiter_client=self._candidate_jupiter,
+                )
+                db.commit()
+                return dict(result or {})
+            except Exception:
+                db.rollback()
+                raise
+
+    async def _run_candidate_order_diagnostics(self) -> None:
+        while not self._stop_requested and self.candidate_enabled:
+            queue = self._candidate_order_diagnostic_queue
+            if queue is None:
+                await asyncio.sleep(0.05)
+                continue
+            request = await queue.get()
+            try:
+                result = await asyncio.to_thread(
+                    self._record_candidate_order_diagnostic,
+                    dict(request),
+                )
+                if str(result.get("status") or "") == "DIAGNOSTIC_COMPLETE":
+                    self._candidate_order_diagnostic_completed += 1
+                else:
+                    self._candidate_order_diagnostic_failed += 1
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self._candidate_order_diagnostic_failed += 1
+                logger.exception("gen4_candidate_order_diagnostic_failed")
+            finally:
+                queue.task_done()
+
+    async def _enqueue_candidate_order_diagnostic(
+        self,
+        request: dict[str, Any] | None,
+    ) -> None:
+        if not isinstance(request, dict):
+            return
+        queue = self._candidate_order_diagnostic_queue
+        if queue is None:
+            return
+        await queue.put(dict(request))
+        self._candidate_order_diagnostic_enqueued += 1
 
     def _recover_candidate_exits(self) -> dict[str, Any]:
         if self._candidate_jupiter is None:
@@ -468,10 +581,11 @@ class EmbeddedGen4FastpathShadowRuntime:
         else:
             lock = self._candidate_wallet_locks.setdefault(wallet_hint, asyncio.Lock())
 
+        record_result: dict[str, Any] | None = None
         async with lock:
             async with semaphore:
                 try:
-                    await asyncio.to_thread(
+                    record_result = await asyncio.to_thread(
                         self._record_candidate,
                         record_message,
                         received_at,
@@ -479,6 +593,11 @@ class EmbeddedGen4FastpathShadowRuntime:
                 except Exception:
                     self._candidate_errors += 1
                     logger.exception("gen4_fastpath_candidate_shadow_event_failed")
+
+        if isinstance(record_result, dict):
+            await self._enqueue_candidate_order_diagnostic(
+                record_result.get("deferred_order_diagnostic")
+            )
 
     async def _run(self) -> None:
         reconnect = float(
