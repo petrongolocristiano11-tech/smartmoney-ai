@@ -2916,6 +2916,78 @@ def get_gen4_candidate_roundtrip_shadow_status(
     return aggregate
 
 
+
+def _candidate_order_only_quote(
+    *,
+    input_mint: str,
+    output_mint: str,
+    amount_raw: int,
+    slippage_bps: int,
+    client: JupiterSwapClient,
+) -> Any:
+    """Candidate BUY one-call /order shadow path; test doubles keep legacy fallback."""
+    order_only = getattr(client, "get_order_only_shadow", None)
+    if not callable(order_only):
+        return _quote(
+            input_mint=input_mint,
+            output_mint=output_mint,
+            amount_raw=amount_raw,
+            slippage_bps=slippage_bps,
+            client=client,
+        )
+
+    requested = _utc_now()
+    taker = str(
+        getattr(
+            settings,
+            "CANONICAL_PARSER_GEN4_COPYABILITY_QUOTE_TAKER",
+            "",
+        )
+        or ""
+    ).strip() or None
+    if not taker:
+        raise JupiterSwapError(
+            "CANONICAL_PARSER_GEN4_COPYABILITY_QUOTE_TAKER mancante.",
+            code="GEN4_COPYABILITY_QUOTE_TAKER_MISSING",
+            status_code=503,
+        )
+
+    result = order_only(
+        input_mint=input_mint,
+        output_mint=output_mint,
+        amount_raw=int(amount_raw),
+        taker=taker,
+        slippage_bps=int(slippage_bps),
+    )
+    received = _utc_now()
+    latency = max(
+        0,
+        int((received - requested).total_seconds() * 1000),
+    )
+    sanitized = dict(getattr(result, "raw", None) or {})
+    sanitized.update(
+        {
+            "request_id": result.request_id,
+            "in_amount": result.in_amount,
+            "out_amount": result.out_amount,
+            "slippage_bps": result.slippage_bps,
+            "router": result.router,
+            "price_impact_percent": result.price_impact_percent,
+            "transaction_built": bool(result.transaction),
+            "candidate_order_only": True,
+            "candidate_build_priority": False,
+            "order_diagnostic_available": True,
+        }
+    )
+    return SimpleNamespace(
+        requested_at=requested,
+        received_at=received,
+        latency_ms=latency,
+        result=result,
+        sanitized=sanitized,
+    )
+
+
 def _candidate_entry_quote(
     *,
     input_mint: str,
@@ -3081,7 +3153,7 @@ def record_fastpath_candidate_notification(
                 "pump_shadow": pump_shadow,
             }
             try:
-                quote = _quote(
+                quote = _candidate_order_only_quote(
                     input_mint=SOL_MINT,
                     output_mint=signal.token_mint,
                     amount_raw=int(policy["simulated_input_lamports"]),

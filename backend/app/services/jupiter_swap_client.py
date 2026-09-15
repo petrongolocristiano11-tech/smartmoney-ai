@@ -1190,6 +1190,194 @@ class JupiterSwapClient:
         )
 
 
+
+    def get_order_only_shadow(
+        self,
+        *,
+        input_mint: str,
+        output_mint: str,
+        amount_raw: int,
+        taker: str,
+        slippage_bps: int | None = None,
+    ) -> JupiterOrderResult:
+        """Candidate shadow quote + unsigned assembled transaction via /order only.
+
+        This is observation-only. It validates that Jupiter returned an unsigned
+        transaction for the public taker, but never signs it, never persists the
+        raw transaction bytes, and never calls /execute.
+        """
+        if amount_raw <= 0:
+            raise JupiterSwapError(
+                "L'importo della quotazione deve essere positivo.",
+                code="INVALID_ORDER_AMOUNT",
+                status_code=422,
+            )
+
+        normalized_taker = str(taker or "").strip()
+        if not normalized_taker:
+            raise JupiterSwapError(
+                "Il taker pubblico per /order è obbligatorio.",
+                code="JUPITER_ORDER_ONLY_TAKER_REQUIRED",
+                status_code=422,
+            )
+
+        params = {
+            "inputMint": input_mint,
+            "outputMint": output_mint,
+            "amount": str(amount_raw),
+            "taker": normalized_taker,
+        }
+        if slippage_bps is not None:
+            params["slippageBps"] = str(slippage_bps)
+
+        order_timing: dict[str, Any] = {}
+        order_started = time.perf_counter()
+        payload = self._request_json(
+            "GET",
+            "/order",
+            params=params,
+            retryable=True,
+            timing_sink=order_timing,
+            request_priority="critical",
+        )
+        order_wall_ms = max(
+            0.0,
+            (time.perf_counter() - order_started) * 1000.0,
+        )
+
+        request_id = str(payload.get("requestId") or "").strip()
+        if not request_id:
+            raise JupiterSwapError(
+                "Risposta Jupiter /order priva di requestId.",
+                code="JUPITER_ORDER_ONLY_REQUEST_ID_MISSING",
+                status_code=502,
+            )
+
+        forbidden_artifacts = (
+            "signedTransaction",
+            "signature",
+            "transactionSignature",
+            "txid",
+        )
+        if any(payload.get(key) not in (None, "") for key in forbidden_artifacts):
+            raise JupiterSwapError(
+                "Jupiter /order ha restituito un artefatto firmato inatteso.",
+                code="JUPITER_ORDER_ONLY_SIGNED_ARTIFACT_FORBIDDEN",
+                status_code=502,
+            )
+
+        transaction = str(payload.get("transaction") or "").strip()
+        if not transaction:
+            raise JupiterSwapError(
+                str(
+                    payload.get("errorMessage")
+                    or payload.get("error")
+                    or "Jupiter /order non ha costruito la transazione unsigned."
+                ),
+                code="JUPITER_ORDER_ONLY_TRANSACTION_MISSING",
+                status_code=502,
+                payload=sanitize_jupiter_payload(payload),
+            )
+
+        in_amount = int(
+            self._parse_int(payload.get("inAmount"), "inAmount")
+        )
+        out_amount = int(
+            self._parse_int(payload.get("outAmount"), "outAmount")
+        )
+        if in_amount <= 0 or out_amount <= 0:
+            raise JupiterSwapError(
+                "Jupiter /order ha restituito importi non positivi.",
+                code="JUPITER_ORDER_ONLY_AMOUNTS_INVALID",
+                status_code=502,
+            )
+
+        resolved_slippage = int(
+            self._parse_int(
+                payload.get("slippageBps", slippage_bps or 0),
+                "slippageBps",
+            )
+        )
+        raw_threshold = payload.get("otherAmountThreshold")
+        threshold = None
+        if raw_threshold not in (None, ""):
+            parsed_threshold = int(
+                self._parse_int(raw_threshold, "otherAmountThreshold")
+            )
+            if parsed_threshold <= 0:
+                raise JupiterSwapError(
+                    "Jupiter /order ha restituito otherAmountThreshold non positivo.",
+                    code="JUPITER_ORDER_ONLY_THRESHOLD_INVALID",
+                    status_code=502,
+                )
+            threshold = parsed_threshold
+
+        price_impact = payload.get(
+            "priceImpact",
+            payload.get("priceImpactPct"),
+        )
+        router = str(payload.get("router") or "metis").strip() or "metis"
+        last_valid_block_height = payload.get("lastValidBlockHeight")
+
+        component_timing = {
+            "version": "jupiter-component-timing/1",
+            "parallel_wall_ms": round(order_wall_ms, 3),
+            "order": dict(order_timing),
+            "build": None,
+            "observation_only": True,
+            "pacing_changed": False,
+            "retry_changed": False,
+            "request_concurrency_changed": True,
+            "build_priority": False,
+            "order_diagnostic_available": True,
+            "order_diagnostic_mode": "ORDER_IS_CANDIDATE_CRITICAL_PATH_SOURCE",
+            "order_only_candidate": True,
+        }
+
+        evidence = {
+            "requestId": request_id,
+            "inAmount": str(in_amount),
+            "outAmount": str(out_amount),
+            "otherAmountThreshold": (
+                str(threshold) if threshold is not None else None
+            ),
+            "slippageBps": resolved_slippage,
+            "router": router,
+            "priceImpact": price_impact,
+            "quoteOnlyOutAmount": str(out_amount),
+            "buildVsOrderOutBps": None,
+            "unsignedOrderTransaction": True,
+            "rawTransactionPersisted": False,
+            "transactionPresent": True,
+            "transactionCharacterCount": len(transaction),
+            "endpointSequence": ["order"],
+            "orderHadTaker": True,
+            "buildHadTaker": None,
+            "buildEndpointCalled": False,
+            "executeEndpointCalled": False,
+            "signedTransactionCreated": False,
+            "signatureCreated": False,
+            "componentTiming": component_timing,
+        }
+
+        return JupiterOrderResult(
+            raw=evidence,
+            request_id=request_id,
+            transaction="UNSIGNED_ORDER_TRANSACTION_PRESENT_NO_SIGNATURE",
+            in_amount=in_amount,
+            out_amount=out_amount,
+            slippage_bps=resolved_slippage,
+            router=router,
+            price_impact_percent=self._parse_float(price_impact, 0.0),
+            last_valid_block_height=(
+                str(last_valid_block_height)
+                if last_valid_block_height not in (None, "")
+                else None
+            ),
+            request_timing=component_timing,
+        )
+
+
     def get_build_priority_unsigned(
         self,
         *,
