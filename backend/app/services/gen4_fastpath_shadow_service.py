@@ -3081,7 +3081,7 @@ def record_fastpath_candidate_notification(
                 "pump_shadow": pump_shadow,
             }
             try:
-                quote = _candidate_entry_quote(
+                quote = _quote(
                     input_mint=SOL_MINT,
                     output_mint=signal.token_mint,
                     amount_raw=int(policy["simulated_input_lamports"]),
