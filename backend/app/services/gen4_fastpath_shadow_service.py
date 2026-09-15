@@ -1691,6 +1691,74 @@ def _m319_set_candidate_observation(
     event.evidence = evidence
 
 
+
+def _m319_jupiter_component_timing_snapshot(
+    quote_result: Any,
+) -> dict[str, Any] | None:
+    raw = getattr(quote_result, "request_timing", None)
+    if not isinstance(raw, dict):
+        return None
+    if str(raw.get("version") or "") != "jupiter-component-timing/1":
+        return None
+
+    def endpoint(name: str) -> dict[str, Any] | None:
+        value = raw.get(name)
+        if not isinstance(value, dict):
+            return None
+        status_codes: list[int] = []
+        for item in value.get("status_codes") or []:
+            try:
+                status_codes.append(int(item))
+            except (TypeError, ValueError):
+                continue
+        result: dict[str, Any] = {
+            "attempts": int(value.get("attempts") or 0),
+            "retry_count": int(value.get("retry_count") or 0),
+            "shared_pacing_wait_ms": float(
+                value.get("shared_pacing_wait_ms") or 0.0
+            ),
+            "http_round_trip_ms": float(
+                value.get("http_round_trip_ms") or 0.0
+            ),
+            "retry_sleep_requested_ms": float(
+                value.get("retry_sleep_requested_ms") or 0.0
+            ),
+            "endpoint_total_ms": float(
+                value.get("endpoint_total_ms") or 0.0
+            ),
+            "status_codes": status_codes,
+            "final_http_status": (
+                int(value["final_http_status"])
+                if value.get("final_http_status") is not None
+                else None
+            ),
+            "success": bool(value.get("success")),
+            "retryable": bool(value.get("retryable")),
+            "shared_rate_limit": bool(value.get("shared_rate_limit")),
+            "used_persistent_http": bool(value.get("used_persistent_http")),
+            "observation_only": True,
+        }
+        return result
+
+    order = endpoint("order")
+    build = endpoint("build")
+    if order is None and build is None:
+        return None
+    try:
+        parallel_wall_ms = float(raw.get("parallel_wall_ms") or 0.0)
+    except (TypeError, ValueError):
+        parallel_wall_ms = 0.0
+    return {
+        "version": "jupiter-component-timing/1",
+        "parallel_wall_ms": parallel_wall_ms,
+        "order": order,
+        "build": build,
+        "observation_only": True,
+        "pacing_changed": False,
+        "retry_changed": False,
+        "request_concurrency_changed": False,
+    }
+
 def _m319_update_buy_quote(
     event: CanonicalParserGen4FastpathShadowEvent,
     *,
@@ -1732,6 +1800,9 @@ def _m319_update_buy_quote(
         "chain_to_quote_received_ms": _m319_elapsed_ms(received, block_time),
         "provider_slot_to_quote_received_ms": _m319_elapsed_ms(
             received, provider_slot_time
+        ),
+        "jupiter_component_timing": _m319_jupiter_component_timing_snapshot(
+            quote.result
         ),
         "price_deterioration_bps": (
             float(deterioration_bps) if deterioration_bps is not None else None

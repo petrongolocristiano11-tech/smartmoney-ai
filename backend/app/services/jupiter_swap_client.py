@@ -158,6 +158,7 @@ class JupiterOrderResult:
     router: str | None
     price_impact_percent: float
     last_valid_block_height: str | None
+    request_timing: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -336,6 +337,7 @@ class JupiterSwapClient:
         params: dict[str, str] | None = None,
         json: dict[str, Any] | None = None,
         retryable: bool = False,
+        timing_sink: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         maximum_attempts = (
             self.max_retries + 1
@@ -351,18 +353,96 @@ class JupiterSwapClient:
             504,
         }
 
+        timing_enabled = timing_sink is not None
+        request_started = time.perf_counter() if timing_enabled else 0.0
+        pacing_wait_ms = 0.0
+        http_round_trip_ms = 0.0
+        retry_sleep_requested_ms = 0.0
+        attempts_started = 0
+        status_codes: list[int] = []
+
+        def publish_timing(
+            *,
+            success: bool,
+            error_type: str | None = None,
+            http_status: int | None = None,
+        ) -> None:
+            if timing_sink is None:
+                return
+            total_ms = max(
+                0.0,
+                (time.perf_counter() - request_started) * 1000.0,
+            )
+            timing_sink.clear()
+            timing_sink.update(
+                {
+                    "version": "jupiter-component-timing/1",
+                    "method": str(method).upper(),
+                    "path": str(path),
+                    "attempts": int(attempts_started),
+                    "retry_count": max(0, int(attempts_started) - 1),
+                    "shared_pacing_wait_ms": round(pacing_wait_ms, 3),
+                    "http_round_trip_ms": round(http_round_trip_ms, 3),
+                    "retry_sleep_requested_ms": round(
+                        retry_sleep_requested_ms,
+                        3,
+                    ),
+                    "endpoint_total_ms": round(total_ms, 3),
+                    "status_codes": list(status_codes),
+                    "final_http_status": (
+                        int(http_status)
+                        if http_status is not None
+                        else None
+                    ),
+                    "success": bool(success),
+                    "error_type": (
+                        str(error_type)
+                        if error_type
+                        else None
+                    ),
+                    "retryable": bool(retryable),
+                    "shared_rate_limit": bool(
+                        retryable and self.shared_rate_limit
+                    ),
+                    "used_persistent_http": bool(
+                        self._persistent_client is not None
+                    ),
+                    "observation_only": True,
+                }
+            )
+
         for attempt_index in range(
             maximum_attempts
         ):
             attempt_number = attempt_index + 1
+            attempts_started = attempt_number
             has_next_attempt = (
                 attempt_number
                 < maximum_attempts
             )
 
             if retryable and self.shared_rate_limit:
+                pacing_started = (
+                    time.perf_counter()
+                    if timing_enabled
+                    else 0.0
+                )
                 _SHARED_JUPITER_RATE_LIMIT_COORDINATOR.acquire()
+                if timing_enabled:
+                    pacing_wait_ms += max(
+                        0.0,
+                        (
+                            time.perf_counter()
+                            - pacing_started
+                        )
+                        * 1000.0,
+                    )
 
+            http_started = (
+                time.perf_counter()
+                if timing_enabled
+                else 0.0
+            )
             try:
                 if self._persistent_client is not None:
                     response = self._persistent_client.request(
@@ -386,14 +466,29 @@ class JupiterSwapClient:
                         )
 
             except httpx.TimeoutException as exception:
-                if has_next_attempt:
-                    self.sleep_fn(
-                        self._retry_delay(
-                            attempt_index
+                if timing_enabled:
+                    http_round_trip_ms += max(
+                        0.0,
+                        (
+                            time.perf_counter()
+                            - http_started
                         )
+                        * 1000.0,
                     )
+                if has_next_attempt:
+                    delay = self._retry_delay(
+                        attempt_index
+                    )
+                    retry_sleep_requested_ms += (
+                        delay * 1000.0
+                    )
+                    self.sleep_fn(delay)
                     continue
 
+                publish_timing(
+                    success=False,
+                    error_type="TIMEOUT",
+                )
                 raise JupiterSwapError(
                     "Timeout durante la richiesta "
                     "a Jupiter.",
@@ -408,14 +503,29 @@ class JupiterSwapClient:
                 ) from exception
 
             except httpx.HTTPError as exception:
-                if has_next_attempt:
-                    self.sleep_fn(
-                        self._retry_delay(
-                            attempt_index
+                if timing_enabled:
+                    http_round_trip_ms += max(
+                        0.0,
+                        (
+                            time.perf_counter()
+                            - http_started
                         )
+                        * 1000.0,
                     )
+                if has_next_attempt:
+                    delay = self._retry_delay(
+                        attempt_index
+                    )
+                    retry_sleep_requested_ms += (
+                        delay * 1000.0
+                    )
+                    self.sleep_fn(delay)
                     continue
 
+                publish_timing(
+                    success=False,
+                    error_type=type(exception).__name__,
+                )
                 raise JupiterSwapError(
                     "Errore di rete durante la "
                     "richiesta a Jupiter.",
@@ -432,6 +542,17 @@ class JupiterSwapClient:
                             ).__name__,
                     },
                 ) from exception
+
+            if timing_enabled:
+                http_round_trip_ms += max(
+                    0.0,
+                    (
+                        time.perf_counter()
+                        - http_started
+                    )
+                    * 1000.0,
+                )
+            status_codes.append(int(response.status_code))
 
             rate_limit_headers = (
                 _sanitized_rate_limit_headers(
@@ -484,6 +605,9 @@ class JupiterSwapClient:
                 # generic exponential-backoff ceiling; the current Swap V2
                 # general bucket is per-second and this prevents blind retries
                 # before the advertised reset boundary.
+                retry_sleep_requested_ms += (
+                    delay * 1000.0
+                )
                 self.sleep_fn(delay)
                 continue
 
@@ -491,6 +615,11 @@ class JupiterSwapClient:
                 payload = response.json()
 
             except ValueError as exception:
+                publish_timing(
+                    success=False,
+                    error_type="INVALID_JSON",
+                    http_status=response.status_code,
+                )
                 raise JupiterSwapError(
                     "Jupiter ha restituito una "
                     "risposta non JSON.",
@@ -510,6 +639,11 @@ class JupiterSwapClient:
                 payload,
                 dict,
             ):
+                publish_timing(
+                    success=False,
+                    error_type="INVALID_RESPONSE_SHAPE",
+                    http_status=response.status_code,
+                )
                 raise JupiterSwapError(
                     "Formato risposta Jupiter "
                     "non valido.",
@@ -538,6 +672,11 @@ class JupiterSwapClient:
                     )
                 )
 
+                publish_timing(
+                    success=False,
+                    error_type="HTTP_ERROR",
+                    http_status=response.status_code,
+                )
                 raise JupiterSwapError(
                     str(message),
                     code="JUPITER_HTTP_ERROR",
@@ -558,14 +697,23 @@ class JupiterSwapClient:
                     },
                 )
 
+            publish_timing(
+                success=True,
+                http_status=response.status_code,
+            )
             return payload
 
+        publish_timing(
+            success=False,
+            error_type="REQUEST_EXHAUSTED",
+        )
         raise JupiterSwapError(
             "Richiesta Jupiter terminata "
             "senza risposta.",
             code="JUPITER_REQUEST_EXHAUSTED",
             status_code=502,
         )
+
 
     def get_order(
         self,
@@ -773,6 +921,9 @@ class JupiterSwapClient:
         # price observation and price-impact fallback; /build preserves the
         # exact executable unsigned-instruction evidence.  They do not depend
         # on each other's response, so serial execution only adds latency.
+        order_timing: dict[str, Any] = {}
+        build_timing: dict[str, Any] = {}
+        parallel_started = time.perf_counter()
         with ThreadPoolExecutor(
             max_workers=2,
             thread_name_prefix="jupiter-shadow",
@@ -783,6 +934,7 @@ class JupiterSwapClient:
                 "/order",
                 params=dict(common_params),
                 retryable=True,
+                timing_sink=order_timing,
             )
             build_future = executor.submit(
                 self._request_json,
@@ -790,6 +942,7 @@ class JupiterSwapClient:
                 "/build",
                 params=build_params,
                 retryable=True,
+                timing_sink=build_timing,
             )
             try:
                 order_payload = order_future.result()
@@ -798,6 +951,21 @@ class JupiterSwapClient:
                 order_future.cancel()
                 build_future.cancel()
                 raise
+
+        parallel_wall_ms = max(
+            0.0,
+            (time.perf_counter() - parallel_started) * 1000.0,
+        )
+        component_timing = {
+            "version": "jupiter-component-timing/1",
+            "parallel_wall_ms": round(parallel_wall_ms, 3),
+            "order": dict(order_timing),
+            "build": dict(build_timing),
+            "observation_only": True,
+            "pacing_changed": False,
+            "retry_changed": False,
+            "request_concurrency_changed": False,
+        }
 
         request_id = str(order_payload.get("requestId") or "").strip()
         if not request_id:
@@ -939,6 +1107,7 @@ class JupiterSwapClient:
             "executeEndpointCalled": False,
             "signedTransactionCreated": False,
             "signatureCreated": False,
+            "componentTiming": component_timing,
         }
 
         return JupiterOrderResult(
@@ -951,6 +1120,7 @@ class JupiterSwapClient:
             router=router,
             price_impact_percent=self._parse_float(price_impact, 0.0),
             last_valid_block_height=str(last_valid_block_height),
+            request_timing=component_timing,
         )
 
     def execute_order(
