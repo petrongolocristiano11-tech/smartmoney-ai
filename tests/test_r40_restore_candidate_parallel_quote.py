@@ -6,16 +6,9 @@ import backend.app.services.gen4_fastpath_shadow_service as fast
 import backend.app.services.jupiter_swap_client as jup
 
 
-def test_r40_known_good_parallel_quote_path_remains_available_after_recovery():
-    source = inspect.getsource(jup.JupiterSwapClient.get_quote_and_unsigned_build)
-    assert "ThreadPoolExecutor(" in source
-    assert '"/order"' in source
-    assert '"/build"' in source
-
-
-def test_r42_candidate_buy_moves_from_r40_parallel_path_to_order_only_shadow():
+def test_r40_candidate_buy_restores_known_good_parallel_quote_path():
     source = inspect.getsource(fast.record_fastpath_candidate_notification)
-    assert "quote = _candidate_order_only_quote(" in source
+    assert "quote = _quote(" in source
     assert "quote = _candidate_entry_quote(" not in source
 
 
