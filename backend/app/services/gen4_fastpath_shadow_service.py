@@ -1557,16 +1557,84 @@ def _m319_source_trade_snapshot(signal: Any) -> dict[str, Any]:
     }
 
 
+def _m319_provider_slot_clock_snapshot(
+    provider_slot_clock: dict[str, Any] | None,
+    *,
+    source_slot: int | None,
+    candidate_received_at: datetime,
+) -> dict[str, Any] | None:
+    if not isinstance(provider_slot_clock, dict) or source_slot is None:
+        return None
+    try:
+        clock_slot = int(provider_slot_clock.get("slot"))
+        expected_slot = int(source_slot)
+    except (TypeError, ValueError):
+        return None
+    if clock_slot != expected_slot:
+        return None
+    try:
+        server_timestamp_ms = int(provider_slot_clock.get("server_timestamp_ms"))
+        server_time = datetime.fromtimestamp(
+            server_timestamp_ms / 1000.0,
+            tz=timezone.utc,
+        )
+    except (TypeError, ValueError, OSError, OverflowError):
+        return None
+    local_received = None
+    raw_local = provider_slot_clock.get("local_received_at_utc")
+    if isinstance(raw_local, datetime):
+        local_received = _aware(raw_local)
+    elif raw_local:
+        try:
+            local_received = _aware(
+                datetime.fromisoformat(str(raw_local).replace("Z", "+00:00"))
+            )
+        except (TypeError, ValueError):
+            local_received = None
+    candidate_received = _aware(candidate_received_at) or _utc_now()
+    return {
+        "origin": "HELIUS_SLOTS_UPDATES_SERVER_TIMESTAMP",
+        "source_slot": expected_slot,
+        "slot_update_type": str(provider_slot_clock.get("type") or ""),
+        "server_timestamp_ms": server_timestamp_ms,
+        "server_timestamp_utc": server_time.isoformat(),
+        "local_slot_notification_received_at_utc": (
+            local_received.isoformat() if local_received is not None else None
+        ),
+        "provider_slot_to_candidate_receive_ms": _m319_elapsed_ms(
+            candidate_received,
+            server_time,
+        ),
+        "local_slot_notice_to_candidate_receive_ms": _m319_elapsed_ms(
+            candidate_received,
+            local_received,
+        ),
+        "true_chain_block_time": False,
+        "observation_only": True,
+    }
+
+
 def _new_m319_candidate_observation(
     *,
     event: CanonicalParserGen4FastpathShadowEvent,
     signal: Any,
     received_at: datetime,
     parsed_at: datetime,
+    provider_slot_clock: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     received = _aware(received_at) or _utc_now()
     parsed = _aware(parsed_at) or received
     block_time = _aware(getattr(signal, "block_time", None))
+    source_slot = (
+        int(getattr(signal, "slot"))
+        if getattr(signal, "slot", None) is not None
+        else getattr(event, "slot", None)
+    )
+    slot_clock = _m319_provider_slot_clock_snapshot(
+        provider_slot_clock,
+        source_slot=source_slot,
+        candidate_received_at=received,
+    )
     return {
         "version": M319_COPYABLE_EDGE_VERSION,
         "scope": M319_COPYABLE_EDGE_SCOPE,
@@ -1582,11 +1650,19 @@ def _new_m319_candidate_observation(
         "live_execution": False,
         "paper_execution": False,
         "signer_access": False,
-        "source_slot": (
-            int(getattr(signal, "slot"))
-            if getattr(signal, "slot", None) is not None
-            else getattr(event, "slot", None)
+        "source_slot": source_slot,
+        "source_provider_slot_time_utc": (
+            slot_clock.get("server_timestamp_utc") if slot_clock is not None else None
         ),
+        "source_provider_slot_type": (
+            slot_clock.get("slot_update_type") if slot_clock is not None else None
+        ),
+        "provider_slot_to_receive_ms": (
+            slot_clock.get("provider_slot_to_candidate_receive_ms")
+            if slot_clock is not None
+            else None
+        ),
+        "provider_slot_clock": slot_clock,
         "source_block_time_utc": block_time.isoformat() if block_time is not None else None,
         "source_block_time_origin": (
             "WSS_NOTIFICATION" if block_time is not None else "PENDING_RAW_WEBHOOK_RECONCILIATION"
@@ -1638,6 +1714,15 @@ def _m319_update_buy_quote(
             block_time = _aware(datetime.fromisoformat(str(raw_block).replace("Z", "+00:00")))
         except (TypeError, ValueError):
             block_time = None
+    provider_slot_time = None
+    raw_provider_slot = observation.get("source_provider_slot_time_utc")
+    if raw_provider_slot:
+        try:
+            provider_slot_time = _aware(
+                datetime.fromisoformat(str(raw_provider_slot).replace("Z", "+00:00"))
+            )
+        except (TypeError, ValueError):
+            provider_slot_time = None
     observation["follower_entry"] = {
         "quote_requested_at_utc": requested.isoformat() if requested is not None else None,
         "quote_received_at_utc": received.isoformat() if received is not None else None,
@@ -1645,6 +1730,9 @@ def _m319_update_buy_quote(
         "receive_to_quote_request_ms": _m319_elapsed_ms(requested, candidate_received),
         "receive_to_quote_received_ms": _m319_elapsed_ms(received, candidate_received),
         "chain_to_quote_received_ms": _m319_elapsed_ms(received, block_time),
+        "provider_slot_to_quote_received_ms": _m319_elapsed_ms(
+            received, provider_slot_time
+        ),
         "price_deterioration_bps": (
             float(deterioration_bps) if deterioration_bps is not None else None
         ),
@@ -2749,6 +2837,7 @@ def record_fastpath_candidate_notification(
     message: dict[str, Any],
     jupiter_client: JupiterSwapClient,
     received_at: datetime | None = None,
+    provider_slot_clock: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     observed = _aware(received_at) or _utc_now()
     payload = normalize_helius_transaction_notification(message)
@@ -2811,6 +2900,7 @@ def record_fastpath_candidate_notification(
                 signal=signal,
                 received_at=observed,
                 parsed_at=parsed_at,
+                provider_slot_clock=provider_slot_clock,
             ),
         )
         promoted_activation = get_promoted_activation_for_event(

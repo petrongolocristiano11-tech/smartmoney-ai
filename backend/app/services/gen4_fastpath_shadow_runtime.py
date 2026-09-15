@@ -46,6 +46,11 @@ class EmbeddedGen4FastpathShadowRuntime:
         self._candidate_connected = False
         self._candidate_messages = 0
         self._candidate_errors = 0
+        self._candidate_slot_clock_subscription_id: int | None = None
+        self._candidate_slot_clock: dict[int, dict[str, Any]] = {}
+        self._candidate_slot_clock_updates = 0
+        self._candidate_slot_clock_hits = 0
+        self._candidate_slot_clock_misses = 0
         self._candidate_wallet_locks: dict[str, asyncio.Lock] = {}
         self._candidate_fallback_lock = asyncio.Lock()
         self._official_wallet_locks: dict[str, asyncio.Lock] = {}
@@ -108,7 +113,14 @@ class EmbeddedGen4FastpathShadowRuntime:
                 "wallets": configured_fastpath_candidate_wallets(),
                 "messages": self._candidate_messages,
                 "errors": self._candidate_errors,
-                "separate_wss_connection": True,
+                "slot_clock_subscription_id": self._candidate_slot_clock_subscription_id,
+                "slot_clock_updates": self._candidate_slot_clock_updates,
+                "slot_clock_hits": self._candidate_slot_clock_hits,
+                "slot_clock_misses": self._candidate_slot_clock_misses,
+                "slot_clock_cache_size": len(self._candidate_slot_clock),
+                "slot_clock_source": "HELIUS_SLOTS_UPDATES_SERVER_TIMESTAMP",
+                "slot_clock_true_chain_block_time": False,
+                "separate_wss_connection": False,
                 "live_execution": False,
                 "signer_access": False,
             },
@@ -188,6 +200,8 @@ class EmbeddedGen4FastpathShadowRuntime:
         self._candidate_task = None
         self._candidate_connected = False
         self._candidate_subscription_id = None
+        self._candidate_slot_clock_subscription_id = None
+        self._candidate_slot_clock.clear()
         if self._reconcile_task is not None:
             self._reconcile_task.cancel()
             with suppress(asyncio.CancelledError, Exception):
@@ -235,9 +249,82 @@ class EmbeddedGen4FastpathShadowRuntime:
     def _candidate_wallets(self) -> list[str]:
         return configured_fastpath_candidate_wallets()
 
-    def _record_candidate(self, message: dict[str, Any], received_at: datetime) -> None:
+    @staticmethod
+    def _candidate_source_slot(message: dict[str, Any]) -> int | None:
+        params = message.get("params") if isinstance(message.get("params"), dict) else {}
+        result = params.get("result") if isinstance(params.get("result"), dict) else {}
+        try:
+            return int(result.get("slot")) if result.get("slot") is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def _candidate_slot_clock_for_message(
+        self,
+        message: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        slot = self._candidate_source_slot(message)
+        if slot is None:
+            self._candidate_slot_clock_misses += 1
+            return None
+        clock = self._candidate_slot_clock.get(slot)
+        if clock is None:
+            self._candidate_slot_clock_misses += 1
+            return None
+        self._candidate_slot_clock_hits += 1
+        return dict(clock)
+
+    def _record_candidate_slot_update(
+        self,
+        message: dict[str, Any],
+        received_at: datetime,
+    ) -> None:
+        params = message.get("params") if isinstance(message.get("params"), dict) else {}
+        result = params.get("result") if isinstance(params.get("result"), dict) else {}
+        try:
+            slot = int(result.get("slot"))
+            timestamp_ms = int(result.get("timestamp"))
+        except (TypeError, ValueError):
+            return
+        update_type = str(result.get("type") or "")
+        candidate = {
+            "slot": slot,
+            "server_timestamp_ms": timestamp_ms,
+            "type": update_type,
+            "local_received_at_utc": received_at.isoformat(),
+        }
+        current = self._candidate_slot_clock.get(slot)
+        should_replace = current is None
+        if current is not None:
+            current_type = str(current.get("type") or "")
+            try:
+                current_ts = int(current.get("server_timestamp_ms"))
+            except (TypeError, ValueError):
+                current_ts = timestamp_ms
+            if update_type == "firstShredReceived" and current_type != "firstShredReceived":
+                should_replace = True
+            elif current_type != "firstShredReceived" and timestamp_ms < current_ts:
+                should_replace = True
+            elif update_type == current_type and timestamp_ms < current_ts:
+                should_replace = True
+        if should_replace:
+            self._candidate_slot_clock[slot] = candidate
+        self._candidate_slot_clock_updates += 1
+        if len(self._candidate_slot_clock) > 512:
+            for stale_slot in sorted(self._candidate_slot_clock)[:-384]:
+                self._candidate_slot_clock.pop(stale_slot, None)
+
+    def _record_candidate(
+        self,
+        message: dict[str, Any],
+        received_at: datetime,
+    ) -> None:
         if self._candidate_jupiter is None:
             return
+        provider_slot_clock = (
+            dict(message.get("_m319_provider_slot_clock"))
+            if isinstance(message.get("_m319_provider_slot_clock"), dict)
+            else None
+        )
         with SessionLocal() as db:
             try:
                 record_fastpath_candidate_notification(
@@ -245,6 +332,7 @@ class EmbeddedGen4FastpathShadowRuntime:
                     message=message,
                     jupiter_client=self._candidate_jupiter,
                     received_at=received_at,
+                    provider_slot_clock=provider_slot_clock,
                 )
                 db.commit()
             except Exception:
@@ -366,6 +454,13 @@ class EmbeddedGen4FastpathShadowRuntime:
         semaphore: asyncio.Semaphore,
         received_at: datetime,
     ) -> None:
+        provider_slot_clock = self._candidate_slot_clock_for_message(message)
+        record_message = message
+        if provider_slot_clock is not None:
+            record_message = {
+                **message,
+                "_m319_provider_slot_clock": provider_slot_clock,
+            }
         wallets = configured_fastpath_candidate_wallets()
         wallet_hint = fastpath_notification_wallet_hint(message, wallets)
         if wallet_hint is None:
@@ -378,7 +473,7 @@ class EmbeddedGen4FastpathShadowRuntime:
                 try:
                     await asyncio.to_thread(
                         self._record_candidate,
-                        message,
+                        record_message,
                         received_at,
                     )
                 except Exception:
@@ -541,6 +636,7 @@ class EmbeddedGen4FastpathShadowRuntime:
                 ) as ws:
                     self._candidate_connected = True
                     request_id = 117_005
+                    slot_clock_request_id = 319_018
                     await ws.send(
                         json.dumps(
                             {
@@ -566,6 +662,17 @@ class EmbeddedGen4FastpathShadowRuntime:
                             separators=(",", ":"),
                         )
                     )
+                    await ws.send(
+                        json.dumps(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": slot_clock_request_id,
+                                "method": "slotsUpdatesSubscribe",
+                                "params": [],
+                            },
+                            separators=(",", ":"),
+                        )
+                    )
                     logger.info(
                         "gen4_fastpath_candidate_shadow_subscribe wallet_count=%s",
                         len(wallets),
@@ -578,9 +685,33 @@ class EmbeddedGen4FastpathShadowRuntime:
                         )
                     )
                     last_wallets = tuple(wallets)
+                    next_wallet_refresh = (
+                        asyncio.get_running_loop().time() + float(refresh_seconds)
+                    )
                     while not self._stop_requested and self.candidate_enabled:
+                        now_monotonic = asyncio.get_running_loop().time()
+                        if now_monotonic >= next_wallet_refresh:
+                            current = tuple(
+                                await asyncio.to_thread(self._candidate_wallets)
+                            )
+                            if current != last_wallets:
+                                logger.info(
+                                    "gen4_fastpath_candidate_shadow_wallet_set_changed reconnecting"
+                                )
+                                break
+                            next_wallet_refresh = (
+                                asyncio.get_running_loop().time()
+                                + float(refresh_seconds)
+                            )
+                        recv_timeout = max(
+                            0.1,
+                            min(
+                                float(refresh_seconds),
+                                next_wallet_refresh - asyncio.get_running_loop().time(),
+                            ),
+                        )
                         try:
-                            raw = await asyncio.wait_for(ws.recv(), timeout=refresh_seconds)
+                            raw = await asyncio.wait_for(ws.recv(), timeout=recv_timeout)
                         except asyncio.TimeoutError:
                             current = tuple(
                                 await asyncio.to_thread(self._candidate_wallets)
@@ -590,6 +721,10 @@ class EmbeddedGen4FastpathShadowRuntime:
                                     "gen4_fastpath_candidate_shadow_wallet_set_changed reconnecting"
                                 )
                                 break
+                            next_wallet_refresh = (
+                                asyncio.get_running_loop().time()
+                                + float(refresh_seconds)
+                            )
                             continue
                         received_at = datetime.now(timezone.utc)
                         message = json.loads(raw)
@@ -605,6 +740,24 @@ class EmbeddedGen4FastpathShadowRuntime:
                                 "gen4_fastpath_candidate_shadow_subscribed id=%s",
                                 self._candidate_subscription_id,
                             )
+                            continue
+                        if (
+                            message.get("id") == slot_clock_request_id
+                            and message.get("result") is not None
+                        ):
+                            try:
+                                self._candidate_slot_clock_subscription_id = int(
+                                    message["result"]
+                                )
+                            except (TypeError, ValueError):
+                                self._candidate_slot_clock_subscription_id = None
+                            logger.info(
+                                "gen4_fastpath_candidate_slot_clock_subscribed id=%s",
+                                self._candidate_slot_clock_subscription_id,
+                            )
+                            continue
+                        if message.get("method") == "slotsUpdatesNotification":
+                            self._record_candidate_slot_update(message, received_at)
                             continue
                         if message.get("method") != "transactionNotification":
                             continue
@@ -624,6 +777,7 @@ class EmbeddedGen4FastpathShadowRuntime:
             finally:
                 self._candidate_connected = False
                 self._candidate_subscription_id = None
+                self._candidate_slot_clock_subscription_id = None
             if not self._stop_requested and self.candidate_enabled:
                 await asyncio.sleep(reconnect)
                 reconnect = min(reconnect_max, max(0.25, reconnect * 2.0))
